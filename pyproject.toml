@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "bamot"
+version = "0.1.0"
+description = ""
+authors = ["Anselm Coogan <anselm.coogan@icloud.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+numpy = "^1.19.0"
+opencv-python = "^4.2.0"
+Pillow = "^7.1.2"
+
+[tool.poetry.dev-dependencies]
+black = "^19.10b0"
+pylint = "^2.5.3"
+jedi = "^0.17.1"
+flake8 = "^3.8.3"
+pytest = "^5.4.3"
+coverage = "^5.1"
+pytest-coverage = "^0.0"
+mypy = "^0.782"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
