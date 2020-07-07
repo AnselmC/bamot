@@ -1,13 +1,24 @@
 """Contains data structures used throughout bamot.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+from dataclasses_json import config, dataclass_json
+from marshmallow import fields
 
-TimeCamId = int  # uniquely identifies image (by left/right and img no.)
-FeatureId = int  # feature idx for a given Object
-FeatureTrack = Dict[TimeCamId, FeatureId]
+ObjectId = int
+FeatureId = int
+TrackId = int
+TimeCamId = int
+
+
+FeatureTrack = Dict[ObjectId, FeatureId]
+numpy_serialization_config = config(
+    encoder=lambda x: x.tolist(),
+    decoder=np.array,
+    mm_field=fields.List(fields.List(fields.Float())),
+)
 
 
 @dataclass
@@ -16,19 +27,20 @@ class StereoImage:
     right: np.ndarray
 
 
+@dataclass_json
 @dataclass
 class Feature:
-    u: int
-    v: int
-    descriptor: np.ndarray
+    u: float
+    v: float
+    descriptor: np.ndarray = field(metadata=numpy_serialization_config)
 
 
+@dataclass_json
 @dataclass
 class ObjectDetection:
-    object_mask: np.ndarray
-    img_id: TimeCamId
-    track_id: Optional[int] = None
-    features: List[Feature] = []
+    convex_hull: List[Tuple[int, int]]
+    track_id: Optional[TrackId] = None
+    features: Optional[List[Feature]] = None
 
 
 @dataclass
@@ -37,21 +49,22 @@ class Camera:
     back_project: Callable[[np.ndarray], np.ndarray]
 
 
-@dataclass
-class Match:
-    FeatureIds: Tuple[FeatureId, FeatureId]
+Match = Tuple[FeatureId, FeatureId]
 
 
 @dataclass
 class MatchData:
     matches: List[Match]
-    timecamids: Tuple[TimeCamId, TimeCamId]
 
 
 @dataclass
 class FeatureMatcher:
-    detect_features: Callable[[np.ndarray], List[Feature]]
-    match_features: Callable[[Tuple[List[Feature], List[Feature]]], List[Match]]
+    detect_features: Callable[
+        ["FeatureMatcher", np.ndarray, Optional[np.ndarray]], List[Feature]
+    ]
+    match_features: Callable[
+        ["FeatureMatcher", List[Feature], List[Feature]], List[Match]
+    ]
 
 
 @dataclass
@@ -62,19 +75,34 @@ class StereoCamera:
 
 
 @dataclass
+class Observation:
+    descriptor: np.ndarray
+
+    pt_2d: np.ndarray  # feature coordinates
+    timecam_id: TimeCamId
+
+
+@dataclass
 class Landmark:
-    pt_3d: np.ndarray
-    observations: FeatureTrack
+    pt_3d: np.ndarray  # w.r.t. object
+    observations: List[Observation]
 
 
 @dataclass
 class ObjectTrack:
     landmarks: List[Landmark]
-    pos_3d: np.ndarray
+    current_pose: np.ndarray  # w.r.t. world
     velocity: np.ndarray
+    poses: Dict[TimeCamId, np.ndarray]  # changing poses over time
 
 
 @dataclass
 class StereoObjectDetection:
     left: ObjectDetection
     right: ObjectDetection
+
+
+@dataclass
+class TrackMatch:
+    track_index: int
+    detection_index: int

@@ -4,9 +4,9 @@ from functools import partial
 from pathlib import Path
 from typing import List
 
+import cv2
 import numpy as np
 
-import cv2
 from bamot.core.base_types import (Camera, ObjectDetection, StereoCamera,
                                    StereoImage)
 from bamot.core.preprocessing import preprocess_frame
@@ -25,7 +25,6 @@ def _project(pt_3d_cam: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
     pt_3d_cam = pt_3d_cam[:4] / pt_3d_cam[3]
     pt_2d_hom = intrinsics[:3, :3] @ pt_3d_cam[:3]
     return pt_2d_hom
-    return intrinsics @ pt_3d_cam
 
 
 def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
@@ -34,6 +33,9 @@ def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
     fy = intrinsics[1, 1]
     cx = intrinsics[0, 2]
     cy = intrinsics[1, 2]
+    u, v = map(float, pt_2d)
+    mx = (u - cx) / fx
+    my = (v - cy) / fy
     length = np.sqrt(mx ** 2 + my ** 2 + 1)
     return (np.array([mx, my, 1]) / length).reshape(3, 1)
 
@@ -76,13 +78,20 @@ def get_cameras_from_kitti(calib_file: Path) -> StereoCamera:
 def get_gt_obj_segmentations_from_kitti(instance_file: str) -> List[ObjectDetection]:
     img = np.array(cv2.imread(instance_file, cv2.IMREAD_ANYDEPTH))
     obj_ids = np.unique(img)
-    obj_masks = []
+    obj_detections = []
     for obj_id in obj_ids:
         if obj_id in [0, 10000]:
             continue
-        obj_mask = ObjectDetection(img == obj_id)
-        obj_masks.append(obj_mask)
-    return obj_mask
+        track_id = obj_id % 1000
+        obj_mask = img == obj_id
+        convex_hull = cv2.convexHull(np.argwhere(obj_mask), returnPoints=True).reshape(
+            -1, 2
+        )
+        obj_mask = ObjectDetection(
+            convex_hull=tuple(convex_hull.tolist()), track_id=track_id
+        )
+        obj_detections.append(obj_mask)
+    return obj_detections
 
 
 if __name__ == "__main__":
@@ -91,7 +100,8 @@ if __name__ == "__main__":
         "-s",
         help="the scene to preprocess, default is 1",
         choices=range(0, 20),
-        default=1,
+        type=int,
+        default=0,
     )
     parser.add_argument(
         "-d",
@@ -128,19 +138,15 @@ if __name__ == "__main__":
         save_path_slam = save_path / "slam"
         save_path_slam_left = save_path_slam / "image_02" / scene
         save_path_slam_right = save_path_slam / "image_03" / scene
-        save_path_mot = save_path / "mot"
-        save_path_mot_left = save_path_mot / "image_02" / scene
-        save_path_mot_right = save_path_mot / "image_03" / scene
+        save_path_mot = save_path / "mot" / scene
         save_path_slam_left.mkdir(parents=True, exist_ok=True)
         save_path_slam_right.mkdir(parents=True, exist_ok=True)
-        save_path_mot_left.mkdir(parents=True, exist_ok=True)
-        save_path_mot_right.mkdir(parents=True, exist_ok=True)
+        save_path_mot.mkdir(parents=True, exist_ok=True)
 
     instance_file = base_path / "instances" / scene
     calib_file = base_path / "calib_cam_to_cam.txt"
     left_img_path = base_path / "image_02" / scene
     right_img_path = base_path / "image_03" / scene
-    label_path = base_path / "label_02" / scene + ".txt"
     left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
     right_imgs = sorted(glob.glob(right_img_path.as_posix() + "/*.png"))
     instances = sorted(glob.glob(instance_file.as_posix() + "/*.png"))
@@ -171,11 +177,15 @@ if __name__ == "__main__":
                 cv2.destroyAllWindows()
                 break
         if not args.no_save:
-            slam_left_path = save_path_slam_left / l.split("/")[-1]
-            slam_right_path = save_path_slam_right / l.split("/")[-1]
+            img_name = l.split("/")[-1]
+            img_id = img_name.split(".")[0]
+            slam_left_path = save_path_slam_left / img_name
+            slam_right_path = save_path_slam_right / img_name
             cv2.imwrite(slam_left_path.as_posix(), masked_stereo_image_slam.left)
             cv2.imwrite(slam_right_path.as_posix(), masked_stereo_image_slam.right)
-            mot_left_path = save_path_mot_left / l.split("/")[-1]
-            mot_right_path = save_path_mot_right / l.split("/")[-1]
-            cv2.imwrite(mot_left_path.as_posix(), masked_stereo_image_mot.left)
-            cv2.imwrite(mot_right_path.as_posix(), masked_stereo_image_mot.right)
+            obj_det_json = ObjectDetection.schema().dumps(
+                object_detections, many=True, indent=4
+            )
+            obj_det_path = (save_path_mot / img_id).as_posix() + ".json"
+            with open(obj_det_path, "w") as fd:
+                fd.write(obj_det_json)
