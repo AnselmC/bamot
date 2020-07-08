@@ -46,6 +46,16 @@ def mask_img(
     return masked_img
 
 
+def to_homogeneous_pt(pt: np.ndarray) -> np.ndarray:
+    pt_hom = np.array([*pt.reshape(-1,), 1]).reshape(-1, 1)
+    return pt_hom
+
+
+def from_homogeneous_pt(pt_hom: np.ndarray) -> np.ndarray:
+    pt = pt_hom[:-1] / pt_hom[-1]
+    return pt
+
+
 def get_orb_feature_matcher(num_features: int = 100):
     orb = cv2.ORB_create(nfeatures=num_features)
     matcher = cv2.BFMatcher_create(normType=cv2.NORM_HAMMING)
@@ -66,7 +76,7 @@ def get_orb_feature_matcher(num_features: int = 100):
         first_descriptors = np.array(list(map(lambda x: x.descriptor, first)))
         second_descriptors = np.array(list(map(lambda x: x.descriptor, second)))
         matches = matcher.match(first_descriptors, second_descriptors)
-        return [Match((match.queryIdx, match.trainIdx)) for match in matches]
+        return [(match.queryIdx, match.trainIdx) for match in matches]
 
     return FeatureMatcher(
         detect_features=detect_features, match_features=match_features
@@ -74,4 +84,26 @@ def get_orb_feature_matcher(num_features: int = 100):
 
 
 def project_landmarks(landmarks: List[Landmark]):
+    # TODO for object associations
     pass
+
+
+def triangulate(
+    vec_left: np.ndarray,
+    vec_right: np.ndarray,
+    R_left_right: np.ndarray,
+    t_left_right: np.ndarray,
+) -> np.ndarray:
+    vec_right_unrotated = R_left_right @ vec_right
+    b = np.zeros((2, 1))
+    b[0] = t_left_right.T @ vec_left
+    b[1] = t_left_right.T @ vec_right_unrotated
+    A = np.zeros((2, 2))
+    A[0, 0] = vec_left.T @ vec_left
+    A[1, 0] = vec_left.T @ vec_right_unrotated
+    A[0, 1] = -A[1, 0]
+    A[1, 1] = -vec_right_unrotated.T @ vec_right_unrotated
+    l = np.linalg.inv(A) @ b
+    xm = l[0] * vec_left
+    xn = t_left_right + l[1] * vec_right_unrotated
+    return ((xm + xn) / 2).reshape((3, 1))

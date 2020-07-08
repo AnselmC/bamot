@@ -1,7 +1,7 @@
 """Contains data structures used throughout bamot.
 """
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 from dataclasses_json import config, dataclass_json
@@ -10,7 +10,9 @@ from marshmallow import fields
 ObjectId = int
 FeatureId = int
 TrackId = int
-TimeCamId = int
+ImageId = int  # image number/index
+CamId = int  # either 0 (left) or 1 (right)
+TimeCamId = Tuple[ImageId, CamId]
 
 
 FeatureTrack = Dict[ObjectId, FeatureId]
@@ -43,8 +45,7 @@ class ObjectDetection:
     features: Optional[List[Feature]] = None
 
 
-@dataclass
-class Camera:
+class Camera(NamedTuple):
     project: Callable[[np.ndarray], np.ndarray]
     back_project: Callable[[np.ndarray], np.ndarray]
 
@@ -57,14 +58,9 @@ class MatchData:
     matches: List[Match]
 
 
-@dataclass
-class FeatureMatcher:
-    detect_features: Callable[
-        ["FeatureMatcher", np.ndarray, Optional[np.ndarray]], List[Feature]
-    ]
-    match_features: Callable[
-        ["FeatureMatcher", List[Feature], List[Feature]], List[Match]
-    ]
+class FeatureMatcher(NamedTuple):
+    detect_features: Callable[[np.ndarray, Optional[np.ndarray]], List[Feature]]
+    match_features: Callable[[List[Feature], List[Feature]], List[Match]]
 
 
 @dataclass
@@ -77,7 +73,6 @@ class StereoCamera:
 @dataclass
 class Observation:
     descriptor: np.ndarray
-
     pt_2d: np.ndarray  # feature coordinates
     timecam_id: TimeCamId
 
@@ -93,7 +88,8 @@ class ObjectTrack:
     landmarks: List[Landmark]
     current_pose: np.ndarray  # w.r.t. world
     velocity: np.ndarray
-    poses: Dict[TimeCamId, np.ndarray]  # changing poses over time
+    poses: Dict[ImageId, np.ndarray]  # changing poses over time w.r.t. world
+    active: bool = True
 
 
 @dataclass
@@ -106,3 +102,11 @@ class StereoObjectDetection:
 class TrackMatch:
     track_index: int
     detection_index: int
+
+
+@dataclass
+class CameraParameters:
+    fx: float
+    fy: float
+    cx: float
+    cy: float

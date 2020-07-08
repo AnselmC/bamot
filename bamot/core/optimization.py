@@ -3,7 +3,8 @@ from typing import Dict, Tuple
 import numpy as np
 
 import g2o
-from bamot.core.base_types import Camera, CameraParameters, ObjectTrack, TimeCamId
+from bamot.core.base_types import (Camera, CameraParameters, ObjectTrack,
+                                   TimeCamId)
 from bamot.util.cv import to_homogeneous_pt
 
 # everything is happening in camera coordinates
@@ -20,7 +21,7 @@ def object_bundle_adjustment(
     algorithm = g2o.OptimizationAlgorithmLevenberg(solver)
     optimizer.set_algorithm(algorithm)
     # optimize over all landmarks
-    added_poses = {}
+    added_poses: Dict[TimeCamId, int] = {}
     pose_id = 0  # even numbers
     landmark_id = 1  # odd numbers
     landmark_mapping = {}
@@ -32,8 +33,8 @@ def object_bundle_adjustment(
         vertex_point.set_id(landmark_id)
         landmark_mapping[idx] = landmark_id
         vertex_point.set_marginalized(True)
-        pt_3d_obj = landmark.pt_3d
-        pt_3d_world = T_world_obj @ to_homogeneous_pt(pt_3d_obj)
+        # pt_3d_obj = landmark.pt_3d
+        # pt_3d_world = T_world_obj @ to_homogeneous_pt(pt_3d_obj)
         vertex_point.set_estimate(landmark.pt_3d)
         landmark_id += 1
         optimizer.add_vertex()
@@ -43,7 +44,7 @@ def object_bundle_adjustment(
             # X_q_i is the landmark in object coordinates (doesn't vary over t)
             # T_c_q is the object pose at frame t (T_cam_obj)
             T_world_cam, params = cameras[obs.timecam_id]
-            T_world_obj = object_track.poses[obs.timecam_id]
+            T_world_obj = object_track.poses[obs.timecam_id[0]]
             # get pose for observations, i.e. camera pose * object_pose
             T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
             # add pose to graph if it hasn't been added yet
@@ -74,12 +75,12 @@ def object_bundle_adjustment(
     optimizer.optimizer(max_iterations)
     # update landmark positions of objects (w.r.t. to object) and object poses over time
     for landmark_idx, vertex_idx in landmark_mapping.items():
-        object_track.landmarks[landmark_idx].pose = (
+        object_track.landmarks[landmark_idx].pt_3d = (
             optimizer.vertex(vertex_idx).estimate().matrix()
         )
     for timecam_id, vertex_idx in added_poses.items():
         T_cam_obj = optimizer.vertex(vertex_idx).estimate().matrix()
         T_world_cam, _ = cameras[obs.timecam_id]
         # T_world_obj = T_world_cam @ T_cam_obj
-        object_track.poses[timecam_id] = T_world_cam @ T_cam_obj
+        object_track.poses[timecam_id[0]] = T_world_cam @ T_cam_obj
     return object_track

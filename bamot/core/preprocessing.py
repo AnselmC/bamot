@@ -81,7 +81,4 @@ def preprocess_frame(
     masked_right_image_mot = np.zeros(img_shape, dtype=np.uint8)
     masked_left_image_mot[left_mask] = raw_left_image[left_mask]
     masked_right_image_mot[right_mask] = raw_right_image[right_mask]
-    return (
-        StereoImage(masked_left_image_slam, masked_right_image_slam),
-        StereoImage(masked_left_image_mot, masked_right_image_mot),
-    )
+    return StereoImage(masked_left_image_slam, masked_right_image_slam)

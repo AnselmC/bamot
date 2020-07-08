@@ -159,11 +159,18 @@ if __name__ == "__main__":
         left_img = cv2.imread(l, cv2.IMREAD_COLOR)
         right_img = cv2.imread(r, cv2.IMREAD_COLOR)
         object_detections = get_gt_obj_segmentations_from_kitti(instance_file)
-        masked_stereo_image_slam, masked_stereo_image_mot = preprocess_frame(
+        masked_stereo_image_slam = preprocess_frame(
             StereoImage(left_img, right_img),
             stereo_cam,
             object_detections=object_detections,
         )
+        left_mot_mask = masked_stereo_image_slam.left == 0
+        right_mot_mask = masked_stereo_image_slam.right == 0
+        left_img_mot = np.zeros(left_img.shape, dtype=np.uint8)
+        left_img_mot[left_mot_mask] = left_img[left_mot_mask]
+        right_img_mot = np.zeros(right_img.shape, dtype=np.uint8)
+        right_img_mot[right_mot_mask] = right_img[right_mot_mask]
+        masked_stereo_image_mot = StereoImage(left_img_mot, right_img_mot)
         result_slam = np.hstack(
             [masked_stereo_image_slam.left, masked_stereo_image_slam.right]
         )

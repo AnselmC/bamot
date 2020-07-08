@@ -129,6 +129,14 @@ python = "<3.8"
 version = "*"
 
 [[package]]
+category = "main"
+description = "Python 3 implementation of the Hungarian Algorithm for the assignment problem."
+name = "hungarian-algorithm"
+optional = false
+python-versions = "*"
+version = "0.1.11"
+
+[[package]]
 category = "dev"
 description = "Read metadata from Python packages"
 marker = "python_version < \"3.8\""
@@ -533,7 +541,7 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["jaraco.itertools", "func-timeout"]
 
 [metadata]
-content-hash = "cc15ffe7c3e0a4e1f68085d00a584b021453cb84db1acc3f7322e120534a61bc"
+content-hash = "d2a564d010baabaf5f66172154d96882bbb09b3aacd57a9936828e39923a254f"
 python-versions = "^3.7"
 
 [metadata.files]
@@ -605,6 +613,10 @@ dataclasses-json = [
 flake8 = [
     {file = "flake8-3.8.3-py2.py3-none-any.whl", hash = "sha256:15e351d19611c887e482fb960eae4d44845013cc142d42896e9862f775d8cf5c"},
     {file = "flake8-3.8.3.tar.gz", hash = "sha256:f04b9fcbac03b0a3e58c0ab3a0ecc462e023a9faf046d57794184028123aa208"},
+]
+hungarian-algorithm = [
+    {file = "hungarian_algorithm-0.1.11-py3-none-any.whl", hash = "sha256:a3812cb527329ef09e4ed4c9eba58374677e473a26d637593a9a00d72e49fd49"},
+    {file = "hungarian_algorithm-0.1.11.tar.gz", hash = "sha256:fa9d54d976ac3b1b69b4c60353cb47051cafeb45d34a0624dea5907f573d7719"},
 ]
 importlib-metadata = [
     {file = "importlib_metadata-1.6.1-py2.py3-none-any.whl", hash = "sha256:15ec6c0fd909e893e3a08b3a7c76ecb149122fb14b7efe1199ddd4c7c57ea958"},
