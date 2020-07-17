@@ -1,97 +1,27 @@
+"""Preprocesses kitti GT data.
+"""
 import argparse
 import glob
-from functools import partial
 from pathlib import Path
 from typing import List
 
 import cv2
 import numpy as np
 
-from bamot.core.base_types import (Camera, ObjectDetection, StereoCamera,
-                                   StereoImage)
+from bamot.core.base_types import StereoImage, StereoObjectDetection
 from bamot.core.preprocessing import preprocess_frame
+from bamot.util.kitti import (get_cameras_from_kitti,
+                              get_gt_obj_segmentations_from_kitti)
 
 
 def _get_screen_size():
+    # pylint:disable=import-outside-toplevel
     import tkinter
 
     root = tkinter.Tk()
     root.withdraw()
     width, height = root.winfo_screenwidth(), root.winfo_screenheight()
     return width, height
-
-
-def _project(pt_3d_cam: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
-    pt_3d_cam = pt_3d_cam[:4] / pt_3d_cam[3]
-    pt_2d_hom = intrinsics[:3, :3] @ pt_3d_cam[:3]
-    return pt_2d_hom
-
-
-def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
-    pt_2d = pt_2d.reshape(2, 1)
-    fx = intrinsics[0, 0]
-    fy = intrinsics[1, 1]
-    cx = intrinsics[0, 2]
-    cy = intrinsics[1, 2]
-    u, v = map(float, pt_2d)
-    mx = (u - cx) / fx
-    my = (v - cy) / fy
-    length = np.sqrt(mx ** 2 + my ** 2 + 1)
-    return (np.array([mx, my, 1]) / length).reshape(3, 1)
-
-
-def get_cameras_from_kitti(calib_file: Path) -> StereoCamera:
-    with open(calib_file.as_posix(), "r") as fd:
-        for line in fd:
-            cols = line.split(" ")
-            name = cols[0]
-            if "R_02" in name:
-                R02 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
-            elif "T_02" in name:
-                t02 = np.array(list(map(float, cols[1:]))).reshape(3)
-            elif "R_03" in name:
-                R03 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
-            elif "T_03" in name:
-                t03 = np.array(list(map(float, cols[1:]))).reshape(3)
-            elif "P_rect_02" in name:
-                intrinsics_02 = np.array(list(map(float, cols[1:]))).reshape(3, 4)
-            elif "P_rect_03" in name:
-                intrinsics_03 = np.array(list(map(float, cols[1:]))).reshape(3, 4)
-    T02 = np.identity(4)
-    T02[:3, :3] = R02
-    T02[:3, 3] = t02
-    T03 = np.identity(4)
-    T03[:3, :3] = R03
-    T03[:3, 3] = t03
-    T23 = np.linalg.inv(T02) @ T03
-    left_cam = Camera(
-        project=partial(_project, intrinsics=intrinsics_02),
-        back_project=partial(_back_project, intrinsics=intrinsics_02),
-    )
-    right_cam = Camera(
-        project=partial(_project, intrinsics=intrinsics_03),
-        back_project=partial(_back_project, intrinsics=intrinsics_03),
-    )
-    return StereoCamera(left_cam, right_cam, T23)
-
-
-def get_gt_obj_segmentations_from_kitti(instance_file: str) -> List[ObjectDetection]:
-    img = np.array(cv2.imread(instance_file, cv2.IMREAD_ANYDEPTH))
-    obj_ids = np.unique(img)
-    obj_detections = []
-    for obj_id in obj_ids:
-        if obj_id in [0, 10000]:
-            continue
-        track_id = obj_id % 1000
-        obj_mask = img == obj_id
-        convex_hull = cv2.convexHull(np.argwhere(obj_mask), returnPoints=True).reshape(
-            -1, 2
-        )
-        obj_mask = ObjectDetection(
-            convex_hull=tuple(convex_hull.tolist()), track_id=track_id
-        )
-        obj_detections.append(obj_mask)
-    return obj_detections
 
 
 if __name__ == "__main__":
@@ -143,13 +73,13 @@ if __name__ == "__main__":
         save_path_slam_right.mkdir(parents=True, exist_ok=True)
         save_path_mot.mkdir(parents=True, exist_ok=True)
 
-    instance_file = base_path / "instances" / scene
+    instance_path = base_path / "instances" / scene
     calib_file = base_path / "calib_cam_to_cam.txt"
     left_img_path = base_path / "image_02" / scene
     right_img_path = base_path / "image_03" / scene
-    left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
-    right_imgs = sorted(glob.glob(right_img_path.as_posix() + "/*.png"))
-    instances = sorted(glob.glob(instance_file.as_posix() + "/*.png"))
+    left_imgs: List[str] = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
+    right_imgs: List[str] = sorted(glob.glob(right_img_path.as_posix() + "/*.png"))
+    instances: List[str] = sorted(glob.glob(instance_path.as_posix() + "/*.png"))
     stereo_cam = get_cameras_from_kitti(calib_file)
     if not args.no_view:
         width, height = _get_screen_size()
@@ -159,7 +89,7 @@ if __name__ == "__main__":
         left_img = cv2.imread(l, cv2.IMREAD_COLOR)
         right_img = cv2.imread(r, cv2.IMREAD_COLOR)
         object_detections = get_gt_obj_segmentations_from_kitti(instance_file)
-        masked_stereo_image_slam = preprocess_frame(
+        masked_stereo_image_slam, stereo_object_detections = preprocess_frame(
             StereoImage(left_img, right_img),
             stereo_cam,
             object_detections=object_detections,
@@ -173,6 +103,24 @@ if __name__ == "__main__":
         masked_stereo_image_mot = StereoImage(left_img_mot, right_img_mot)
         result_slam = np.hstack(
             [masked_stereo_image_slam.left, masked_stereo_image_slam.right]
+        )
+        result_slam = cv2.putText(
+            result_slam,
+            l,
+            (5, 25),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=1,
+            color=(0, 255, 0),
+            thickness=2,
+        )
+        result_slam = cv2.putText(
+            result_slam,
+            r,
+            (5 + right_img_mot.shape[1], 25),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=1,
+            color=(0, 255, 0),
+            thickness=2,
         )
         result_mot = np.hstack(
             [masked_stereo_image_mot.left, masked_stereo_image_mot.right]
@@ -190,8 +138,8 @@ if __name__ == "__main__":
             slam_right_path = save_path_slam_right / img_name
             cv2.imwrite(slam_left_path.as_posix(), masked_stereo_image_slam.left)
             cv2.imwrite(slam_right_path.as_posix(), masked_stereo_image_slam.right)
-            obj_det_json = ObjectDetection.schema().dumps(
-                object_detections, many=True, indent=4
+            obj_det_json = StereoObjectDetection.schema().dumps(
+                stereo_object_detections, many=True, indent=4
             )
             obj_det_path = (save_path_mot / img_id).as_posix() + ".json"
             with open(obj_det_path, "w") as fd:

@@ -45,9 +45,18 @@ class ObjectDetection:
     features: Optional[List[Feature]] = None
 
 
+@dataclass
+class CameraParameters:
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+
+
 class Camera(NamedTuple):
     project: Callable[[np.ndarray], np.ndarray]
     back_project: Callable[[np.ndarray], np.ndarray]
+    parameters: Optional[CameraParameters] = None
 
 
 Match = Tuple[FeatureId, FeatureId]
@@ -65,8 +74,8 @@ class FeatureMatcher(NamedTuple):
 
 @dataclass
 class StereoCamera:
-    left: Camera
-    right: Camera
+    left: CameraParameters
+    right: CameraParameters
     T_left_right: np.ndarray
 
 
@@ -92,6 +101,7 @@ class ObjectTrack:
     active: bool = True
 
 
+@dataclass_json
 @dataclass
 class StereoObjectDetection:
     left: ObjectDetection
@@ -102,11 +112,3 @@ class StereoObjectDetection:
 class TrackMatch:
     track_index: int
     detection_index: int
-
-
-@dataclass
-class CameraParameters:
-    fx: float
-    fy: float
-    cx: float
-    cy: float

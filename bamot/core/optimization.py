@@ -1,18 +1,18 @@
-from typing import Dict, Tuple
-
-import numpy as np
+import logging
+from typing import Dict
 
 import g2o
-from bamot.core.base_types import (Camera, CameraParameters, ObjectTrack,
-                                   TimeCamId)
-from bamot.util.cv import to_homogeneous_pt
+import numpy as np
 
-# everything is happening in camera coordinates
+from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera, TimeCamId
+
+LOGGER = logging.getLogger("CORE:OPTIMIZATION")
 
 
 def object_bundle_adjustment(
     object_track: ObjectTrack,
-    cameras: Dict[TimeCamId, Tuple[np.ndarray, CameraParameters]],
+    all_poses: Dict[ImageId, np.ndarray],
+    stereo_cam: StereoCamera,
     max_iterations: int = 10,
 ):
     # setup optimizer
@@ -29,21 +29,29 @@ def object_bundle_adjustment(
     for idx, landmark in enumerate(object_track.landmarks):
         # add landmark as vertex
         # optimize over all observations
-        vertex_point = g2o.VertexSBAPointXYZ()
-        vertex_point.set_id(landmark_id)
+        point_vertex = g2o.VertexSBAPointXYZ()
+        point_vertex.set_id(landmark_id)
         landmark_mapping[idx] = landmark_id
-        vertex_point.set_marginalized(True)
+        point_vertex.set_marginalized(True)
         # pt_3d_obj = landmark.pt_3d
         # pt_3d_world = T_world_obj @ to_homogeneous_pt(pt_3d_obj)
-        vertex_point.set_estimate(landmark.pt_3d)
-        landmark_id += 1
-        optimizer.add_vertex()
+        point_vertex.set_estimate(landmark.pt_3d.reshape(3,))
+        landmark_id += 2
+        optimizer.add_vertex(point_vertex)
         # go over all observations of landmark
         for obs in landmark.observations:
             # x_t_i is the 2d pt of an observation (i.e. landmark i at frame t) -> i.e. feature location
             # X_q_i is the landmark in object coordinates (doesn't vary over t)
             # T_c_q is the object pose at frame t (T_cam_obj)
-            T_world_cam, params = cameras[obs.timecam_id]
+            img_id = obs.timecam_id[0]
+            left = obs.timecam_id[1] == 0
+            T_world_left = all_poses[img_id]
+            if left:
+                T_world_cam = T_world_left
+                params = stereo_cam.left
+            else:
+                T_world_cam = T_world_left @ stereo_cam.T_left_right
+                params = stereo_cam.right
             T_world_obj = object_track.poses[obs.timecam_id[0]]
             # get pose for observations, i.e. camera pose * object_pose
             T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
@@ -62,25 +70,32 @@ def object_bundle_adjustment(
 
             # add edge between landmark and cam
             # feature coordinates of observation are x_i_t
-            edge = g2o.EdgeProjectXYZ()
-            edge.set_vertex(0, vertex_point)
+            edge = g2o.EdgeSE3ProjectXYZ()
+            edge.set_vertex(0, point_vertex)
             edge.set_vertex(1, optimizer.vertex(added_poses[obs.timecam_id]))
             edge.set_measurement(obs.pt_2d)
             edge.set_information(np.identity(2))
             edge.set_robust_kernel(g2o.RobustKernelHuber())
             optimizer.add_edge(edge)
     # optimize
+    LOGGER.debug("Starting optimization")
     optimizer.initialize_optimization()
     optimizer.set_verbose(True)
-    optimizer.optimizer(max_iterations)
+    optimizer.optimize(max_iterations)
     # update landmark positions of objects (w.r.t. to object) and object poses over time
     for landmark_idx, vertex_idx in landmark_mapping.items():
-        object_track.landmarks[landmark_idx].pt_3d = (
-            optimizer.vertex(vertex_idx).estimate().matrix()
-        )
+        object_track.landmarks[landmark_idx].pt_3d = optimizer.vertex(
+            vertex_idx
+        ).estimate()
     for timecam_id, vertex_idx in added_poses.items():
         T_cam_obj = optimizer.vertex(vertex_idx).estimate().matrix()
-        T_world_cam, _ = cameras[obs.timecam_id]
+        img_id = timecam_id[0]
+        left = timecam_id[1] == left
+        T_world_left = all_poses[img_id]
+        if left:
+            T_world_cam = T_world_left
+        else:
+            T_world_cam = T_world_left @ stereo_cam.T_left_right
         # T_world_obj = T_world_cam @ T_cam_obj
         object_track.poses[timecam_id[0]] = T_world_cam @ T_cam_obj
     return object_track
