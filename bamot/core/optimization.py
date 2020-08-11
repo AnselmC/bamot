@@ -20,25 +20,26 @@ def object_bundle_adjustment(
     solver = g2o.BlockSolverSE3(g2o.LinearSolverEigenSE3())
     algorithm = g2o.OptimizationAlgorithmLevenberg(solver)
     optimizer.set_algorithm(algorithm)
-    # optimize over all landmarks
     added_poses: Dict[TimeCamId, int] = {}
-    pose_id = 0  # even numbers
+    pose_id = 0  # even numbes
     landmark_id = 1  # odd numbers
     landmark_mapping = {}
+    mono_edges = []
+    stereo_edges = []
     # iterate over all landmarks of object
-    for idx, landmark in enumerate(object_track.landmarks):
+    num_landmarks = 0
+    # optimize over all landmarks
+    for idx, landmark in object_track.landmarks.items():
         # add landmark as vertex
-        # optimize over all observations
         point_vertex = g2o.VertexSBAPointXYZ()
         point_vertex.set_id(landmark_id)
         landmark_mapping[idx] = landmark_id
         point_vertex.set_marginalized(True)
-        # pt_3d_obj = landmark.pt_3d
-        # pt_3d_world = T_world_obj @ to_homogeneous_pt(pt_3d_obj)
         point_vertex.set_estimate(landmark.pt_3d.reshape(3,))
         landmark_id += 2
         optimizer.add_vertex(point_vertex)
-        # go over all observations of landmark
+        num_landmarks += 1
+        # optimize over all observations
         for obs in landmark.observations:
             # x_t_i is the 2d pt of an observation (i.e. landmark i at frame t) -> i.e. feature location
             # X_q_i is the landmark in object coordinates (doesn't vary over t)
@@ -54,12 +55,13 @@ def object_bundle_adjustment(
                 params = stereo_cam.right
             T_world_obj = object_track.poses[obs.timecam_id[0]]
             # get pose for observations, i.e. camera pose * object_pose
-            T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
+            T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
             # add pose to graph if it hasn't been added yet
             if obs.timecam_id not in added_poses.keys():
-                pose = g2o.Isometry3d(T_cam_obj)
+                pose = g2o.Isometry3d(T_obj_cam)
                 sba_cam = g2o.SBACam(pose.orientation(), pose.position())
-                sba_cam.set_cam(params.fx, params.fy, params.cx, params.cy, 0.0)
+                baseline = 0.03
+                sba_cam.set_cam(params.fx, params.fy, params.cx, params.cy, baseline)
                 pose_vertex = g2o.VertexCam()
                 pose_vertex.set_id(pose_id)
                 pose_vertex.set_estimate(sba_cam)
@@ -70,32 +72,88 @@ def object_bundle_adjustment(
 
             # add edge between landmark and cam
             # feature coordinates of observation are x_i_t
-            edge = g2o.EdgeSE3ProjectXYZ()
+            measurement = obs.pt_2d
+            if measurement.shape == (3,):
+                edge = g2o.EdgeProjectP2SC()
+                info = np.identity(3)
+                delta = 7.815
+                stereo_edges.append((edge, idx))
+
+            else:
+                edge = g2o.EdgeProjectP2MC()
+                info = np.identity(2)
+                delta = 5.991
+                mono_edges.append((edge, idx))
+
             edge.set_vertex(0, point_vertex)
             edge.set_vertex(1, optimizer.vertex(added_poses[obs.timecam_id]))
             edge.set_measurement(obs.pt_2d)
-            edge.set_information(np.identity(2))
-            edge.set_robust_kernel(g2o.RobustKernelHuber())
+            edge.set_information(info)
+            robust_kernel = g2o.RobustKernelHuber()
+            robust_kernel.set_delta(delta)
+            edge.set_robust_kernel(robust_kernel)
             optimizer.add_edge(edge)
     # optimize
-    LOGGER.debug("Starting optimization")
-    optimizer.initialize_optimization()
+    LOGGER.debug(
+        "Starting optimization w/ %d landmarks, %d poses, and %d observations",
+        num_landmarks,
+        len(added_poses),
+        len(mono_edges) + len(stereo_edges),
+    )
+    optimizer.initialize_optimization(0)
     optimizer.set_verbose(True)
     optimizer.optimize(max_iterations)
+    num_outliers = 0
+    for edge, _ in mono_edges:
+        edge.compute_error()
+        if edge.chi2() > 5.991:
+            edge.set_level(1)
+            num_outliers += 1
+        edge.set_robust_kernel(None)
+    for edge, _ in stereo_edges:
+        edge.compute_error()
+        if edge.chi2() > 7.815:
+            edge.set_level(1)
+            num_outliers += 1
+        edge.set_robust_kernel(None)
+
+    # optimize without outliers
+    LOGGER.debug("Starting optimization w/o %d outliers", num_outliers)
+    optimizer.initialize_optimization(0)
+    optimizer.optimize(max_iterations)
+    num_outliers = 0
+    landmarks_to_remove = set()
+    for edge, lmid in mono_edges:
+        edge.compute_error()
+        if edge.chi2() > 5.991:
+            num_outliers += 1
+            landmarks_to_remove.add(lmid)
+    for edge, lmid in stereo_edges:
+        edge.compute_error()
+        if edge.chi2() > 7.815:
+            num_outliers += 1
+            landmarks_to_remove.add(lmid)
     # update landmark positions of objects (w.r.t. to object) and object poses over time
     for landmark_idx, vertex_idx in landmark_mapping.items():
+        # print("Updating point from ")
+        # print(object_track.landmarks[landmark_idx].pt_3d)
         object_track.landmarks[landmark_idx].pt_3d = optimizer.vertex(
             vertex_idx
         ).estimate()
+        # print("to ")
+        # print(object_track.landmarks[landmark_idx].pt_3d)
+    LOGGER.debug(f"Removing {len(landmarks_to_remove)} landmarks")
+    for lmid in landmarks_to_remove:
+        object_track.landmarks.pop(lmid)
     for timecam_id, vertex_idx in added_poses.items():
-        T_cam_obj = optimizer.vertex(vertex_idx).estimate().matrix()
+        T_obj_cam = optimizer.vertex(vertex_idx).estimate().matrix()
         img_id = timecam_id[0]
-        left = timecam_id[1] == left
+        left = timecam_id[1] == 0
         T_world_left = all_poses[img_id]
         if left:
             T_world_cam = T_world_left
         else:
             T_world_cam = T_world_left @ stereo_cam.T_left_right
-        # T_world_obj = T_world_cam @ T_cam_obj
-        object_track.poses[timecam_id[0]] = T_world_cam @ T_cam_obj
+        T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
+        object_track.poses[timecam_id[0]] = T_world_obj
     return object_track
