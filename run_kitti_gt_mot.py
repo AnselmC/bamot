@@ -66,43 +66,58 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("BAMOT with GT KITTI data")
     parser.add_argument(
         "-v",
-        help="verbosity of output",
+        "--verbosity",
+        dest="verbosity",
+        help="verbosity of output (default is INFO)",
         type=str,
         choices=["DEBUG", "INFO", "ERROR"],
         default="INFO",
     )
     parser.add_argument(
         "-i",
+        "--images",
+        dest="images",
         help="path to kitti tracking dataset (default is `./data/KITTI/tracking/training`",
         type=str,
     )
     parser.add_argument(
         "-d",
+        "--detections",
+        dest="detections",
         help="path to detections generated with `preprocess_kitti_groundtruth.py`"
         + "(default is `./data/KITTI/tracking/training/preprocessed/mot",
         type=str,
     )
-    parser.add_argument("-s", help="scene to run", type=int, default=1)
+    parser.add_argument(
+        "-s",
+        "--scene",
+        dest="scene",
+        help="scene to run (default is 1)",
+        type=int,
+        default=1,
+    )
     args = parser.parse_args()
-    scene = str(args.s).zfill(4)
-    if args.i is not None:
-        kitti_path = Path(args.i)
+    scene = str(args.scene).zfill(4)
+    if args.images is not None:
+        kitti_path = Path(args.images)
     else:
         kitti_path = Path(".") / "data" / "KITTI" / "tracking" / "training"
-    if args.d:
-        obj_detections_path = Path(args.d)
+    if args.detections:
+        obj_detections_path = Path(args.detections)
     else:
         obj_detections_path = kitti_path / "preprocessed" / "mot" / scene
     print("STARTING BAMOT with GT KITTI data")
     print(f"KITTI PATH: {kitti_path}")
     print(f"SCENE: {scene}")
     print(f"OBJ. DET. PATH: {obj_detections_path}")
-    print(f"VERBOSITY LEVEL: {args.v}")
-    logging.basicConfig(level=LOG_LEVELS[args.v])
+    print(f"VERBOSITY LEVEL: {args.verbosity}")
+    logging.basicConfig(level=LOG_LEVELS[args.verbosity])
     shared_data: queue.Queue = queue.Queue()
     slam_data: queue.Queue = queue.Queue()
     feature_matcher = get_orb_feature_matcher()
     stop_flag = Event()
+    next_step = Event()
+    next_step.set()
     image_stream = _get_image_stream(kitti_path, scene, stop_flag)
     stereo_cam = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
     detection_stream = _get_detection_stream(obj_detections_path)
@@ -118,23 +133,20 @@ if __name__ == "__main__":
             "stereo_cam": stereo_cam,
             "slam_data": slam_data,
             "shared_data": shared_data,
+            "stop_flag": stop_flag,
+            "next_step": next_step,
         },
         name="MOT Thread",
-    )
-    viewer_thread = Thread(
-        target=run_viewer, args=[shared_data, stop_flag], name="Viewer Thread"
     )
     LOGGER.debug("Starting fake SLAM thread")
     slam_thread.start()
     LOGGER.debug("Starting MOT thread")
     mot_thread.start()
-    LOGGER.debug("Starting viewer thread")
-    viewer_thread.start()
+    LOGGER.debug("Starting viewer")
+    run_viewer(shared_data=shared_data, stop_flag=stop_flag, next_step=next_step)
     slam_thread.join()
     LOGGER.debug("Joined fake SLAM thread")
     mot_thread.join()
     LOGGER.debug("Joined MOT thread")
-    stop_flag.set()
-    viewer_thread.join()
-    LOGGER.debug("Joined viewer thread")
+    shared_data.join()
     print("FINISHED RUNNING KITTI GT MOT")

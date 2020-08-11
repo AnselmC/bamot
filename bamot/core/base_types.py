@@ -53,6 +53,10 @@ class CameraParameters:
     cy: float
 
 
+def get_camera_parameters_matrix(params: CameraParameters):
+    return np.array([[params.fx, 0, params.cx], [0, params.fy, params.cy], [0, 0, 1]])
+
+
 class Camera(NamedTuple):
     project: Callable[[np.ndarray], np.ndarray]
     back_project: Callable[[np.ndarray], np.ndarray]
@@ -82,7 +86,7 @@ class StereoCamera:
 @dataclass
 class Observation:
     descriptor: np.ndarray
-    pt_2d: np.ndarray  # feature coordinates
+    pt_2d: np.ndarray  # feature coordinates -- u, v, and if stereo u_r
     timecam_id: TimeCamId
 
 
@@ -94,8 +98,8 @@ class Landmark:
 
 @dataclass
 class ObjectTrack:
-    landmarks: List[Landmark]
-    current_pose: np.ndarray  # w.r.t. world
+    landmarks: Dict[int, Landmark]  # need to be referenced in constant time by id
+    current_pose: np.ndarray  # w.r.t. world (T_world_object)
     velocity: np.ndarray
     poses: Dict[ImageId, np.ndarray]  # changing poses over time w.r.t. world
     active: bool = True

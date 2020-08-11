@@ -84,7 +84,7 @@ def get_orb_feature_matcher(num_features: int = 4000):
         img: np.ndarray, mask: Optional[np.ndarray] = None
     ) -> List[Feature]:
         keypoints, descriptors = orb.detectAndCompute(
-            img, mask=255 * mask.astype(np.uint8)
+            img, mask=255 * mask.astype(np.uint8) if mask is not None else None
         )
         features = []
         if keypoints:

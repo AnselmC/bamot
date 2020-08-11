@@ -59,25 +59,10 @@ def get_cameras_from_kitti(calib_file: Path) -> StereoCamera:
     right_cam = CameraParameters(fx=right_fx, fy=right_fy, cx=right_cx, cy=right_cy)
     T23 = np.identity(4)
     T23[0, 3] = left_bx - right_bx
-    # T23[0, 3] = 0.03
+    T23[0, 3] = 0.03
     # zu weit rechts -> nach links schieben
     # pos nach links
     # neg nach rechts
-    # T02 = np.identity(4)
-    # T02[:3, :3] = R02
-    # T02[:3, 3] = t02
-    # T03 = np.identity(4)
-    # T03[:3, :3] = R03
-    # T03[:3, 3] = t03
-    # T23 = np.linalg.inv(T02) @ T03
-    # left_cam = Camera(
-    #    project=partial(_project, intrinsics=intrinsics_02),
-    #    back_project=partial(_back_project, intrinsics=intrinsics_02),
-    # )
-    # right_cam = Camera(
-    #    project=partial(_project, intrinsics=intrinsics_03),
-    #    back_project=partial(_back_project, intrinsics=intrinsics_03),
-    # )
     return StereoCamera(left_cam, right_cam, T23)
 
 

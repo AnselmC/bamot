@@ -57,6 +57,7 @@ flycheck_*.el
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*/__pycache__/
 *.py[cod]
 *$py.class
 
@@ -212,3 +213,4 @@ tags
 # custom
 data
 .DS_Store
+.coverage

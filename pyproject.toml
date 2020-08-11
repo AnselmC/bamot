@@ -13,6 +13,7 @@ shapely = "^1.7.0"
 dataclasses-json = "^0.5.1"
 marshmallow = "^3.6.1"
 hungarian-algorithm = "^0.1.11"
+open3d = "0.10.0.0"
 
 [tool.poetry.dev-dependencies]
 black = "^19.10b0"

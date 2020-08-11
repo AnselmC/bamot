@@ -12,17 +12,7 @@ from bamot.core.base_types import StereoImage, StereoObjectDetection
 from bamot.core.preprocessing import preprocess_frame
 from bamot.util.kitti import (get_cameras_from_kitti,
                               get_gt_obj_segmentations_from_kitti)
-
-
-def _get_screen_size():
-    # pylint:disable=import-outside-toplevel
-    import tkinter
-
-    root = tkinter.Tk()
-    root.withdraw()
-    width, height = root.winfo_screenwidth(), root.winfo_screenheight()
-    return width, height
-
+from bamot.util.viewer import get_screen_size
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -82,7 +72,7 @@ if __name__ == "__main__":
     instances: List[str] = sorted(glob.glob(instance_path.as_posix() + "/*.png"))
     stereo_cam = get_cameras_from_kitti(calib_file)
     if not args.no_view:
-        width, height = _get_screen_size()
+        width, height = get_screen_size()
         cv2.namedWindow("Preprocessed", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("Preprocessed", (width // 2, height // 2))
     for idx, (l, r, instance_file) in enumerate(zip(left_imgs, right_imgs, instances)):
