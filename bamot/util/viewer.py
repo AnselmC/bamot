@@ -36,7 +36,7 @@ def _update_tracks(
 ):
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
     for ido, track in object_tracks.items():
-        pose_world_obj = track.current_pose
+        pose_world_obj = track.poses[len(track.poses) - 1]
         points = []
         for lm in track.landmarks.values():
             points.append(

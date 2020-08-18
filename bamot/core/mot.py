@@ -29,9 +29,9 @@ def _localize_object(
     track_matches: List[Match],
     landmark_mapping: Dict[int, int],
     landmarks: Dict[int, Landmark],
-    prev_pose: np.ndarray,  # T_obj_cam
+    T_cam_obj: np.ndarray,
     camera_params: CameraParameters,
-    num_iterations: int = 5000,
+    num_iterations: int = 100,
     reprojection_error: float = 3.0,
 ) -> np.ndarray:
     pts_3d = []
@@ -42,7 +42,6 @@ def _localize_object(
     )
     # build pt arrays
     for features_idx, landmark_idx in track_matches:
-
         pt_3d = landmarks[landmark_mapping[landmark_idx]].pt_3d
         feature = left_features[features_idx]
         pt_2d = np.array([feature.u, feature.v])
@@ -51,8 +50,9 @@ def _localize_object(
     pts_3d = np.array(pts_3d).reshape(-1, 3)
     pts_2d = np.array(pts_2d).reshape(-1, 2)
     # use previous object pose as starting point
-    rot = prev_pose[:3, :3]
-    trans = prev_pose[:3, 3]
+    rot = T_cam_obj[:3, :3]
+    trans = T_cam_obj[:3, 3]
+    # solvePnPRansac estimates object pose, not camera pose
     successful, rvec, tvec, inliers = cv2.solvePnPRansac(
         objectPoints=pts_3d,
         imagePoints=pts_2d,
@@ -66,26 +66,15 @@ def _localize_object(
     )
     if successful:
         LOGGER.debug("Optimization successful! Found %d inliers", len(inliers))
-        LOGGER.debug("Running optimization with inliers...")
-        successful, rvec, tvec = cv2.solvePnP(
-            objectPoints=np.array([mp for i, mp in enumerate(pts_3d) if i in inliers]),
-            imagePoints=np.array([ip for i, ip in enumerate(pts_2d) if i in inliers]),
-            cameraMatrix=get_camera_parameters_matrix(camera_params),
-            distCoeffs=None,
-            rvec=rvec,
-            tvec=tvec,
-            useExtrinsicGuess=True,
-        )
-        if successful:
-            LOGGER.debug("Inlier optimization successful!")
-            rot, _ = cv2.Rodrigues(rvec)
-            optimized_pose = np.identity(4)
-            optimized_pose[:3, :3] = rot
-            optimized_pose[:3, 3] = tvec
-            LOGGER.debug("Optimized pose from \n%s\nto\n%s", prev_pose, optimized_pose)
-            return optimized_pose
+        rot, _ = cv2.Rodrigues(rvec)
+        optimized_pose = np.identity(4)
+        optimized_pose[:3, :3] = rot
+        optimized_pose[:3, 3] = tvec
+        LOGGER.debug("Optimized pose from \n%s\nto\n%s", T_cam_obj, optimized_pose)
+        print(np.linalg.inv(optimized_pose))
+        return optimized_pose
     LOGGER.debug("Optimization failed...")
-    return prev_pose
+    return T_cam_obj
 
 
 def _add_new_landmarks_and_observations(
@@ -110,11 +99,18 @@ def _add_new_landmarks_and_observations(
 
     for features_idx, landmark_idx in track_matches:
         feature = left_features[features_idx]
+        pt_obj = landmarks[landmark_mapping[landmark_idx]].pt_3d
+        pt_cam = from_homogeneous_pt(
+            np.linalg.inv(T_obj_cam) @ to_homogeneous_pt(pt_obj)
+        )
+        z = pt_cam[2]
+        if z < 0.5 or z > 30:  # don't add landmark matches with great discrepancy
+            continue
         # stereo observation
         if stereo_match_dict.get(features_idx) is not None:
             right_feature = right_features[stereo_match_dict[features_idx]]
             # check epipolar constraint
-            if np.allclose(feature.v, right_feature.v, atol=3):
+            if np.allclose(feature.v, right_feature.v, atol=2):
                 feature_pt = np.array([feature.u, feature.v, right_feature.u])
             else:
                 feature_pt = np.array([feature.u, feature.v])
@@ -153,13 +149,17 @@ def _add_new_landmarks_and_observations(
             pt_3d_left_cam = triangulate(
                 vec_left, vec_right, R_left_right, t_left_right
             )
+            # print("tri:")
+            # print(pt_3d_left_cam)
         except np.linalg.LinAlgError as e:
             LOGGER.error("Encountered error during triangulation: %s", e)
             continue
-        if pt_3d_left_cam[-1] < 0 or pt_3d_left_cam[-1] > 30:
-            # triangulated point should not be behind camera or too far away
+        if pt_3d_left_cam[-1] < 0.5 or np.linalg.norm(pt_3d_left_cam) > 30:
+            # triangulated point should not be behind camera (or very close) or too far away
             continue
         pt_3d_obj = from_homogeneous_pt(T_obj_cam @ to_homogeneous_pt(pt_3d_left_cam))
+        # print("obj:")
+        # print(pt_3d_obj)
         # create new landmark
         obs = Observation(
             descriptor=left_feature.descriptor,
@@ -304,7 +304,6 @@ def step(
                 LOGGER.debug("Added track with index %d", match.track_index)
                 object_tracks[match.track_index] = ObjectTrack(
                     landmarks={},
-                    current_pose=current_cam_pose,
                     velocity=np.array([0.0, 0.0, 0.0]),
                     poses={img_id: current_cam_pose},
                 )
@@ -342,22 +341,34 @@ def step(
         track_matches = matcher.match_features(left_features, features)
         LOGGER.debug("%d track matches", len(track_matches))
         # localize object
-        T_world_obj = track.current_pose
+        T_world_obj1 = track.poses[len(track.poses) - 1]
+        # add motion if at least two poses are present
+        if len(track.poses) >= 2:
+            T_world_obj0 = track.poses[len(track.poses) - 2]
+            T_obj0_obj1 = np.linalg.inv(T_world_obj0) @ T_world_obj1
+            # print(track.poses)
+            # print(T_world_obj0)
+            # print(T_world_obj1)
+            # print("Relative transform: ", T_obj0_obj1)
+            T_world_obj = T_world_obj1 @ T_obj0_obj1  # constant motion assumption
+            # print(T_world_obj)
+        else:
+            T_world_obj = T_world_obj1
         T_world_cam = current_cam_pose
         T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
         if len(track_matches) >= 5:
-            T_obj_cam = _localize_object(
+            T_cam_obj = _localize_object(
                 left_features=left_features,
                 track_matches=track_matches,
                 landmark_mapping=lm_mapping,
                 landmarks=track.landmarks,
-                prev_pose=T_obj_cam,
+                T_cam_obj=np.linalg.inv(T_obj_cam),
                 camera_params=stereo_cam.left,
             )
+            T_obj_cam = np.linalg.inv(T_cam_obj)
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
-        track.current_pose = T_world_obj
         track.poses[img_id] = T_world_obj
-        # add new feature observations from track matches
+        # add new landmark observations from track matches
         # add new landmarks from stereo matches
         track.landmarks = _add_new_landmarks_and_observations(
             landmarks=track.landmarks,
@@ -370,6 +381,8 @@ def step(
             img_id=img_id,
             T_obj_cam=T_obj_cam,
         )
+        # for lm in track.landmarks.values():
+        #    print(lm.pt_3d)
         # BA optimizes landmark positions w.r.t. object and object position over time
         # -> SLAM optimizes motion of camera
         # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
@@ -436,3 +449,6 @@ def step(
     LOGGER.debug("Finished step")
     LOGGER.debug("=" * 90)
     return object_tracks
+
+
+# TODO: prev pose from localize object should take optimized BA pose
