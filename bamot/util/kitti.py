@@ -45,6 +45,11 @@ def get_cameras_from_kitti(calib_file: Path) -> StereoCamera:
                 P_rect_left = np.array(list(map(float, cols[1:]))).reshape(3, 4)
             elif "P_rect_03" in name:
                 P_rect_right = np.array(list(map(float, cols[1:]))).reshape(3, 4)
+            elif "R_rect_02" in name:
+                R_rect_02 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
+            elif "R_rect_03" in name:
+                R_rect_03 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
+
     left_fx = P_rect_left[0, 0]
     left_fy = P_rect_left[1, 1]
     left_cx = P_rect_left[0, 2]
@@ -57,9 +62,11 @@ def get_cameras_from_kitti(calib_file: Path) -> StereoCamera:
     right_bx = P_rect_right[0, 3] / -right_fx
     left_cam = CameraParameters(fx=left_fx, fy=left_fy, cx=left_cx, cy=left_cy)
     right_cam = CameraParameters(fx=right_fx, fy=right_fy, cx=right_cx, cy=right_cy)
+    R_rect_23 = np.linalg.inv(R_rect_02) @ R_rect_03
     T23 = np.identity(4)
-    T23[0, 3] = left_bx - right_bx
-    T23[0, 3] = 0.03
+    # T23[:3, :3] = R_rect_23
+    T23[0, 3] = right_bx - left_bx
+    # T23[0, 3] = 0.05
     # zu weit rechts -> nach links schieben
     # pos nach links
     # neg nach rechts

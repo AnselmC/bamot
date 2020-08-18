@@ -7,7 +7,7 @@ import numpy as np
 from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
                                    StereoObjectDetection)
 from bamot.util.cv import (back_project, from_homogeneous_pt,
-                           get_convex_hull_mask, project)
+                           get_convex_hull_mask, project, to_homogeneous_pt)
 
 
 def transform_object_points(
@@ -25,13 +25,16 @@ def transform_object_points(
     right_obj_pts = []
     for pt_2d in left_object_pts:
         pt_3d = back_project(stereo_camera.left, pt_2d).reshape(3, 1)
-        pt_3d_hom = np.array([*pt_3d.tolist(), [1]]).reshape(4, 1)
+        pt_3d_hom = to_homogeneous_pt(pt_3d)
         pt_3d_right_hom = (
             np.linalg.inv(stereo_camera.T_left_right) @ pt_3d_hom
         ).reshape(4, 1)
         pt_2d_right = project(
             stereo_camera.right, from_homogeneous_pt(pt_3d_right_hom)
         ).reshape(2, 1)
+        import pdb
+
+        pdb.set_trace()
         right_obj_pts.append(pt_2d_right)
     return np.array(right_obj_pts).reshape(-1, 2).astype(int)
 

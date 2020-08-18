@@ -18,6 +18,32 @@ def project(params: CameraParameters, pt_3d: np.ndarray):
     ).reshape(2, 1)
 
 
+def fullfills_epipolar_constraint(
+    vec_left: np.ndarray,
+    vec_right: np.ndarray,
+    T_left_right: np.ndarray,
+    threshold: float,
+) -> bool:
+    return (
+        np.abs(vec_left.T @ compute_essential_matrix(T_left_right) @ vec_right)
+        < threshold
+    )
+
+
+def compute_essential_matrix(T_left_right: np.ndarray) -> np.ndarray:
+    t_left_right = T_left_right[:3, 3].reshape(3, 1)
+    R_left_right = T_left_right[:3, :3]
+    return get_skew_symmetric_matrix(t_left_right) @ R_left_right
+
+
+def get_skew_symmetric_matrix(t_vec: np.ndarray) -> np.ndarray:
+    if np.linalg.norm(t_vec) != 1:
+        t_vec = t_vec / np.linalg.norm(t_vec)
+    return np.array(
+        [[0, -t_vec[2], t_vec[1]], [t_vec[2], 0, -t_vec[0]], [-t_vec[1], t_vec[0], 0]]
+    )
+
+
 def back_project(params: CameraParameters, pt_2d: np.ndarray):
     pt_2d = pt_2d.reshape(2, 1)
     u, v = map(float, pt_2d)

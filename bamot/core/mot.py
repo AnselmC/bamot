@@ -66,13 +66,24 @@ def _localize_object(
     )
     if successful:
         LOGGER.debug("Optimization successful! Found %d inliers", len(inliers))
-        rot, _ = cv2.Rodrigues(rvec)
-        optimized_pose = np.identity(4)
-        optimized_pose[:3, :3] = rot
-        optimized_pose[:3, 3] = tvec
-        LOGGER.debug("Optimized pose from \n%s\nto\n%s", T_cam_obj, optimized_pose)
-        print(np.linalg.inv(optimized_pose))
-        return optimized_pose
+        LOGGER.debug("Running optimization with inliers...")
+        successful, rvec, tvec = cv2.solvePnP(
+            objectPoints=np.array([mp for i, mp in enumerate(pts_3d) if i in inliers]),
+            imagePoints=np.array([ip for i, ip in enumerate(pts_2d) if i in inliers]),
+            cameraMatrix=get_camera_parameters_matrix(camera_params),
+            distCoeffs=None,
+            rvec=rvec,
+            tvec=tvec,
+            useExtrinsicGuess=True,
+        )
+        if successful:
+            LOGGER.debug("Inlier optimization successful!")
+            rot, _ = cv2.Rodrigues(rvec)
+            optimized_pose = np.identity(4)
+            optimized_pose[:3, :3] = rot
+            optimized_pose[:3, 3] = tvec
+            LOGGER.debug("Optimized pose from \n%s\nto\n%s", T_cam_obj, optimized_pose)
+            return optimized_pose
     LOGGER.debug("Optimization failed...")
     return T_cam_obj
 
