@@ -96,6 +96,13 @@ if __name__ == "__main__":
         type=int,
         default=1,
     )
+    parser.add_argument(
+        "-nv",
+        "--no-viewer",
+        dest="no_viewer",
+        help="disable viewer",
+        action="store_true",
+    )
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
     if args.images is not None:
@@ -143,7 +150,12 @@ if __name__ == "__main__":
     LOGGER.debug("Starting MOT thread")
     mot_thread.start()
     LOGGER.debug("Starting viewer")
-    run_viewer(shared_data=shared_data, stop_flag=stop_flag, next_step=next_step)
+    if args.no_viewer:
+        while not stop_flag.is_set():
+            shared_data.get(block=True)
+            next_step.set()
+    else:
+        run_viewer(shared_data=shared_data, stop_flag=stop_flag, next_step=next_step)
     slam_thread.join()
     LOGGER.debug("Joined fake SLAM thread")
     mot_thread.join()
