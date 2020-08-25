@@ -99,7 +99,6 @@ class Landmark:
 @dataclass
 class ObjectTrack:
     landmarks: Dict[int, Landmark]  # need to be referenced in constant time by id
-    velocity: np.ndarray
     poses: Dict[ImageId, np.ndarray]  # changing poses over time w.r.t. world
     active: bool = True
 

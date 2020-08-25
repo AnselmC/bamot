@@ -4,10 +4,19 @@ from typing import List, Tuple
 
 import numpy as np
 
-from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
-                                   StereoObjectDetection)
-from bamot.util.cv import (back_project, from_homogeneous_pt,
-                           get_convex_hull_mask, project, to_homogeneous_pt)
+from bamot.core.base_types import (
+    ObjectDetection,
+    StereoCamera,
+    StereoImage,
+    StereoObjectDetection,
+)
+from bamot.util.cv import (
+    back_project,
+    from_homogeneous_pt,
+    get_convex_hull_mask,
+    project,
+    to_homogeneous_pt,
+)
 
 
 def transform_object_points(
@@ -32,9 +41,6 @@ def transform_object_points(
         pt_2d_right = project(
             stereo_camera.right, from_homogeneous_pt(pt_3d_right_hom)
         ).reshape(2, 1)
-        import pdb
-
-        pdb.set_trace()
         right_obj_pts.append(pt_2d_right)
     return np.array(right_obj_pts).reshape(-1, 2).astype(int)
 

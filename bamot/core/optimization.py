@@ -15,7 +15,7 @@ def object_bundle_adjustment(
     all_poses: Dict[ImageId, np.ndarray],
     stereo_cam: StereoCamera,
     max_iterations: int = 10,
-):
+) -> ObjectTrack:
     # setup optimizer
     optimizer = g2o.SparseOptimizer()
     solver = g2o.BlockSolverSE3(g2o.LinearSolverEigenSE3())
@@ -115,7 +115,7 @@ def object_bundle_adjustment(
     num_outliers = 0
     for edge, _ in mono_edges:
         edge.compute_error()
-        pt_obj, T_obj_cam = edge.vertices()
+        pt_obj,T_obj_cam = edge.vertices()
         pt_obj = pt_obj.estimate()
         T_obj_cam = T_obj_cam.estimate().matrix()
         pczi = (
@@ -174,16 +174,16 @@ def object_bundle_adjustment(
     for landmark_idx, vertex_idx in landmark_mapping.items():
         # print("Updating point from ")
         # print(object_track.landmarks[landmark_idx].pt_3d)
-        object_track.landmarks[landmark_idx].pt_3d = optimizer.vertex(
-            vertex_idx
-        ).estimate()
+        updated_point = optimizer.vertex(vertex_idx).estimate().reshape(3, 1)
+        object_track.landmarks[landmark_idx].pt_3d = updated_point.copy()
         # print("to ")
         # print(object_track.landmarks[landmark_idx].pt_3d)
-    LOGGER.debug(f"Removing {len(landmarks_to_remove)} landmarks")
+    return object_track
+    LOGGER.debug("Removing %d landmarks", len(landmarks_to_remove))
     for lmid in landmarks_to_remove:
         object_track.landmarks.pop(lmid)
     for timecam_id, vertex_idx in added_poses.items():
-        T_obj_cam = optimizer.vertex(vertex_idx).estimate().matrix()
+        T_obj_cam = optimizer.vertex(vertex_idx).estimate().matrix().copy()
         img_id = timecam_id[0]
         left = timecam_id[1] == 0
         T_world_left = all_poses[img_id]
@@ -192,9 +192,9 @@ def object_bundle_adjustment(
         else:
             T_world_cam = T_world_left @ stereo_cam.T_left_right
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
-        # print("Updating pose from")
-        # print(object_track.poses[timecam_id[0]])
+        print("Updating pose from")
+        print(object_track.poses[timecam_id[0]])
         object_track.poses[timecam_id[0]] = T_world_obj
-        # print("to")
-        # print(object_track.poses[timecam_id[0]])
+        print("to")
+        print(object_track.poses[timecam_id[0]])
     return object_track
