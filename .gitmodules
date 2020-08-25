@@ -1,0 +1,3 @@
+[submodule "bamot/thirdparty/SuperPoint"]
+	path = bamot/thirdparty/SuperPoint
+	url = git@github.com:rpautrat/SuperPoint.git
