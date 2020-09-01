@@ -1,12 +1,21 @@
 import logging
+from functools import partial
+from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
+import tensorflow as tf
 from PIL import Image, ImageDraw
 
+import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
+from bamot import SUPERPOINT_WEIGHTS_PATH
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
+
+tf.config.threading.set_inter_op_parallelism_threads(
+    2
+)  # s.t. extraction can run in parallel
 
 LOGGER = logging.getLogger("UTIL:CV")
 
@@ -102,35 +111,103 @@ def from_homogeneous_pt(pt_hom: np.ndarray) -> np.ndarray:
     return pt
 
 
-def get_orb_feature_matcher(num_features: int = 4000):
+def get_superpoint_feature_matcher(
+    num_features: int = 1000, weights_path: Path = SUPERPOINT_WEIGHTS_PATH
+):
+
+    tf.get_logger().setLevel("ERROR")  # surpress TF1 -> TF2 warnings
+    loaded = tf.saved_model.load(weights_path.as_posix())
+    model = loaded.signatures["serving_default"]
+    matcher = cv2.BFMatcher_create(normType=cv2.NORM_L2, crossCheck=True)
+
+    def preprocess_image(
+        img: np.ndarray, mask: Optional[np.ndarray] = None
+    ) -> tf.Tensor:
+        """
+        Preprocesses a grayscale image for model forward pass.
+        :param img: An rgb or grayscale image given as a numpy.ndarray (H, W)
+        :returns: The image as a normalized 4D tensorflow Tensor
+                  object (B, H, W, D) where B=1 and D=1.
+        :raise: ValueError if img is
+        """
+        if len(img.shape) != 2:
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        if mask is not None:
+            img = cv2.bitwise_and(img, mask.astype(np.uint8) * 255)
+        if img.max() > 1:
+            # normalize image
+            img = img / 255.0
+        img = img.astype(np.float32)
+        # reshape image to be 4D
+        img = np.expand_dims(img, 2)  # channel
+        img = np.expand_dims(img, 0)  # batch
+        return tf.constant(img)
+
+    def detect_features(
+        img: np.ndarray, mask: Optional[np.ndarray] = None
+    ) -> List[Feature]:
+        # mask = None
+        tensor = preprocess_image(img, mask)
+        out = model(tensor)
+        kp_map = out["prob_nms"].numpy()[0]
+        desc_map = out["descriptors"].numpy()[0]
+        kp, desc = sp.extract_superpoint_keypoints_and_descriptors(
+            kp_map, desc_map, num_features
+        )
+        return _get_features_from_kp_and_desc(kp, desc)
+
+    return FeatureMatcher(
+        "SuperPoint",
+        detect_features=detect_features,
+        match_features=partial(match_features, matcher=matcher, threshold=1.0),
+    )
+
+
+def _get_features_from_kp_and_desc(
+    keypoints: List[cv2.KeyPoint], descriptors: np.ndarray
+) -> List[Feature]:
+    features = []
+    if keypoints:
+        for keypoint, descriptor in zip(keypoints, descriptors):
+            features.append(
+                Feature(u=keypoint.pt[0], v=keypoint.pt[1], descriptor=descriptor)
+            )
+    return features
+
+
+def get_orb_feature_matcher(num_features: int = 8000):
     orb = cv2.ORB_create(nfeatures=num_features)
     matcher = cv2.BFMatcher_create(normType=cv2.NORM_HAMMING, crossCheck=True)
 
     def detect_features(
         img: np.ndarray, mask: Optional[np.ndarray] = None
     ) -> List[Feature]:
+        # mask = None
         keypoints, descriptors = orb.detectAndCompute(
             img, mask=255 * mask.astype(np.uint8) if mask is not None else None
         )
-        features = []
-        if keypoints:
-            for keypoint, descriptor in zip(keypoints, descriptors):
-                features.append(
-                    Feature(u=keypoint.pt[0], v=keypoint.pt[1], descriptor=descriptor)
-                )
-        return features
-
-    def match_features(first: List[Feature], second: List[Feature]) -> List[Match]:
-        if not first or not second:
-            return []
-        first_descriptors = np.array(list(map(lambda x: x.descriptor, first)))
-        second_descriptors = np.array(list(map(lambda x: x.descriptor, second)))
-        matches = matcher.match(first_descriptors, second_descriptors)
-        return [(match.queryIdx, match.trainIdx) for match in matches]
+        return _get_features_from_kp_and_desc(keypoints, descriptors)
 
     return FeatureMatcher(
-        detect_features=detect_features, match_features=match_features
+        "ORB",
+        detect_features=detect_features,
+        match_features=partial(match_features, matcher=matcher, threshold=50),
     )
+
+
+def match_features(
+    first: List[Feature], second: List[Feature], matcher, threshold
+) -> List[Match]:
+    if not first or not second:
+        return []
+    first_descriptors = np.array(list(map(lambda x: x.descriptor, first)))
+    second_descriptors = np.array(list(map(lambda x: x.descriptor, second)))
+    matches = matcher.match(first_descriptors, second_descriptors)
+    return [
+        (match.queryIdx, match.trainIdx)
+        for match in matches
+        if match.distance <= threshold
+    ]
 
 
 def project_landmarks(landmarks: List[Landmark]):

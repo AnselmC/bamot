@@ -72,6 +72,7 @@ class MatchData:
 
 
 class FeatureMatcher(NamedTuple):
+    name: str
     detect_features: Callable[[np.ndarray, Optional[np.ndarray]], List[Feature]]
     match_features: Callable[[List[Feature], List[Feature]], List[Match]]
 
