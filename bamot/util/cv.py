@@ -27,6 +27,15 @@ def project(params: CameraParameters, pt_3d: np.ndarray):
     ).reshape(2, 1)
 
 
+def get_center_of_landmarks(landmarks: List[Landmark]):
+    center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
+    if not landmarks:
+        return center
+    for lm in landmarks:
+        center += lm.pt_3d
+    return center / len(landmarks)
+
+
 def fullfills_epipolar_constraint(
     vec_left: np.ndarray,
     vec_right: np.ndarray,
@@ -221,6 +230,7 @@ def triangulate(
     R_left_right: np.ndarray,
     t_left_right: np.ndarray,
 ) -> np.ndarray:
+    # TODO: better triangulate function
     vec_right_unrotated = R_left_right @ vec_right
     b = np.zeros((2, 1))
     b[0] = t_left_right.T @ vec_left

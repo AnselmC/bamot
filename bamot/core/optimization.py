@@ -115,7 +115,7 @@ def object_bundle_adjustment(
     num_outliers = 0
     for edge, _ in mono_edges:
         edge.compute_error()
-        pt_obj,T_obj_cam = edge.vertices()
+        pt_obj, T_obj_cam = edge.vertices()
         pt_obj = pt_obj.estimate()
         T_obj_cam = T_obj_cam.estimate().matrix()
         pczi = (
@@ -178,7 +178,6 @@ def object_bundle_adjustment(
         object_track.landmarks[landmark_idx].pt_3d = updated_point.copy()
         # print("to ")
         # print(object_track.landmarks[landmark_idx].pt_3d)
-    return object_track
     LOGGER.debug("Removing %d landmarks", len(landmarks_to_remove))
     for lmid in landmarks_to_remove:
         object_track.landmarks.pop(lmid)
