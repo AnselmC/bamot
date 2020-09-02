@@ -96,15 +96,16 @@ def _update_tracks(
 
             center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
             for lm in track.landmarks.values():
-                if i > 0:
-                    colors.append(lighter_color)
-                else:
-                    colors.append(color)
+                # if i > 0:
+                #    colors.append(lighter_color)
+                # else:
                 pt_world = from_homogeneous_pt(
                     pose_world_obj @ to_homogeneous_pt(lm.pt_3d)
                 )
-                points.append(pt_world)
                 center += pt_world
+                if i == 0:
+                    colors.append(color)
+                    points.append(pt_world)
             if i == 0 and len(points) > 3:
                 tmp_pt_cloud = o3d.geometry.PointCloud()
                 tmp_pt_cloud.points = o3d.utility.Vector3dVector(points)
@@ -127,7 +128,6 @@ def _update_tracks(
                         [4, 7],
                     ]
                 )
-                bounding_box.paint_uniform_color(color)
             if track.landmarks:
                 center /= len(track.landmarks)
             path_points.append(center.reshape(3,).tolist())
@@ -147,10 +147,12 @@ def _update_tracks(
                 pt_cloud.colors = o3d.utility.Vector3dVector(np.array(colors))
             # pt_cloud.paint_uniform_color(color)
             path.paint_uniform_color(color)
+            bounding_box.paint_uniform_color(color)
         else:
             LOGGER.debug("Track is inactive")
-            pt_cloud.paint_uniform_color([1.0, 1.0, 1.0])
-            path.paint_uniform_color([1.0, 1.0, 1.0])
+            pt_cloud.paint_uniform_color([0.0, 0.0, 0.0])
+            path.paint_uniform_color([0.0, 0.0, 0.0])
+            bounding_box.paint_uniform_color([0.0, 0.0, 0.0])
         if track_geometries.get(ido) is None:
             visualizer.add_geometry(pt_cloud, reset_bounding_box=first_update)
             visualizer.add_geometry(path, reset_bounding_box=first_update)

@@ -100,11 +100,17 @@ def get_convex_hull_mask(
     return mask == 1
 
 
+def dilate_mask(mask: np.ndarray, num_pixels: int) -> np.ndarray:
+    for _ in range(num_pixels):
+        mask = cv2.dilate(mask.astype(float), kernel=np.ones((3, 3))).astype(bool)
+    return mask
+
+
 def mask_img(
     mask: np.ndarray, img: np.ndarray, dilate: Union[bool, int] = False
 ) -> np.ndarray:
     for _ in range(int(dilate)):
-        mask = cv2.dilate(mask.astype(float), kernel=np.ones((3, 3))).astype(int)
+        mask = cv2.dilate(mask.astype(float), kernel=np.ones((3, 3))).astype(bool)
     masked_img = np.zeros(img.shape)
     masked_img[mask] = img[mask]
     return masked_img.astype(np.uint8)

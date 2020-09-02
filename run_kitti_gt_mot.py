@@ -160,6 +160,13 @@ if __name__ == "__main__":
         dest="multiprocessing",
         action="store_true",
     )
+    parser.add_argument(
+        "-c",
+        "--continuous",
+        action="store_true",
+        dest="continuous",
+        help="Whether to run process continuously (default is next step via 'n' keypress",
+    )
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
     if args.images is not None:
@@ -223,6 +230,7 @@ if __name__ == "__main__":
             "shared_data": shared_data,
             "stop_flag": stop_flag,
             "next_step": next_step,
+            "continuous": args.continuous,
         },
         name="BAMOT",
     )
