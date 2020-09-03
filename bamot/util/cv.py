@@ -191,13 +191,11 @@ def _get_features_from_kp_and_desc(
 
 
 def get_orb_feature_matcher(num_features: int = 8000):
-    orb = cv2.ORB_create(nfeatures=num_features)
-    matcher = cv2.BFMatcher_create(normType=cv2.NORM_HAMMING, crossCheck=True)
-
     def detect_features(
         img: np.ndarray, mask: Optional[np.ndarray] = None
     ) -> List[Feature]:
         # mask = None
+        orb = cv2.ORB_create(nfeatures=num_features)
         keypoints, descriptors = orb.detectAndCompute(
             img, mask=255 * mask.astype(np.uint8) if mask is not None else None
         )
@@ -206,13 +204,14 @@ def get_orb_feature_matcher(num_features: int = 8000):
     return FeatureMatcher(
         "ORB",
         detect_features=detect_features,
-        match_features=partial(match_features, matcher=matcher, threshold=50),
+        match_features=partial(match_features, norm=cv2.NORM_HAMMING, threshold=50),
     )
 
 
 def match_features(
-    first: List[Feature], second: List[Feature], matcher, threshold
+    first: List[Feature], second: List[Feature], norm, threshold
 ) -> List[Match]:
+    matcher = cv2.BFMatcher_create(normType=norm, crossCheck=True)
     if not first or not second:
         return []
     first_descriptors = np.array(list(map(lambda x: x.descriptor, first)))

@@ -110,7 +110,7 @@ def object_bundle_adjustment(
         len(mono_edges) + len(stereo_edges),
     )
     optimizer.initialize_optimization(0)
-    optimizer.set_verbose(True)
+    optimizer.set_verbose(LOGGER.level == logging.DEBUG)
     optimizer.optimize(max_iterations)
     num_outliers = 0
     for edge, _ in mono_edges:
@@ -191,9 +191,9 @@ def object_bundle_adjustment(
         else:
             T_world_cam = T_world_left @ stereo_cam.T_left_right
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
-        print("Updating pose from")
-        print(object_track.poses[timecam_id[0]])
+        # print("Updating pose from")
+        # print(object_track.poses[timecam_id[0]])
         object_track.poses[timecam_id[0]] = T_world_obj
-        print("to")
-        print(object_track.poses[timecam_id[0]])
+        # print("to")
+        # print(object_track.poses[timecam_id[0]])
     return object_track

@@ -2,6 +2,7 @@
 """
 import argparse
 import glob
+import json
 import logging
 import multiprocessing as mp
 import queue
@@ -12,6 +13,7 @@ from typing import Iterable, List, Tuple, Union
 
 import cv2
 import numpy as np
+import tqdm
 
 from bamot.core.base_types import (ObjectDetection, StereoImage,
                                    StereoObjectDetection)
@@ -19,6 +21,7 @@ from bamot.core.mot import run
 from bamot.util.cv import (get_orb_feature_matcher,
                            get_superpoint_feature_matcher)
 from bamot.util.kitti import get_cameras_from_kitti
+from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
 LOG_LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "ERROR": logging.ERROR}
@@ -57,7 +60,9 @@ def _get_image_stream(
         "Found %d left images and %d right images", len(left_imgs), len(right_imgs)
     )
     LOGGER.debug("Starting at image %d", offset)
-    for left, right in zip(left_imgs[offset:], right_imgs[offset:]):
+    for left, right in tqdm.tqdm(
+        zip(left_imgs[offset:], right_imgs[offset:]), total=len(left_imgs[offset:]),
+    ):
         left_img = cv2.imread(left, cv2.IMREAD_COLOR).astype(np.uint8)
         right_img = cv2.imread(right, cv2.IMREAD_COLOR).astype(np.uint8)
         yield StereoImage(left_img, right_img)
@@ -98,7 +103,7 @@ if __name__ == "__main__":
         "-v",
         "--verbosity",
         dest="verbosity",
-        help="verbosity of output (default is INFO)",
+        help="verbosity of output (default is INFO, surpresses most logs)",
         type=str,
         choices=["DEBUG", "INFO", "ERROR"],
         default="INFO",
@@ -165,7 +170,14 @@ if __name__ == "__main__":
         "--continuous",
         action="store_true",
         dest="continuous",
-        help="Whether to run process continuously (default is next step via 'n' keypress",
+        help="Whether to run process continuously (default is next step via 'n' keypress).",
+    )
+    parser.add_argument(
+        "--out",
+        dest="out",
+        type=str,
+        help="Where to save estimated object trajectories (default: `trajectory.json`)",
+        default="trajectory.json",
     )
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
@@ -191,6 +203,7 @@ if __name__ == "__main__":
     print(f"USING MULTI-PROCESS: {args.multiprocessing}")
     print(30 * "+")
     logging.basicConfig(level=LOG_LEVELS[args.verbosity])
+    logging.getLogger().handlers = [TqdmLoggingHandler()]
     if args.multiprocessing:
 
         queue_class = mp.JoinableQueue
@@ -202,6 +215,7 @@ if __name__ == "__main__":
         flag_class = threading.Event
         process_class = threading.Thread
     shared_data = queue_class()
+    returned_data = queue_class()
     slam_data = queue_class()
     stop_flag = flag_class()
     next_step = flag_class()
@@ -230,6 +244,7 @@ if __name__ == "__main__":
             "shared_data": shared_data,
             "stop_flag": stop_flag,
             "next_step": next_step,
+            "returned_data": returned_data,
             "continuous": args.continuous,
         },
         name="BAMOT",
@@ -249,5 +264,9 @@ if __name__ == "__main__":
     LOGGER.debug("Joined fake SLAM thread")
     mot_process.join()
     LOGGER.debug("Joined MOT thread")
+    estimated_trajectories = returned_data.get()
+    LOGGER.info("Saving object track trajectories to %s", args.out)
+    with open(args.out, "w") as fp:
+        json.dump(estimated_trajectories, fp, indent=4, sort_keys=True)
     shared_data.join()
     print("FINISHED RUNNING KITTI GT MOT")

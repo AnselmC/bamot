@@ -1,6 +1,5 @@
 """ Core code for BAMOT
 """
-import concurrent.futures
 import copy
 import logging
 import queue
@@ -10,6 +9,7 @@ from typing import Dict, Iterable, List, Tuple
 
 import cv2
 import numpy as np
+import pathos
 from hungarian_algorithm import algorithm as ha
 from shapely.geometry import Polygon
 
@@ -20,8 +20,10 @@ from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    get_camera_parameters_matrix)
 from bamot.core.optimization import object_bundle_adjustment
 from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
-                           get_convex_hull, get_convex_hull_mask, mask_img,
-                           project_landmarks, to_homogeneous_pt, triangulate)
+                           get_center_of_landmarks, get_convex_hull,
+                           get_convex_hull_mask, mask_img, project_landmarks,
+                           to_homogeneous_pt, triangulate)
+from bamot.util.misc import timer
 
 LOGGER = logging.getLogger("CORE:MOT")
 
@@ -287,12 +289,122 @@ def run(
     stereo_cam: StereoCamera,
     slam_data: queue.Queue,
     shared_data: queue.Queue,
+    returned_data: queue.Queue,
     stop_flag: Event,
     next_step: Event,
     continuous: bool,
 ):
     object_tracks: Dict[int, ObjectTrack] = {}
     LOGGER.info("Starting MOT run")
+
+    def _process_match(
+        track,
+        detection,
+        all_poses,
+        track_index,
+        stereo_cam,
+        img_id,
+        img_shape,
+        stereo_image,
+        current_cam_pose,
+    ):
+        track.active = True
+        # mask out object from image
+        left_obj_mask = get_convex_hull_mask(
+            np.array(detection.left.convex_hull), img_shape=img_shape
+        )
+        right_obj_mask = get_convex_hull_mask(
+            np.array(detection.right.convex_hull), img_shape=img_shape
+        )
+        left_features = feature_matcher.detect_features(
+            stereo_image.left, left_obj_mask
+        )
+        LOGGER.debug("Detected %d features on left object", len(left_features))
+        # TODO: why does using left_obj_mask with no dilation work best here?
+        right_features = feature_matcher.detect_features(
+            stereo_image.right, dilate_mask(left_obj_mask, num_pixels=0)
+        )
+        LOGGER.debug("Detected %d features on right object", len(right_features))
+        detection.left.features = left_features
+        detection.right.features = right_features
+        # match stereo features
+        stereo_matches = feature_matcher.match_features(left_features, right_features)
+        LOGGER.debug("%d stereo matches", len(stereo_matches))
+        # match left features with track features
+        features, lm_mapping = _get_features_from_landmarks(track.landmarks)
+        track_matches = feature_matcher.match_features(left_features, features)
+        LOGGER.debug("%d track matches", len(track_matches))
+        # localize object
+        T_world_obj1 = track.poses[max(track.poses.keys())]
+        # add motion if at least two poses are present
+        if len(track.poses) >= 2:
+            T_world_obj0 = track.poses[max(track.poses.keys()) - 1]
+            T_obj0_obj1 = np.linalg.inv(T_world_obj0) @ T_world_obj1
+            # print(track.poses)
+            # print(T_world_obj0)
+            # print(T_world_obj1)
+            # print("Relative transform: ", T_obj0_obj1)
+            T_world_obj = T_world_obj1 @ T_obj0_obj1  # constant motion assumption
+            # print(T_world_obj)
+        else:
+            T_world_obj = T_world_obj1
+        T_world_cam = current_cam_pose
+        T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
+        if len(track_matches) >= 5 and track_index != -1:
+            T_cam_obj = _localize_object(
+                left_features=left_features,
+                track_matches=track_matches,
+                landmark_mapping=lm_mapping,
+                landmarks=copy.deepcopy(track.landmarks),
+                T_cam_obj=np.linalg.inv(T_obj_cam),
+                camera_params=stereo_cam.left,
+            )
+            T_obj_cam = np.linalg.inv(T_cam_obj)
+        T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
+        track.poses[img_id] = T_world_obj
+        # add new landmark observations from track matches
+        # add new landmarks from stereo matches
+        track.landmarks = _add_new_landmarks_and_observations(
+            landmarks=copy.deepcopy(track.landmarks),
+            track_matches=track_matches,
+            landmark_mapping=lm_mapping,
+            stereo_matches=stereo_matches,
+            left_features=left_features,
+            right_features=right_features,
+            stereo_cam=stereo_cam,
+            img_id=img_id,
+            T_obj_cam=T_obj_cam,
+        )
+        # BA optimizes landmark positions w.r.t. object and object position over time
+        # -> SLAM optimizes motion of camera
+        # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
+        if len(track.poses) > 3 and len(track.landmarks) > 0:
+            LOGGER.debug("Running BA")
+            track = object_bundle_adjustment(
+                object_track=copy.deepcopy(track),
+                all_poses=all_poses,
+                stereo_cam=stereo_cam,
+            )
+        # remove outlier landmarks
+        if track_index != -1 and track.landmarks:
+            landmarks_to_remove = []
+            points = []
+            for landmark in track.landmarks.values():
+                points.append(landmark.pt_3d)
+            points = np.array(points)
+            cluster_center = np.mean(points, axis=0)
+            stddev = np.std(points, axis=0)
+            for lid, lm in track.landmarks.items():
+                if np.linalg.norm(lm.pt_3d - cluster_center) > np.linalg.norm(
+                    3 * stddev
+                ):
+                    landmarks_to_remove.append(lid)
+            LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
+            for lid in landmarks_to_remove:
+                track.landmarks.pop(lid)
+            if len(track.landmarks) < 25:
+                track.active = False
+        return track, left_features, right_features, stereo_matches
 
     for it, (stereo_image, new_detections) in enumerate(zip(images, detections)):
         while not continuous and not next_step.is_set():
@@ -304,7 +416,7 @@ def run(
             new_detections=new_detections,
             stereo_image=stereo_image,
             object_tracks=copy.deepcopy(object_tracks),  # weird behavior w/o deepcopy
-            matcher=feature_matcher,
+            process_match=_process_match,
             stereo_cam=stereo_cam,
             img_id=it,
             current_cam_pose=current_pose,
@@ -320,13 +432,15 @@ def run(
             }
         )
     stop_flag.set()
+    returned_data.put(_compute_estimated_trajectories(object_tracks))
 
 
+@timer
 def step(
     new_detections: List[StereoObjectDetection],
     stereo_image: StereoImage,
     object_tracks: Dict[int, ObjectTrack],
-    matcher: FeatureMatcher,
+    process_match: FeatureMatcher,
     stereo_cam: StereoCamera,
     all_poses: Dict[ImageId, np.ndarray],
     img_id: ImageId,
@@ -361,32 +475,34 @@ def step(
     active_tracks = []
     matched_detections = []
     LOGGER.debug("%d matches with object tracks", len(matches))
-    # TODO: run in parallel
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with pathos.threading.ThreadPool(nodes=len(matches)) as executor:
+        futures_to_track_index = {}
         for match in matches:
-
             detection = new_detections[match.detection_index]
             track = object_tracks[match.track_index]
             active_tracks.append(match.track_index)
             matched_detections.append(match.detection_index)
+            futures_to_track_index[
+                executor.apipe(
+                    process_match,
+                    track=track,
+                    detection=detection,
+                    all_poses=all_poses,
+                    track_index=match.track_index,
+                    stereo_cam=stereo_cam,
+                    img_id=img_id,
+                    img_shape=img_shape,
+                    stereo_image=stereo_image,
+                    current_cam_pose=current_cam_pose,
+                )
+            ] = match.track_index
 
-            track, left_features, right_features, stereo_matches = _process_match(
-                track=track,
-                detection=detection,
-                all_poses=all_poses,
-                track_index=match.track_index,
-                stereo_cam=stereo_cam,
-                img_id=img_id,
-                img_shape=img_shape,
-                stereo_image=stereo_image,
-                matcher=matcher,
-                current_cam_pose=current_cam_pose,
-            )
-            object_tracks[match.track_index] = track
+        for future, track_index in futures_to_track_index.items():
+            track, left_features, right_features, stereo_matches = future.get()
+            object_tracks[track_index] = track
             all_left_features.append(left_features)
             all_right_features.append(right_features)
             all_stereo_matches.append(stereo_matches)
-    # stereo_image.left = mask_img(left_obj_mask, stereo_image.left, dilate=20)
 
     # Set old tracks inactive
     old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
@@ -437,119 +553,22 @@ def step(
     #    obj_track = ObjectTrack(landmarks=landmarks, poses=poses,)
     #    object_tracks[track_id] = obj_track
 
-    LOGGER.debug("Finished step")
+    LOGGER.debug("Finished step %d", img_id)
     LOGGER.debug("=" * 90)
     return object_tracks, all_left_features, all_right_features, all_stereo_matches
 
 
-# TODO: improve right mask for detections (i.e. by matching convex hull points from left image --> how to match true contour?)
-# Better feature matcher?
-# Better triangulation?
-# why is superpoint not working?
-# TODO: display landmark matches
-# for loop (for match in matches) in separate threads/processes
-def _process_match(
-    track,
-    detection,
-    all_poses,
-    track_index,
-    stereo_cam,
-    img_id,
-    img_shape,
-    stereo_image,
-    matcher,
-    current_cam_pose,
-):
-    track.active = True
-    # mask out object from image
-    left_obj_mask = get_convex_hull_mask(
-        np.array(detection.left.convex_hull), img_shape=img_shape
-    )
-    right_obj_mask = get_convex_hull_mask(
-        np.array(detection.right.convex_hull), img_shape=img_shape
-    )
-    left_features = matcher.detect_features(stereo_image.left, left_obj_mask)
-    LOGGER.debug("Detected %d features on left object", len(left_features))
-    # TODO: why does using left_obj_mask with no dilation work best here?
-    right_features = matcher.detect_features(
-        stereo_image.right, dilate_mask(left_obj_mask, num_pixels=0)
-    )
-    LOGGER.debug("Detected %d features on right object", len(right_features))
-    detection.left.features = left_features
-    detection.right.features = right_features
-    # match stereo features
-    stereo_matches = matcher.match_features(left_features, right_features)
-    LOGGER.debug("%d stereo matches", len(stereo_matches))
-    # match left features with track features
-    features, lm_mapping = _get_features_from_landmarks(track.landmarks)
-    track_matches = matcher.match_features(left_features, features)
-    LOGGER.debug("%d track matches", len(track_matches))
-    # localize object
-    T_world_obj1 = track.poses[max(track.poses.keys())]
-    # add motion if at least two poses are present
-    if len(track.poses) >= 2:
-        T_world_obj0 = track.poses[max(track.poses.keys()) - 1]
-        T_obj0_obj1 = np.linalg.inv(T_world_obj0) @ T_world_obj1
-        # print(track.poses)
-        # print(T_world_obj0)
-        # print(T_world_obj1)
-        # print("Relative transform: ", T_obj0_obj1)
-        T_world_obj = T_world_obj1 @ T_obj0_obj1  # constant motion assumption
-        # print(T_world_obj)
-    else:
-        T_world_obj = T_world_obj1
-    T_world_cam = current_cam_pose
-    T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-    if len(track_matches) >= 5 and track_index != -1:
-        T_cam_obj = _localize_object(
-            left_features=left_features,
-            track_matches=track_matches,
-            landmark_mapping=lm_mapping,
-            landmarks=copy.deepcopy(track.landmarks),
-            T_cam_obj=np.linalg.inv(T_obj_cam),
-            camera_params=stereo_cam.left,
-        )
-        T_obj_cam = np.linalg.inv(T_cam_obj)
-    T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
-    track.poses[img_id] = T_world_obj
-    # add new landmark observations from track matches
-    # add new landmarks from stereo matches
-    track.landmarks = _add_new_landmarks_and_observations(
-        landmarks=copy.deepcopy(track.landmarks),
-        track_matches=track_matches,
-        landmark_mapping=lm_mapping,
-        stereo_matches=stereo_matches,
-        left_features=left_features,
-        right_features=right_features,
-        stereo_cam=stereo_cam,
-        img_id=img_id,
-        T_obj_cam=T_obj_cam,
-    )
-    # BA optimizes landmark positions w.r.t. object and object position over time
-    # -> SLAM optimizes motion of camera
-    # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
-    if len(track.poses) > 3:
-        LOGGER.debug("Running BA")
-        track = object_bundle_adjustment(
-            object_track=copy.deepcopy(track),
-            all_poses=all_poses,
-            stereo_cam=stereo_cam,
-        )
-    # remove outlier landmarks
-    if True and track_index != -1 and track.landmarks:
-        landmarks_to_remove = []
-        points = []
-        for landmark in track.landmarks.values():
-            points.append(landmark.pt_3d)
-        points = np.array(points)
-        cluster_center = np.mean(points, axis=0)
-        stddev = np.std(points, axis=0)
-        for lid, lm in track.landmarks.items():
-            if np.linalg.norm(lm.pt_3d - cluster_center) > np.linalg.norm(3 * stddev):
-                landmarks_to_remove.append(lid)
-        LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
-        for lid in landmarks_to_remove:
-            track.landmarks.pop(lid)
-        if len(track.landmarks) < 25:
-            track.active = False
-    return track, left_features, right_features, stereo_matches
+def _compute_estimated_trajectories(
+    object_tracks: Dict[int, ObjectTrack]
+) -> Dict[int, List[Tuple[float, float, float]]]:
+    trajectories = {}
+    for track_id, track in object_tracks.items():
+        object_center = get_center_of_landmarks(track.landmarks.values())
+        trajectory = []
+        for pose_world_obj in track.poses.values():
+            object_center_world = from_homogeneous_pt(
+                pose_world_obj @ to_homogeneous_pt(object_center)
+            )
+            trajectory.append(tuple(object_center_world.tolist()))
+        trajectories[track_id] = trajectory
+    return trajectories
