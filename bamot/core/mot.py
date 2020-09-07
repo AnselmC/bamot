@@ -282,6 +282,7 @@ def _get_features_from_landmarks(
     return features, landmark_mapping
 
 
+@timer
 def run(
     images: Iterable[StereoImage],
     detections: Iterable[List[StereoObjectDetection]],
@@ -436,7 +437,8 @@ def run(
             }
         )
     stop_flag.set()
-    returned_data.put(_compute_estimated_trajectories(object_tracks))
+    shared_data.put({})  # final data to eliminate race condition
+    returned_data.put(_compute_estimated_trajectories(object_tracks, all_poses))
 
 
 @timer
@@ -457,7 +459,8 @@ def step(
     all_right_features = []
     all_stereo_matches = []
     LOGGER.debug("Running step for image %d", img_id)
-    if all(map(lambda x: x.left.track_id is None, new_detections)):
+    LOGGER.debug("Current ego pose:\n%s", current_cam_pose)
+    if new_detections and all(map(lambda x: x.left.track_id is None, new_detections)):
         # no track ids yet
         matches = _get_object_associations(new_detections, object_tracks)
     else:
@@ -479,7 +482,7 @@ def step(
     active_tracks = []
     matched_detections = []
     LOGGER.debug("%d matches with object tracks", len(matches))
-    with pathos.threading.ThreadPool(nodes=len(matches)) as executor:
+    with pathos.threading.ThreadPool(nodes=len(matches) if matches else 1) as executor:
         futures_to_track_index = {}
         for match in matches:
             detection = new_detections[match.detection_index]
@@ -563,16 +566,22 @@ def step(
 
 
 def _compute_estimated_trajectories(
-    object_tracks: Dict[int, ObjectTrack]
-) -> Dict[int, List[Tuple[float, float, float]]]:
+    object_tracks: Dict[int, ObjectTrack], all_poses: Dict[int, np.ndarray]
+) -> Tuple[Dict[int, List[Tuple[float, float, float]]]]:
     trajectories = {}
+    trajectories_cam = {}
     for track_id, track in object_tracks.items():
         object_center = get_center_of_landmarks(track.landmarks.values())
         trajectory = []
+        trajectory_cam = []
+        pose_cam_world = np.linalg.inv(all_poses[track_id])
         for pose_world_obj in track.poses.values():
-            object_center_world = from_homogeneous_pt(
-                pose_world_obj @ to_homogeneous_pt(object_center)
+            object_center_world = pose_world_obj @ to_homogeneous_pt(object_center)
+            object_center_cam = pose_cam_world @ object_center_world
+            trajectory.append(tuple(from_homogeneous_pt(object_center_world).tolist()))
+            trajectory_cam.append(
+                tuple(from_homogeneous_pt(object_center_cam).tolist())
             )
-            trajectory.append(tuple(object_center_world.tolist()))
         trajectories[track_id] = trajectory
-    return trajectories
+        trajectories_cam[track_id] = trajectory_cam
+    return trajectories, trajectories_cam

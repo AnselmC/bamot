@@ -131,7 +131,7 @@ def _update_tracks(
             if track.landmarks:
                 center /= len(track.landmarks)
             path_points.append(center.reshape(3,).tolist())
-            gt_points.append(gt_traj[i].reshape(3,).tolist())
+            gt_points.append(gt_traj[i])
             if i == 0:
                 track_size = len(points)
             if ido == -1:
@@ -192,6 +192,7 @@ def run(
     while not stop_flag.is_set():
         try:
             new_data = shared_data.get_nowait()
+            shared_data.task_done()
         except queue.Empty:
             new_data = None
         if new_data is not None:

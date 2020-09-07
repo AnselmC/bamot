@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
@@ -32,12 +32,16 @@ def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
     return (np.array([mx, my, 1]) / length).reshape(3, 1)
 
 
+TrackIdToPoseDict = Dict[int, List[np.ndarray]]
+
+
 def get_trajectories_from_kitti(
     detection_file: Path, poses: List[np.ndarray], offset: int
-) -> Dict[int, List[np.ndarray]]:
+) -> Tuple[TrackIdToPoseDict, TrackIdToPoseDict]:
     gt_trajectories = {}
+    gt_trajectories_cam = {}
     if not detection_file.exists():
-        return gt_trajectories
+        return gt_trajectories, gt_trajectories_cam
     with open(detection_file.as_posix(), "r") as fp:
         for line in fp:
             cols = line.split(" ")
@@ -59,14 +63,17 @@ def get_trajectories_from_kitti(
             T_w_cam0 = poses[frame]
             location_world = from_homogeneous_pt(
                 T_w_cam0 @ to_homogeneous_pt(location_cam)
-            )
+            ).tolist()
             # cols[16] is rotation of object
             # cols[17] is score
             gt_trajectories[track_id] = gt_trajectories.get(track_id, []) + [
                 location_world
             ]
+            gt_trajectories_cam[track_id] = gt_trajectories_cam.get(track_id, []) + [
+                location_cam.tolist()
+            ]
     LOGGER.debug("Extracted GT trajectories for %d objects", len(gt_trajectories))
-    return gt_trajectories
+    return gt_trajectories, gt_trajectories_cam
 
 
 def get_gt_poses_from_kitti(oxts_file: Path) -> List[np.ndarray]:

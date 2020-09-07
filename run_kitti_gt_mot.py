@@ -8,6 +8,7 @@ import multiprocessing as mp
 import queue
 import threading
 import time
+import warnings
 from pathlib import Path
 from typing import Iterable, List, Tuple, Union
 
@@ -26,12 +27,15 @@ from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
+warnings.filterwarnings(action="ignore")
+
+
 LOG_LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "ERROR": logging.ERROR}
 LOGGER = colorlog.getLogger()
 HANDLER = TqdmLoggingHandler()
 HANDLER.setFormatter(
     colorlog.ColoredFormatter(
-        "%(asctime)s | %(log_color)s%(name)s:%(levelname)s%(reset)s | %(message)s",
+        "%(asctime)s | %(log_color)s%(name)s:%(levelname)s%(reset)s: %(message)s",
         datefmt="%H:%M:%S",
         log_colors={
             "DEBUG": "cyan",
@@ -46,15 +50,13 @@ HANDLER.setFormatter(
 LOGGER.handlers = [HANDLER]
 
 
-def _fake_slam(
-    slam_data: Union[queue.Queue, mp.Queue], stop_flag: Union[threading.Event, mp.Event]
-):
+def _fake_slam(slam_data: Union[queue.Queue, mp.Queue], gt_poses: List[np.ndarray]):
     all_poses = []
-    while not stop_flag.is_set():
-        all_poses.append(np.identity(4))
-        slam_data.put(all_poses)  # not moving
+    for i, pose in enumerate(gt_poses):
+        all_poses = gt_poses[: i + 1]
+        slam_data.put(all_poses)
         time.sleep(20 / 1000)  # 20 ms or 50 Hz
-    LOGGER.debug("Finished yielding fake slam data")
+    LOGGER.debug("Finished adding fake slam data")
 
 
 def _get_image_shape(kitti_path: Path) -> Tuple[int, int]:
@@ -201,11 +203,17 @@ if __name__ == "__main__":
         help="Whether to run process continuously (default is next step via 'n' keypress).",
     )
     parser.add_argument(
+        "-t",
+        "--tag",
+        type=str,
+        help="A tag for the given run (default=`bamot`)",
+        default="bamot",
+    )
+    parser.add_argument(
         "--out",
         dest="out",
         type=str,
-        help="Where to save estimated object trajectories (default: `trajectory.json`)",
-        default="trajectory.json",
+        help="Where to save GT and estimated object trajectories (default: `<kitti>/trajectories/<scene>/<tag>`)",
     )
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
@@ -223,15 +231,15 @@ if __name__ == "__main__":
         feature_matcher = get_superpoint_feature_matcher()
     LOGGER.setLevel(LOG_LEVELS[args.verbosity])
 
-    print(30 * "+")
-    print("STARTING BAMOT with GT KITTI data")
-    print(f"KITTI PATH: {kitti_path}")
-    print(f"SCENE: {scene}")
-    print(f"OBJ. DET. PATH: {obj_detections_path}")
-    print(f"FEATURE MATCHER: {feature_matcher.name}")
-    print(f"VERBOSITY LEVEL: {args.verbosity}")
-    print(f"USING MULTI-PROCESS: {args.multiprocessing}")
-    print(30 * "+")
+    LOGGER.info(30 * "+")
+    LOGGER.info("STARTING BAMOT with GT KITTI data")
+    LOGGER.info(f"KITTI PATH: {kitti_path}")
+    LOGGER.info(f"SCENE: {scene}")
+    LOGGER.info(f"OBJ. DET. PATH: {obj_detections_path}")
+    LOGGER.info(f"FEATURE MATCHER: {feature_matcher.name}")
+    LOGGER.info(f"VERBOSITY LEVEL: {args.verbosity}")
+    LOGGER.info(f"USING MULTI-PROCESS: {args.multiprocessing}")
+    LOGGER.info(30 * "+")
 
     if args.multiprocessing:
         queue_class = mp.JoinableQueue
@@ -251,7 +259,7 @@ if __name__ == "__main__":
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
     stereo_cam = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
     gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
-    gt_trajectories = get_trajectories_from_kitti(
+    gt_trajectories, gt_trajectories_cam = get_trajectories_from_kitti(
         kitti_path / "label_02" / (scene + ".txt"), gt_poses, args.offset
     )
     detection_stream = _get_detection_stream(
@@ -262,7 +270,7 @@ if __name__ == "__main__":
     )
 
     slam_process = process_class(
-        target=_fake_slam, args=[slam_data, stop_flag], name="Fake SLAM"
+        target=_fake_slam, args=[slam_data, gt_poses], name="Fake SLAM"
     )
     mot_process = process_class(
         target=run,
@@ -288,6 +296,7 @@ if __name__ == "__main__":
     if args.no_viewer:
         while not stop_flag.is_set():
             shared_data.get(block=True)
+            shared_data.task_done()
             next_step.set()
     else:
         run_viewer(
@@ -296,13 +305,43 @@ if __name__ == "__main__":
             next_step=next_step,
             gt_trajectories=gt_trajectories,
         )
+    LOGGER.info("No more frames - terminating processes")
     slam_process.join()
     LOGGER.debug("Joined fake SLAM thread")
     mot_process.join()
     LOGGER.debug("Joined MOT thread")
-    estimated_trajectories = returned_data.get()
-    LOGGER.info("Saving object track trajectories to %s", args.out)
-    with open(args.out, "w") as fp:
-        json.dump(estimated_trajectories, fp, indent=4, sort_keys=True)
+    estimated_trajectories_world, estimated_trajectories_cam = returned_data.get()
+    returned_data.task_done()
+    returned_data.join()
+    if not args.out:
+        out_path = kitti_path / "trajectories" / scene / args.tag
+    else:
+        out_path = Path(args.out)
+
+    # Save trajectories
+    out_path.mkdir(exist_ok=True, parents=True)
+    out_gt_world = out_path / "gt_trajectories_world.json"
+    out_gt_cam = out_path / "gt_trajectories_cam.json"
+    out_est_world = out_path / "est_trajectories_world.json"
+    out_est_cam = out_path / "est_trajectories_cam.json"
+    # estimated
+    with open(out_est_world.as_posix(), "w") as fp:
+        json.dump(estimated_trajectories_world, fp, indent=4, sort_keys=True)
+    with open(out_est_cam.as_posix(), "w") as fp:
+        json.dump(estimated_trajectories_cam, fp, indent=4, sort_keys=True)
+    # ground truth
+    with open(out_gt_world.as_posix(), "w") as fp:
+        json.dump(gt_trajectories, fp, indent=4, sort_keys=True)
+    with open(out_gt_cam.as_posix(), "w") as fp:
+        json.dump(gt_trajectories_cam, fp, indent=4, sort_keys=True)
+    LOGGER.info(
+        "Saved estimated and ground truth object track trajectories to %s",
+        out_path.as_posix(),
+    )
+
+    # Cleanly shutdown
+    while not shared_data.empty():
+        shared_data.get()
+        shared_data.task_done()
     shared_data.join()
-    print("FINISHED RUNNING KITTI GT MOT")
+    LOGGER.info("FINISHED RUNNING KITTI GT MOT")
