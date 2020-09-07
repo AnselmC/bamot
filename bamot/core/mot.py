@@ -335,10 +335,14 @@ def run(
         track_matches = feature_matcher.match_features(left_features, features)
         LOGGER.debug("%d track matches", len(track_matches))
         # localize object
-        T_world_obj1 = track.poses[max(track.poses.keys())]
+        T_world_obj1 = track.poses[list(track.poses.keys())[-1]]  # sorted by default
         # add motion if at least two poses are present
         if len(track.poses) >= 2:
-            T_world_obj0 = track.poses[max(track.poses.keys()) - 1]
+            try:
+                T_world_obj0 = track.poses[list(track.poses.keys())[-2]]
+            except KeyError as e:
+                print(track.poses.keys())
+                raise e
             T_obj0_obj1 = np.linalg.inv(T_world_obj0) @ T_world_obj1
             # print(track.poses)
             # print(T_world_obj0)

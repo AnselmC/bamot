@@ -12,6 +12,7 @@ from bamot.util.cv import (from_homogeneous_pt, get_center_of_landmarks,
                            to_homogeneous_pt)
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
+LOGGER.setLevel(logging.ERROR)
 RNG = np.random.default_rng()
 Color = np.ndarray
 # Create some random colors
@@ -68,14 +69,16 @@ def _update_tracks(
     ],
     visualizer: o3d.visualization.Visualizer,
     object_tracks: Dict[int, ObjectTrack],
+    gt_trajectories: Dict[int, List[np.ndarray]],
     first_update: bool = False,
 ):
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
     for ido, track in object_tracks.items():
-        pt_cloud, bounding_box, path, color = track_geometries.get(
+        pt_cloud, bounding_box, path, gt_path, color = track_geometries.get(
             ido,
             (
                 o3d.geometry.PointCloud(),
+                o3d.geometry.LineSet(),
                 o3d.geometry.LineSet(),
                 o3d.geometry.LineSet(),
                 COLORS[RNG.choice(len(COLORS))],
@@ -86,8 +89,9 @@ def _update_tracks(
         color[np.argmax(color)] = 1.0
         # draw path
         path_points = []
+        gt_points = []
+        gt_traj = gt_trajectories[ido]
         points = []
-        colors = []
         white = np.array([1.0, 1.0, 1.0])
         lighter_color = color + 0.75 * white
         lighter_color = np.clip(lighter_color, 0, 1)
@@ -96,15 +100,11 @@ def _update_tracks(
 
             center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
             for lm in track.landmarks.values():
-                # if i > 0:
-                #    colors.append(lighter_color)
-                # else:
                 pt_world = from_homogeneous_pt(
                     pose_world_obj @ to_homogeneous_pt(lm.pt_3d)
                 )
                 center += pt_world
                 if i == 0:
-                    colors.append(color)
                     points.append(pt_world)
             if i == 0 and len(points) > 3:
                 tmp_pt_cloud = o3d.geometry.PointCloud()
@@ -131,6 +131,7 @@ def _update_tracks(
             if track.landmarks:
                 center /= len(track.landmarks)
             path_points.append(center.reshape(3,).tolist())
+            gt_points.append(gt_traj[i].reshape(3,).tolist())
             if i == 0:
                 track_size = len(points)
             if ido == -1:
@@ -142,30 +143,39 @@ def _update_tracks(
         if len(path_lines) > 0:
             path.points = o3d.utility.Vector3dVector(path_points)
             path.lines = o3d.utility.Vector2iVector(path_lines)
+            gt_path.points = o3d.utility.Vector3dVector(gt_points)
+            gt_path.lines = o3d.utility.Vector2iVector(path_lines)
         if track.active:
-            if len(points) > 0:
-                pt_cloud.colors = o3d.utility.Vector3dVector(np.array(colors))
-            # pt_cloud.paint_uniform_color(color)
+            pt_cloud.paint_uniform_color(color)
             path.paint_uniform_color(color)
+            gt_path.paint_uniform_color(lighter_color)
             bounding_box.paint_uniform_color(color)
         else:
             LOGGER.debug("Track is inactive")
             pt_cloud.paint_uniform_color([0.0, 0.0, 0.0])
             path.paint_uniform_color([0.0, 0.0, 0.0])
+            gt_path.paint_uniform_color([0.0, 0.0, 0.0])
             bounding_box.paint_uniform_color([0.0, 0.0, 0.0])
         if track_geometries.get(ido) is None:
             visualizer.add_geometry(pt_cloud, reset_bounding_box=first_update)
             visualizer.add_geometry(path, reset_bounding_box=first_update)
+            visualizer.add_geometry(gt_path, reset_bounding_box=first_update)
             visualizer.add_geometry(bounding_box, reset_bounding_box=first_update)
-            track_geometries[ido] = (pt_cloud, bounding_box, path, color)
+            track_geometries[ido] = (pt_cloud, bounding_box, path, gt_path, color)
         else:
             visualizer.update_geometry(pt_cloud)
             visualizer.update_geometry(path)
+            visualizer.update_geometry(gt_path)
             visualizer.update_geometry(bounding_box)
     return track_geometries
 
 
-def run(shared_data: queue.Queue, stop_flag: Event, next_step: Event):
+def run(
+    shared_data: queue.Queue,
+    stop_flag: Event,
+    next_step: Event,
+    gt_trajectories: Dict[int, List[np.ndarray]],
+):
     vis = o3d.visualization.Visualizer()
     width, height = get_screen_size()
     vis.create_window("MOT")
@@ -187,7 +197,11 @@ def run(shared_data: queue.Queue, stop_flag: Event, next_step: Event):
         if new_data is not None:
             LOGGER.debug("Got new data")
             tracks = _update_tracks(
-                tracks, vis, new_data["object_tracks"], first_update=first_update
+                tracks,
+                vis,
+                new_data["object_tracks"],
+                gt_trajectories,
+                first_update=first_update,
             )
             stereo_image = new_data["stereo_image"]
             all_left_features = new_data["all_left_features"]

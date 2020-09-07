@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import Iterable, List, Tuple, Union
 
+import colorlog
 import cv2
 import numpy as np
 import tqdm
@@ -20,12 +21,29 @@ from bamot.core.base_types import (ObjectDetection, StereoImage,
 from bamot.core.mot import run
 from bamot.util.cv import (get_orb_feature_matcher,
                            get_superpoint_feature_matcher)
-from bamot.util.kitti import get_cameras_from_kitti
+from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
+                              get_trajectories_from_kitti)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
 LOG_LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "ERROR": logging.ERROR}
-LOGGER = logging.getLogger("MAIN")
+LOGGER = colorlog.getLogger()
+HANDLER = TqdmLoggingHandler()
+HANDLER.setFormatter(
+    colorlog.ColoredFormatter(
+        "%(asctime)s | %(log_color)s%(name)s:%(levelname)s%(reset)s | %(message)s",
+        datefmt="%H:%M:%S",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "white",
+            "SUCCESS:": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "red,bg_white",
+        },
+    )
+)
+LOGGER.handlers = [HANDLER]
 
 
 def _fake_slam(
@@ -109,10 +127,16 @@ if __name__ == "__main__":
         default="INFO",
     )
     parser.add_argument(
-        "-i",
-        "--images",
-        dest="images",
-        help="path to kitti tracking dataset (default is `./data/KITTI/tracking/training`",
+        "-k",
+        "--kitti",
+        dest="kitti",
+        help="""Path to kitti tracking dataset (default is `./data/KITTI/tracking/training`).
+        Images should be located at `<path>/image_0(2|3)/<scene>`.
+        Camera calibration file should be located at `<path>/calib_cam_to_cam.txt`.
+        GT poses should be located at `<path>/oxts/<scene>.txt` (optional).
+        GT object trajectories should be located at `<path>/label_02/<scene>.txt` (optional).
+        *note:* <scene> is zero-padded.
+        """,
         type=str,
     )
     parser.add_argument(
@@ -120,7 +144,7 @@ if __name__ == "__main__":
         "--detections",
         dest="detections",
         help="path to detections generated with `preprocess_kitti_groundtruth.py`"
-        + "(default is `./data/KITTI/tracking/training/preprocessed/mot",
+        + "(default is `<kitti>/preprocessed/mot",
         type=str,
     )
     parser.add_argument(
@@ -135,18 +159,22 @@ if __name__ == "__main__":
         "-o",
         "--offset",
         dest="offset",
-        help="The image number offset to use (i.e. start at image # offset instead of 0)",
+        help="The image number offset to use (i.e. start at image # <offset> instead of 0)",
         type=int,
         default=0,
     )
     parser.add_argument(
-        "-m", "--map", dest="map", help="Include static map", action="store_true"
+        "-m",
+        "--map",
+        dest="map",
+        help="Include static map as object",
+        action="store_true",
     )
     parser.add_argument(
         "-nv",
         "--no-viewer",
         dest="no_viewer",
-        help="disable viewer",
+        help="Disable viewer",
         action="store_true",
     )
     parser.add_argument(
@@ -161,7 +189,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-mp",
         "--multiprocessing",
-        help="Whether to use multiple processes instead of multiple threads",
+        help="Whether to run viewer in separate process (default separate thread).",
         dest="multiprocessing",
         action="store_true",
     )
@@ -181,8 +209,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
-    if args.images is not None:
-        kitti_path = Path(args.images)
+    if args.kitti is not None:
+        kitti_path = Path(args.kitti)
     else:
         kitti_path = Path(".") / "data" / "KITTI" / "tracking" / "training"
     if args.detections:
@@ -193,6 +221,8 @@ if __name__ == "__main__":
         feature_matcher = get_orb_feature_matcher()
     else:
         feature_matcher = get_superpoint_feature_matcher()
+    LOGGER.setLevel(LOG_LEVELS[args.verbosity])
+
     print(30 * "+")
     print("STARTING BAMOT with GT KITTI data")
     print(f"KITTI PATH: {kitti_path}")
@@ -202,15 +232,12 @@ if __name__ == "__main__":
     print(f"VERBOSITY LEVEL: {args.verbosity}")
     print(f"USING MULTI-PROCESS: {args.multiprocessing}")
     print(30 * "+")
-    logging.basicConfig(level=LOG_LEVELS[args.verbosity])
-    logging.getLogger().handlers = [TqdmLoggingHandler()]
-    if args.multiprocessing:
 
+    if args.multiprocessing:
         queue_class = mp.JoinableQueue
         flag_class = mp.Event
         process_class = mp.Process
     else:
-
         queue_class = queue.Queue
         flag_class = threading.Event
         process_class = threading.Thread
@@ -223,6 +250,10 @@ if __name__ == "__main__":
     img_shape = _get_image_shape(kitti_path)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
     stereo_cam = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
+    gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
+    gt_trajectories = get_trajectories_from_kitti(
+        kitti_path / "label_02" / (scene + ".txt"), gt_poses, args.offset
+    )
     detection_stream = _get_detection_stream(
         obj_detections_path,
         img_shape=img_shape,
@@ -259,7 +290,12 @@ if __name__ == "__main__":
             shared_data.get(block=True)
             next_step.set()
     else:
-        run_viewer(shared_data=shared_data, stop_flag=stop_flag, next_step=next_step)
+        run_viewer(
+            shared_data=shared_data,
+            stop_flag=stop_flag,
+            next_step=next_step,
+            gt_trajectories=gt_trajectories,
+        )
     slam_process.join()
     LOGGER.debug("Joined fake SLAM thread")
     mot_process.join()
