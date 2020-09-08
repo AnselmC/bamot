@@ -400,9 +400,10 @@ def run(
             cluster_center = np.mean(points, axis=0)
             stddev = np.std(points, axis=0)
             for lid, lm in track.landmarks.items():
-                if np.linalg.norm(lm.pt_3d - cluster_center) > np.linalg.norm(
-                    3 * stddev
-                ):
+                # if np.linalg.norm(lm.pt_3d - cluster_center) > np.linalg.norm(
+                #    2 * stddev
+                # ):
+                if np.linalg.norm(lm.pt_3d - cluster_center) > 4.0:
                     landmarks_to_remove.append(lid)
             LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
             for lid in landmarks_to_remove:
@@ -411,19 +412,19 @@ def run(
                 track.active = False
         return track, left_features, right_features, stereo_matches
 
-    for it, (stereo_image, new_detections) in enumerate(zip(images, detections)):
+    for (img_id, stereo_image), new_detections in zip(images, detections):
         while not continuous and not next_step.is_set():
             time.sleep(0.05)
         next_step.clear()
         all_poses = slam_data.get()
-        current_pose = all_poses[it]
+        current_pose = all_poses[img_id]
         object_tracks, all_left_features, all_right_features, all_stereo_matches = step(
             new_detections=new_detections,
             stereo_image=stereo_image,
             object_tracks=copy.deepcopy(object_tracks),  # weird behavior w/o deepcopy
             process_match=_process_match,
             stereo_cam=stereo_cam,
-            img_id=it,
+            img_id=img_id,
             current_cam_pose=current_pose,
             all_poses=all_poses,
         )
@@ -567,21 +568,29 @@ def step(
 
 def _compute_estimated_trajectories(
     object_tracks: Dict[int, ObjectTrack], all_poses: Dict[int, np.ndarray]
-) -> Tuple[Dict[int, List[Tuple[float, float, float]]]]:
+) -> Tuple[Dict[int, Dict[int, Tuple[float, float, float]]]]:
     trajectories = {}
     trajectories_cam = {}
     for track_id, track in object_tracks.items():
         object_center = get_center_of_landmarks(track.landmarks.values())
-        trajectory = []
-        trajectory_cam = []
+        trajectory = {}
+        trajectory_cam = {}
         pose_cam_world = np.linalg.inv(all_poses[track_id])
-        for pose_world_obj in track.poses.values():
+        for img_id, pose_world_obj in track.poses.items():
             object_center_world = pose_world_obj @ to_homogeneous_pt(object_center)
             object_center_cam = pose_cam_world @ object_center_world
-            trajectory.append(tuple(from_homogeneous_pt(object_center_world).tolist()))
-            trajectory_cam.append(
-                tuple(from_homogeneous_pt(object_center_cam).tolist())
+            trajectory[img_id] = tuple(
+                from_homogeneous_pt(object_center_world).tolist()
+            )
+            trajectory_cam[img_id] = tuple(
+                from_homogeneous_pt(object_center_cam).tolist()
             )
         trajectories[track_id] = trajectory
         trajectories_cam[track_id] = trajectory_cam
     return trajectories, trajectories_cam
+
+
+# TODO: add image id to trajectories, s.t. matching is better
+# TODO: add constant motion constraint between keyframes
+# Given a graph, graph optimization aims to find an optimal estimation of the nodes values which minimize the errors that determined by the constraints.
+# i.e.: maybe it's enough to add constraints between

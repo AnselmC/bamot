@@ -12,7 +12,7 @@ from bamot.util.cv import (from_homogeneous_pt, get_center_of_landmarks,
                            to_homogeneous_pt)
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
-LOGGER.setLevel(logging.ERROR)
+LOGGER.setLevel(logging.DEBUG)
 RNG = np.random.default_rng()
 Color = np.ndarray
 # Create some random colors
@@ -69,7 +69,7 @@ def _update_tracks(
     ],
     visualizer: o3d.visualization.Visualizer,
     object_tracks: Dict[int, ObjectTrack],
-    gt_trajectories: Dict[int, List[np.ndarray]],
+    gt_trajectories: Dict[int, Dict[int, np.ndarray]],
     first_update: bool = False,
 ):
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
@@ -96,7 +96,7 @@ def _update_tracks(
         lighter_color = color + 0.75 * white
         lighter_color = np.clip(lighter_color, 0, 1)
         track_size = 0
-        for i, pose_world_obj in enumerate(reversed(list(track.poses.values()))):
+        for i, (img_id, pose_world_obj) in enumerate(track.poses.items()):
 
             center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
             for lm in track.landmarks.values():
@@ -104,9 +104,9 @@ def _update_tracks(
                     pose_world_obj @ to_homogeneous_pt(lm.pt_3d)
                 )
                 center += pt_world
-                if i == 0:
+                if i == len(track.poses) - 1:
                     points.append(pt_world)
-            if i == 0 and len(points) > 3:
+            if i == len(track.poses) - 1 and len(points) > 3:
                 tmp_pt_cloud = o3d.geometry.PointCloud()
                 tmp_pt_cloud.points = o3d.utility.Vector3dVector(points)
                 bbox = tmp_pt_cloud.get_oriented_bounding_box()
@@ -131,8 +131,13 @@ def _update_tracks(
             if track.landmarks:
                 center /= len(track.landmarks)
             path_points.append(center.reshape(3,).tolist())
-            gt_points.append(gt_traj[i])
-            if i == 0:
+            try:
+                gt_points.append(gt_traj[img_id])
+            except:
+                print(img_id)
+                print(gt_traj.keys())
+                raise
+            if i == len(track.poses) - 1:
                 track_size = len(points)
             if ido == -1:
                 break
@@ -178,7 +183,7 @@ def run(
 ):
     vis = o3d.visualization.Visualizer()
     width, height = get_screen_size()
-    vis.create_window("MOT")
+    vis.create_window("MOT", top=0, left=1440)
     view_control = vis.get_view_control()
     view_control.set_constant_z_far(100)
     view_control.set_constant_z_near(-100)
@@ -186,7 +191,6 @@ def run(
     opts.background_color = np.array([0.0, 0.0, 0.0,])
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Stereo Image", (width // 2, height // 2))
     tracks: Dict[int, Tuple[o3d.geometry.PointCloud, Color]] = {}
     first_update = True
     while not stop_flag.is_set():
@@ -221,6 +225,13 @@ def run(
                     right_features,
                     stereo_matches,
                 )
+            if first_update:
+                img_size = stereo_image.left.shape
+                img_ratio = img_size[1] / img_size[0]
+                img_width = int(0.75 * width)
+                img_height = int(img_width / img_ratio)
+                cv2.resizeWindow("Stereo Image", (img_width, img_height))
+
             full_img = np.hstack([stereo_image.left, stereo_image.right])
             cv2.imshow(cv2_window_name, full_img)
         keypress = cv2.waitKey(1)
@@ -231,4 +242,4 @@ def run(
         vis.update_renderer()
         first_update = False
     LOGGER.debug("Finished viewer")
-    vis.destroy_window("MOT")
+    vis.destroy_window()

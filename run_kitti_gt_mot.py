@@ -1,6 +1,7 @@
 """Script for BAMOT with GT data from KITTI and mocked SLAM system.
 """
 import argparse
+import datetime
 import glob
 import json
 import logging
@@ -10,7 +11,7 @@ import threading
 import time
 import warnings
 from pathlib import Path
-from typing import Iterable, List, Tuple, Union
+from typing import Iterable, List, Optional, Tuple, Union
 
 import colorlog
 import cv2
@@ -50,10 +51,12 @@ HANDLER.setFormatter(
 LOGGER.handlers = [HANDLER]
 
 
-def _fake_slam(slam_data: Union[queue.Queue, mp.Queue], gt_poses: List[np.ndarray]):
+def _fake_slam(
+    slam_data: Union[queue.Queue, mp.Queue], gt_poses: List[np.ndarray], offset: int
+):
     all_poses = []
     for i, pose in enumerate(gt_poses):
-        all_poses = gt_poses[: i + 1]
+        all_poses = gt_poses[: i + 1 + offset]
         slam_data.put(all_poses)
         time.sleep(20 / 1000)  # 20 ms or 50 Hz
     LOGGER.debug("Finished adding fake slam data")
@@ -71,7 +74,7 @@ def _get_image_stream(
     scene: str,
     stop_flag: Union[threading.Event, mp.Event],
     offset: int,
-) -> Tuple[Iterable[StereoImage], Tuple[int, int]]:
+) -> Iterable[Tuple[int, StereoImage]]:
     left_img_path = kitti_path / "image_02" / scene
     right_img_path = kitti_path / "image_03" / scene
     left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
@@ -80,12 +83,14 @@ def _get_image_stream(
         "Found %d left images and %d right images", len(left_imgs), len(right_imgs)
     )
     LOGGER.debug("Starting at image %d", offset)
+    img_id = offset
     for left, right in tqdm.tqdm(
         zip(left_imgs[offset:], right_imgs[offset:]), total=len(left_imgs[offset:]),
     ):
         left_img = cv2.imread(left, cv2.IMREAD_COLOR).astype(np.uint8)
         right_img = cv2.imread(right, cv2.IMREAD_COLOR).astype(np.uint8)
-        yield StereoImage(left_img, right_img)
+        yield img_id, StereoImage(left_img, right_img)
+        img_id += 1
     LOGGER.debug("Setting stop flag")
     stop_flag.set()
 
@@ -94,6 +99,7 @@ def _get_detection_stream(
     obj_detections_path: Path,
     offset: int,
     img_shape: Tuple[int, int],
+    object_ids: Optional[List[int]],
     include_static_map: bool = False,
 ) -> Iterable[List[StereoObjectDetection]]:
     detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.json"))
@@ -113,6 +119,10 @@ def _get_detection_stream(
         detections = StereoObjectDetection.schema().loads(json_data, many=True)
         if include_static_map:
             detections.append(StereoObjectDetection(left=static_det, right=static_det))
+        if object_ids:
+            detections = list(
+                filter(lambda x: x.left.track_id in object_ids, detections)
+            )
         yield detections
     LOGGER.debug("Finished yielding object detections")
 
@@ -146,7 +156,7 @@ if __name__ == "__main__":
         "--detections",
         dest="detections",
         help="path to detections generated with `preprocess_kitti_groundtruth.py`"
-        + "(default is `<kitti>/preprocessed/mot",
+        + "(default is `<kitti>/preprocessed/mot)",
         type=str,
     )
     parser.add_argument(
@@ -206,8 +216,8 @@ if __name__ == "__main__":
         "-t",
         "--tag",
         type=str,
-        help="A tag for the given run (default=`bamot`)",
-        default="bamot",
+        help="A tag for the given run (default=`YEAR_MONTH_DAY-HOUR_MINUTE`)",
+        default=datetime.datetime.strftime(datetime.datetime.now(), "%Y_%m_%d-%H_%M"),
     )
     parser.add_argument(
         "--out",
@@ -215,6 +225,14 @@ if __name__ == "__main__":
         type=str,
         help="Where to save GT and estimated object trajectories (default: `<kitti>/trajectories/<scene>/<tag>`)",
     )
+    parser.add_argument(
+        "-id",
+        "--indeces",
+        dest="indeces",
+        help="Use this to only track specific object ids",
+        nargs="+",
+    )
+
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
     if args.kitti is not None:
@@ -266,11 +284,12 @@ if __name__ == "__main__":
         obj_detections_path,
         img_shape=img_shape,
         offset=args.offset,
+        object_ids=[int(idx) for idx in args.indeces] if args.indeces else None,
         include_static_map=args.map,
     )
 
     slam_process = process_class(
-        target=_fake_slam, args=[slam_data, gt_poses], name="Fake SLAM"
+        target=_fake_slam, args=[slam_data, gt_poses, args.offset], name="Fake SLAM"
     )
     mot_process = process_class(
         target=run,

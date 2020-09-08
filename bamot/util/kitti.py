@@ -32,7 +32,7 @@ def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
     return (np.array([mx, my, 1]) / length).reshape(3, 1)
 
 
-TrackIdToPoseDict = Dict[int, List[np.ndarray]]
+TrackIdToPoseDict = Dict[int, Dict[int, np.ndarray]]
 
 
 def get_trajectories_from_kitti(
@@ -63,15 +63,14 @@ def get_trajectories_from_kitti(
             T_w_cam0 = poses[frame]
             location_world = from_homogeneous_pt(
                 T_w_cam0 @ to_homogeneous_pt(location_cam)
-            ).tolist()
+            )
             # cols[16] is rotation of object
             # cols[17] is score
-            gt_trajectories[track_id] = gt_trajectories.get(track_id, []) + [
-                location_world
-            ]
-            gt_trajectories_cam[track_id] = gt_trajectories_cam.get(track_id, []) + [
-                location_cam.tolist()
-            ]
+            if gt_trajectories.get(track_id) is None:
+                gt_trajectories[track_id] = {}
+                gt_trajectories_cam[track_id] = {}
+            gt_trajectories[track_id][frame] = location_world.tolist()
+            gt_trajectories_cam[track_id][frame] = location_cam.tolist()
     LOGGER.debug("Extracted GT trajectories for %d objects", len(gt_trajectories))
     return gt_trajectories, gt_trajectories_cam
 

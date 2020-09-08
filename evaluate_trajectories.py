@@ -36,20 +36,23 @@ if __name__ == "__main__":
     # per object, get trajectories
     err_dist = {}
     for i, track_id in enumerate(gt_trajectories.keys()):
-        gt_traj = np.array(gt_trajectories[track_id]).reshape(-1, 3)
-        gt_traj_cam = np.array(gt_trajectories_cam[track_id]).reshape(-1, 3)
+        gt_traj_dict = gt_trajectories[track_id]
+        gt_traj_cam_dict = gt_trajectories_cam[track_id]
 
         if track_id not in est_trajectories:
             continue
-        est_traj = np.array(est_trajectories[track_id]).reshape(-1, 3)
-        est_traj_cam = np.array(est_trajectories_cam[track_id]).reshape(-1, 3)
+        est_traj_dict = est_trajectories[track_id]
+        est_traj_cam_dict = est_trajectories_cam[track_id]
         err_dist_obj = []
-        for gt_pt, est_pt in zip(gt_traj_cam, est_traj_cam):
-            error = np.linalg.norm(gt_pt - est_pt)
-            dist = np.linalg.norm(np.array(est_pt))
+        for img_id, est_pt in est_traj_cam_dict.items():
+            gt_pt = gt_traj_cam_dict[img_id]
+            error = np.linalg.norm(np.array(gt_pt) - np.array(est_pt))
+            dist = np.linalg.norm(np.array(gt_pt))
             err_dist_obj.append((error, dist))
         err_dist[track_id] = err_dist_obj
         if args.plot:
+            gt_traj = np.array(list(gt_traj_dict.values())).reshape(-1, 3)
+            est_traj = np.array(list(est_traj_dict.values())).reshape(-1, 3)
             fig = plt.figure(figsize=plt.figaspect(0.5))
             plt.title(f"Object w/ ID {track_id}")
             ax_3d = fig.add_subplot(1, 2, 1, projection="3d")
@@ -67,7 +70,7 @@ if __name__ == "__main__":
             ax_3d.set_zlabel("z")
             plt.legend()
             ax_2d = fig.add_subplot(1, 2, 2)
-            ax_2d.plot(
+            ax_2d.scatter(
                 list(map(lambda x: x[0], err_dist_obj)),
                 list(map(lambda x: x[1], err_dist_obj)),
             )
@@ -75,9 +78,10 @@ if __name__ == "__main__":
             ax_2d.set_ylabel("Distance [m]")
             ax_3d.get_shared_x_axes().remove(ax_2d)
             ax_3d.get_shared_y_axes().remove(ax_2d)
-            ax_3d.view_init(0, 180)
+            ax_3d.view_init(0, 90)
 
             fig.tight_layout()
+            fig.axes[0].axis("off")
             plt.show()
         # trajectory plot should draw world trajectories
         # error estimates should be made in cam coordinates?
