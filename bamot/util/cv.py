@@ -3,15 +3,14 @@ from functools import partial
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
+import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 import cv2
 import numpy as np
 import tensorflow as tf
-from PIL import Image, ImageDraw
-
-import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 from bamot import SUPERPOINT_WEIGHTS_PATH
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
+from PIL import Image, ImageDraw
 
 tf.config.threading.set_inter_op_parallelism_threads(
     2
@@ -133,7 +132,6 @@ def get_superpoint_feature_matcher(
     tf.get_logger().setLevel("ERROR")  # surpress TF1 -> TF2 warnings
     loaded = tf.saved_model.load(weights_path.as_posix())
     model = loaded.signatures["serving_default"]
-    matcher = cv2.BFMatcher_create(normType=cv2.NORM_L2, crossCheck=True)
 
     def preprocess_image(
         img: np.ndarray, mask: Optional[np.ndarray] = None
@@ -164,17 +162,18 @@ def get_superpoint_feature_matcher(
         # mask = None
         tensor = preprocess_image(img, mask)
         out = model(tensor)
-        kp_map = out["prob_nms"].numpy()[0]
-        desc_map = out["descriptors"].numpy()[0]
+        kp_map = out["prob_nms"].numpy()[0].astype(np.float)
+        desc_map = out["descriptors"].numpy()[0].astype(np.float)
         kp, desc = sp.extract_superpoint_keypoints_and_descriptors(
             kp_map, desc_map, num_features
         )
+        desc = desc.astype(np.float32)
         return _get_features_from_kp_and_desc(kp, desc)
 
     return FeatureMatcher(
         "SuperPoint",
         detect_features=detect_features,
-        match_features=partial(match_features, matcher=matcher, threshold=1.0),
+        match_features=partial(match_features, norm=cv2.NORM_L2, threshold=1.0),
     )
 
 

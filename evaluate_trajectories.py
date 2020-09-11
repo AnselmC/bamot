@@ -1,8 +1,8 @@
 import argparse
 import json
-import time
 from pathlib import Path
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
@@ -11,8 +11,34 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("trajectories", help="Path to trajectories to evaluate")
     parser.add_argument(
-        "-p", "--plot", dest="plot", action="store_true", help="Turn plotting on"
+        "-p",
+        "--plot",
+        dest="plot",
+        nargs="?",
+        help="Turn plotting on (default when passed is `both`)",
+        choices=["both", "error", "trajectory"],
+        const="both",
     )
+    parser.add_argument(
+        "-s",
+        "--save",
+        dest="save",
+        nargs="?",
+        help="Save plots w/ optional path (only valid if `--plot` is given, default directory is `data/plots/`)",
+        const="data/plots",
+    )
+
+    parser.add_argument(
+        "-n", "--num_objects", dest="num_objects", help="Only show the first n objects"
+    )
+    parser.add_argument(
+        "-d",
+        "--distances",
+        dest="distances",
+        nargs=2,
+        help="min and max distance of object from camera",
+    )
+    parser.add_argument("-e", "--error", dest="error", help="max error for plotting")
 
     args = parser.parse_args()
     traj_path = Path(args.trajectories)
@@ -34,57 +60,162 @@ if __name__ == "__main__":
         est_trajectories_cam = json.load(fp)
 
     # per object, get trajectories
+    if args.plot and args.save is not None:
+        mpl.rcParams["grid.color"] = "w"
+        mpl.rcParams["grid.color"] = "w"
+        mpl.rcParams["axes.edgecolor"] = "w"
+        mpl.rcParams["xtick.color"] = "w"
+        mpl.rcParams["ytick.color"] = "w"
+        save_dir = Path(args.save) / args.trajectories.split("/")[-1]
+        save_dir.mkdir(exist_ok=True, parents=True)
     err_dist = {}
-    for i, track_id in enumerate(gt_trajectories.keys()):
-        gt_traj_dict = gt_trajectories[track_id]
-        gt_traj_cam_dict = gt_trajectories_cam[track_id]
-
-        if track_id not in est_trajectories:
-            continue
-        est_traj_dict = est_trajectories[track_id]
-        est_traj_cam_dict = est_trajectories_cam[track_id]
-        err_dist_obj = []
-        for img_id, est_pt in est_traj_cam_dict.items():
-            gt_pt = gt_traj_cam_dict[img_id]
-            error = np.linalg.norm(np.array(gt_pt) - np.array(est_pt))
-            dist = np.linalg.norm(np.array(gt_pt))
-            err_dist_obj.append((error, dist))
-        err_dist[track_id] = err_dist_obj
-        if args.plot:
-            gt_traj = np.array(list(gt_traj_dict.values())).reshape(-1, 3)
-            est_traj = np.array(list(est_traj_dict.values())).reshape(-1, 3)
+    num_objects = args.num_objects if args.num_objects else len(gt_trajectories)
+    for j in range(2):
+        if j != 0:
             fig = plt.figure(figsize=plt.figaspect(0.5))
-            plt.title(f"Object w/ ID {track_id}")
-            ax_3d = fig.add_subplot(1, 2, 1, projection="3d")
-            ax_3d.plot(
-                gt_traj[:, 0], gt_traj[:, 1], gt_traj[:, 2], label="GT trajectory",
-            )
-            ax_3d.plot(
-                est_traj[:, 0],
-                est_traj[:, 1],
-                est_traj[:, 2],
-                label="Estimated trajectory",
-            )
-            ax_3d.set_xlabel("x")
-            ax_3d.set_ylabel("y")
-            ax_3d.set_zlabel("z")
-            plt.legend()
-            ax_2d = fig.add_subplot(1, 2, 2)
-            ax_2d.scatter(
-                list(map(lambda x: x[0], err_dist_obj)),
-                list(map(lambda x: x[1], err_dist_obj)),
-            )
-            ax_2d.set_xlabel("Error [m]")
-            ax_2d.set_ylabel("Distance [m]")
-            ax_3d.get_shared_x_axes().remove(ax_2d)
-            ax_3d.get_shared_y_axes().remove(ax_2d)
-            ax_3d.view_init(0, 90)
+            ax_3d = fig.add_subplot(1, 1, 1, projection="3d")
+        for i, track_id in enumerate(gt_trajectories.keys()):
+            if i > num_objects:
+                break
+            gt_traj_dict = gt_trajectories[track_id]
+            gt_traj_cam_dict = gt_trajectories_cam[track_id]
 
+            if track_id not in est_trajectories:
+                continue
+            est_traj_dict = est_trajectories[track_id]
+            est_traj_cam_dict = est_trajectories_cam[track_id]
+            err_dist_obj = []
+            valid_frames = []
+            for img_id, est_pt in est_traj_cam_dict.items():
+                gt_pt = gt_traj_cam_dict.get(img_id)
+                if gt_pt is None:  # could be due to occlusion
+                    continue
+                gt_pt = np.array(gt_pt).reshape(3,).tolist()
+                est_pt = np.array(est_pt).reshape(3,).tolist()
+                error = np.linalg.norm(np.array(gt_pt) - np.array(est_pt))
+                err_x = np.abs(gt_pt[0] - est_pt[0])
+                err_y = np.abs(gt_pt[1] - est_pt[1])
+                err_z = np.abs(gt_pt[2] - est_pt[2])
+                dist = np.linalg.norm(np.array(gt_pt))
+                if args.distances:
+                    min_dist, max_dist = map(int, args.distances)
+                    if min_dist <= dist <= max_dist:
+                        valid_frames.append(img_id)
+                if args.error:
+                    max_error = float(args.error)
+                    if error < max_error:
+                        if img_id not in valid_frames:
+                            valid_frames.append(img_id)
+                    else:
+                        if img_id in valid_frames:
+                            valid_frames.remove(img_id)
+                err_dist_obj.append(([err_x, err_y, err_z], dist))
+            if not args.distances and not args.error:
+                valid_frames = list(est_traj_dict.keys())
+            err_dist[track_id] = err_dist_obj
+            if args.plot:
+                if j == 0:
+                    fig = plt.figure(figsize=plt.figaspect(0.5))
+                    if args.plot == "both":
+                        ax_3d = fig.add_subplot(1, 2, 1, projection="3d")
+                    elif args.plot == "trajectory":
+                        ax_3d = fig.add_subplot(1, 1, 1, projection="3d")
+                    if args.plot in ["both", "trajectory"]:
+                        ax_3d.set_xlabel("x [m]", color="w")
+                        ax_3d.set_ylabel("y [m]", color="w")
+                        ax_3d.set_zlabel("z [m]", color="w")
+                        ax_3d.set_yticks([])
+                gt_traj = np.array(list(gt_traj_dict.values())).reshape(-1, 3)
+                est_traj = np.array(
+                    [
+                        pt
+                        for img_id, pt in est_traj_dict.items()
+                        if img_id in valid_frames
+                    ]
+                ).reshape(-1, 3)
+                if args.plot in ["both", "trajectory"]:
+                    ax_3d.plot(
+                        gt_traj[:, 0],
+                        gt_traj[:, 1],
+                        gt_traj[:, 2],
+                        label="GT trajectory",
+                        color="tab:green",
+                    )
+                    ax_3d.plot(
+                        est_traj[:, 0],
+                        est_traj[:, 1],
+                        est_traj[:, 2],
+                        label="Estimated trajectory",
+                        color="tab:cyan",
+                    )
+                    if j == 0:
+                        plt.legend()
+                if j == 0:
+                    if args.plot in ["both", "error"]:
+                        if args.plot == "both":
+                            ax_2d = fig.add_subplot(1, 2, 2)
+                        else:
+                            ax_2d = fig.add_subplot(1, 1, 1)
+                        ax_2d.scatter(
+                            list(map(lambda x: x[0][0], err_dist_obj)),
+                            list(map(lambda x: x[1], err_dist_obj)),
+                            label="L1-error x (left, right)",
+                        )
+                        ax_2d.scatter(
+                            list(map(lambda x: x[0][1], err_dist_obj)),
+                            list(map(lambda x: x[1], err_dist_obj)),
+                            label="L1-error y (elevation)",
+                        )
+                        ax_2d.scatter(
+                            list(map(lambda x: x[0][2], err_dist_obj)),
+                            list(map(lambda x: x[1], err_dist_obj)),
+                            label="L1-error z (depth)",
+                        )
+                        ax_2d.set_xscale("log")
+                        ax_2d.set_xlabel("Error [m]")
+                        ax_2d.set_ylabel("Distance [m]")
+                        plt.legend()
+                    if args.plot in ["both", "trajectory"]:
+                        ax_3d.view_init(0, -90)
+                        if args.plot == "both":
+                            ax_3d.get_shared_x_axes().remove(ax_2d)
+                            ax_3d.get_shared_y_axes().remove(ax_2d)
+                        if args.save:
+                            # ax_3d.axis("off")
+                            ax_3d.grid(True)
+                        ax_3d.xaxis.pane.set_color((0, 0, 0, 0))
+                        ax_3d.yaxis.pane.set_color((0, 0, 0, 0))
+                        ax_3d.zaxis.pane.set_color((0, 0, 0, 0))
+                    if args.save:
+                        path = save_dir / f"{track_id}-{args.plot}.png"
+                        fig.suptitle(f"Object w/ ID {track_id}", color="w")
+                        plt.savefig(
+                            path.as_posix(), transparent=True, bbox_inches="tight"
+                        )
+                    else:
+                        fig.suptitle(f"Object w/ ID {track_id}")
+                        plt.show()
+
+        if j == 1 and args.plot in ["both", "trajectory"]:
+            ax_3d.view_init(0, -90)
+            ax_3d.dist = 5
+            ax_3d.set_xlabel("x [m]", color="w")
+            ax_3d.set_ylabel("y [m]", color="w")
+            ax_3d.set_zlabel("z [m]", color="w")
+            ax_3d.xaxis.pane.set_color((0, 0, 0, 0))
+            ax_3d.yaxis.pane.set_color((0, 0, 0, 0))
+            ax_3d.zaxis.pane.set_color((0, 0, 0, 0))
             fig.tight_layout()
-            fig.axes[0].axis("off")
-            plt.show()
-        # trajectory plot should draw world trajectories
-        # error estimates should be made in cam coordinates?
+            # fig.axes[0].axis("off")
+            if args.save:
+                path = save_dir / "full_view.png"
+                ax_3d.set_yticks([])
+                plt.savefig(path.as_posix(), transparent=True, bbox_inches="tight")
+            else:
+                plt.show()
+
+            # trajectory plot should draw world trajectories
+            # error estimates should be made in cam coordinates?
     print("+++EVALUATION+++")
     mean_err_total = []
     for track_id, err_and_dist in err_dist.items():

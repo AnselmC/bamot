@@ -1,12 +1,12 @@
 import logging
 import queue
+from pathlib import Path
 from threading import Event
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 import open3d as o3d
-
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
 from bamot.util.cv import (from_homogeneous_pt, get_center_of_landmarks,
                            to_homogeneous_pt)
@@ -180,6 +180,7 @@ def run(
     stop_flag: Event,
     next_step: Event,
     gt_trajectories: Dict[int, List[np.ndarray]],
+    save_path: Optional[Path] = None,
 ):
     vis = o3d.visualization.Visualizer()
     width, height = get_screen_size()
@@ -193,6 +194,8 @@ def run(
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
     tracks: Dict[int, Tuple[o3d.geometry.PointCloud, Color]] = {}
     first_update = True
+    counter = 0
+    recording = False
     while not stop_flag.is_set():
         try:
             new_data = shared_data.get_nowait()
@@ -234,10 +237,19 @@ def run(
 
             full_img = np.hstack([stereo_image.left, stereo_image.right])
             cv2.imshow(cv2_window_name, full_img)
+            if save_path is not None and recording:
+                LOGGER.debug("Saving image: %s", counter)
+                vis.capture_screen_image(
+                    (save_path / f"{counter:06}.png").as_posix(), False
+                )
+                counter += 1
+
         keypress = cv2.waitKey(1)
         if keypress == ord("n"):
             next_step.set()
-
+        if keypress == ord("s"):
+            recording = not recording
+            LOGGER.debug("Recording: %s", recording)
         vis.poll_events()
         vis.update_renderer()
         first_update = False

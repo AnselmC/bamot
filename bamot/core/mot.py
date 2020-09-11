@@ -10,9 +10,6 @@ from typing import Dict, Iterable, List, Tuple
 import cv2
 import numpy as np
 import pathos
-from hungarian_algorithm import algorithm as ha
-from shapely.geometry import Polygon
-
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    ImageId, Landmark, Match, ObjectTrack,
                                    Observation, StereoCamera, StereoImage,
@@ -24,10 +21,12 @@ from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
                            get_convex_hull_mask, mask_img, project_landmarks,
                            to_homogeneous_pt, triangulate)
 from bamot.util.misc import timer
+from hungarian_algorithm import algorithm as ha
+from shapely.geometry import Polygon
 
 LOGGER = logging.getLogger("CORE:MOT")
 
-MAX_DIST = 25
+MAX_DIST = 150
 
 
 def max_lm(track):
@@ -590,7 +589,6 @@ def _compute_estimated_trajectories(
     return trajectories, trajectories_cam
 
 
-# TODO: add image id to trajectories, s.t. matching is better
 # TODO: add constant motion constraint between keyframes
 # Given a graph, graph optimization aims to find an optimal estimation of the nodes values which minimize the errors that determined by the constraints.
 # i.e.: maybe it's enough to add constraints between

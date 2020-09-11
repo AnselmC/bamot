@@ -232,6 +232,13 @@ if __name__ == "__main__":
         help="Use this to only track specific object ids",
         nargs="+",
     )
+    parser.add_argument(
+        "-r",
+        "--record",
+        dest="record",
+        help="Record sequence from viewer at given path (ignored if `--no-viewer` is set)",
+        type=str,
+    )
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
@@ -323,6 +330,7 @@ if __name__ == "__main__":
             stop_flag=stop_flag,
             next_step=next_step,
             gt_trajectories=gt_trajectories,
+            save_path=Path(args.record) if args.record else None,
         )
     LOGGER.info("No more frames - terminating processes")
     slam_process.join()
