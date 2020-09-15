@@ -240,6 +240,14 @@ if __name__ == "__main__":
         type=str,
     )
 
+    parser.add_argument(
+        "-w",
+        "--world",
+        dest="world",
+        help="Show objects in world coordinates in viewer",
+        action="store_true",
+    )
+
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
     if args.kitti is not None:
@@ -282,10 +290,17 @@ if __name__ == "__main__":
     next_step.set()
     img_shape = _get_image_shape(kitti_path)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
-    stereo_cam = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
+    stereo_cam, T02 = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
     gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
-    gt_trajectories, gt_trajectories_cam = get_trajectories_from_kitti(
-        kitti_path / "label_02" / (scene + ".txt"), gt_poses, args.offset
+    (
+        gt_trajectories_world,
+        gt_trajectories_cam,
+        occlusion_levels,
+    ) = get_trajectories_from_kitti(
+        detection_file=kitti_path / "label_02" / (scene + ".txt"),
+        poses=gt_poses,
+        offset=args.offset,
+        T02=T02,
     )
     detection_stream = _get_detection_stream(
         obj_detections_path,
@@ -329,8 +344,9 @@ if __name__ == "__main__":
             shared_data=shared_data,
             stop_flag=stop_flag,
             next_step=next_step,
-            gt_trajectories=gt_trajectories,
+            gt_trajectories=gt_trajectories_world,
             save_path=Path(args.record) if args.record else None,
+            poses=gt_poses if args.world else None,
         )
     LOGGER.info("No more frames - terminating processes")
     slam_process.join()
@@ -351,6 +367,7 @@ if __name__ == "__main__":
     out_gt_cam = out_path / "gt_trajectories_cam.json"
     out_est_world = out_path / "est_trajectories_world.json"
     out_est_cam = out_path / "est_trajectories_cam.json"
+    out_occlusion_levels = out_path / "occlusion_levels.json"
     # estimated
     with open(out_est_world.as_posix(), "w") as fp:
         json.dump(estimated_trajectories_world, fp, indent=4, sort_keys=True)
@@ -358,9 +375,11 @@ if __name__ == "__main__":
         json.dump(estimated_trajectories_cam, fp, indent=4, sort_keys=True)
     # ground truth
     with open(out_gt_world.as_posix(), "w") as fp:
-        json.dump(gt_trajectories, fp, indent=4, sort_keys=True)
+        json.dump(gt_trajectories_world, fp, indent=4, sort_keys=True)
     with open(out_gt_cam.as_posix(), "w") as fp:
         json.dump(gt_trajectories_cam, fp, indent=4, sort_keys=True)
+    with open(out_occlusion_levels.as_posix(), "w") as fp:
+        json.dump(occlusion_levels, fp, indent=4, sort_keys=True)
     LOGGER.info(
         "Saved estimated and ground truth object track trajectories to %s",
         out_path.as_posix(),

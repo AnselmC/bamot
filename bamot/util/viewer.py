@@ -90,7 +90,11 @@ def _update_tracks(
         # draw path
         path_points = []
         gt_points = []
-        gt_traj = gt_trajectories[ido]
+        try:
+            gt_traj = gt_trajectories[ido]
+        except:
+            print(ido)
+            print(gt_trajectories.keys())
         points = []
         white = np.array([1.0, 1.0, 1.0])
         lighter_color = color + 0.75 * white
@@ -136,7 +140,6 @@ def _update_tracks(
             except:
                 print(img_id)
                 print(gt_traj.keys())
-                raise
             if i == len(track.poses) - 1:
                 track_size = len(points)
             if ido == -1:
@@ -180,6 +183,7 @@ def run(
     stop_flag: Event,
     next_step: Event,
     gt_trajectories: Dict[int, List[np.ndarray]],
+    poses: Optional[List[np.ndarray]] = None,
     save_path: Optional[Path] = None,
 ):
     vis = o3d.visualization.Visualizer()

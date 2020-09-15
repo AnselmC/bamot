@@ -568,27 +568,33 @@ def step(
 def _compute_estimated_trajectories(
     object_tracks: Dict[int, ObjectTrack], all_poses: Dict[int, np.ndarray]
 ) -> Tuple[Dict[int, Dict[int, Tuple[float, float, float]]]]:
-    trajectories = {}
+    trajectories_world = {}
     trajectories_cam = {}
     for track_id, track in object_tracks.items():
         object_center = get_center_of_landmarks(track.landmarks.values())
-        trajectory = {}
+        trajectory_world = {}
         trajectory_cam = {}
         pose_cam_world = np.linalg.inv(all_poses[track_id])
         for img_id, pose_world_obj in track.poses.items():
             object_center_world = pose_world_obj @ to_homogeneous_pt(object_center)
             object_center_cam = pose_cam_world @ object_center_world
-            trajectory[img_id] = tuple(
+            trajectory_world[img_id] = tuple(
                 from_homogeneous_pt(object_center_world).tolist()
             )
             trajectory_cam[img_id] = tuple(
                 from_homogeneous_pt(object_center_cam).tolist()
             )
-        trajectories[track_id] = trajectory
+        trajectories_world[track_id] = trajectory_world
         trajectories_cam[track_id] = trajectory_cam
-    return trajectories, trajectories_cam
+    return trajectories_world, trajectories_cam
 
 
 # TODO: add constant motion constraint between keyframes
 # Given a graph, graph optimization aims to find an optimal estimation of the nodes values which minimize the errors that determined by the constraints.
 # i.e.: maybe it's enough to add constraints between
+
+
+#
+
+
+# weird error for cam coordinates --> less but still there

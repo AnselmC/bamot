@@ -7,6 +7,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
+RNG = np.random.default_rng()
+COLORS = RNG.random((42, 3))
+
+
+class NoNormalize(mpl.colors.Normalize):
+    def __call__(self, value, clip=None):
+        return value
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("trajectories", help="Path to trajectories to evaluate")
@@ -46,6 +55,7 @@ if __name__ == "__main__":
     gt_trajectory_file_cam = traj_path / "gt_trajectories_cam.json"
     est_trajectory_file = traj_path / "est_trajectories_world.json"
     est_trajectory_file_cam = traj_path / "est_trajectories_cam.json"
+    occlusion_levels_file = traj_path / "occlusion_levels.json"
 
     with open(gt_trajectory_file.as_posix(), "r") as fp:
         gt_trajectories = json.load(fp)
@@ -58,6 +68,12 @@ if __name__ == "__main__":
 
     with open(est_trajectory_file_cam.as_posix(), "r") as fp:
         est_trajectories_cam = json.load(fp)
+
+    if occlusion_levels_file.exists():
+        with open(occlusion_levels_file.as_posix(), "r") as fp:
+            occlusion_levels = json.load(fp)
+    else:
+        occlusion_levels = {}
 
     # per object, get trajectories
     if args.plot and args.save is not None:
@@ -93,23 +109,30 @@ if __name__ == "__main__":
                 gt_pt = np.array(gt_pt).reshape(3,).tolist()
                 est_pt = np.array(est_pt).reshape(3,).tolist()
                 error = np.linalg.norm(np.array(gt_pt) - np.array(est_pt))
-                err_x = np.abs(gt_pt[0] - est_pt[0])
-                err_y = np.abs(gt_pt[1] - est_pt[1])
-                err_z = np.abs(gt_pt[2] - est_pt[2])
+                gt_pt_world = np.array(gt_traj_dict[img_id]).reshape(3, 1)
+                est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
+                error_world = np.linalg.norm(gt_pt_world - est_pt_world)
+                print("error world: ", error_world)
+                print("error cam: ", error)
+                print("diff: ", np.abs(error_world - error))
+                # err_x = np.abs(gt_pt[0] - est_pt[0])
+                # err_y = np.abs(gt_pt[1] - est_pt[1])
+                # err_z = np.abs(gt_pt[2] - est_pt[2])
                 dist = np.linalg.norm(np.array(gt_pt))
+                err_x, err_y, err_z = np.abs(gt_pt_world - est_pt_world)
                 if args.distances:
                     min_dist, max_dist = map(int, args.distances)
                     if min_dist <= dist <= max_dist:
                         valid_frames.append(img_id)
                 if args.error:
                     max_error = float(args.error)
-                    if error < max_error:
+                    if error_world < max_error:
                         if img_id not in valid_frames:
                             valid_frames.append(img_id)
                     else:
                         if img_id in valid_frames:
                             valid_frames.remove(img_id)
-                err_dist_obj.append(([err_x, err_y, err_z], dist))
+                err_dist_obj.append(([err_x, err_y, err_z, error], dist))
             if not args.distances and not args.error:
                 valid_frames = list(est_traj_dict.keys())
             err_dist[track_id] = err_dist_obj
@@ -124,7 +147,7 @@ if __name__ == "__main__":
                         ax_3d.set_xlabel("x [m]", color="w")
                         ax_3d.set_ylabel("y [m]", color="w")
                         ax_3d.set_zlabel("z [m]", color="w")
-                        ax_3d.set_yticks([])
+                        # ax_3d.set_yticks([])
                 gt_traj = np.array(list(gt_traj_dict.values())).reshape(-1, 3)
                 est_traj = np.array(
                     [
@@ -133,20 +156,39 @@ if __name__ == "__main__":
                         if img_id in valid_frames
                     ]
                 ).reshape(-1, 3)
+                color = COLORS[RNG.choice(len(COLORS))]
+                # occlusion levels:
+                # 0: fully visible
+                # 1: partly occluded
+                # 2: largely occluded
+                # 3: unknown
+                occlusion_map = {0: 1.0, 1: 0.75, 2: 0.3, 3: 0}
+                if occlusion_levels:
+                    alphas = list(
+                        map(occlusion_map.get, occlusion_levels[track_id].values())
+                    )
+                else:
+                    alphas = [1 for _ in range(len(gt_traj))]
+                colors = np.array(
+                    [color.tolist() + [alphas[i]] for i in range(len(gt_traj))]
+                ).reshape(-1, 4)
                 if args.plot in ["both", "trajectory"]:
-                    ax_3d.plot(
+                    ax_3d.scatter(
                         gt_traj[:, 0],
-                        gt_traj[:, 1],
                         gt_traj[:, 2],
+                        gt_traj[:, 1],
                         label="GT trajectory",
-                        color="tab:green",
+                        color=colors,
+                        norm=NoNormalize(),
+                        linewidths=0.5,
+                        marker=".",
                     )
                     ax_3d.plot(
                         est_traj[:, 0],
-                        est_traj[:, 1],
                         est_traj[:, 2],
+                        est_traj[:, 1],
                         label="Estimated trajectory",
-                        color="tab:cyan",
+                        color=color,
                     )
                     if j == 0:
                         plt.legend()
@@ -159,33 +201,41 @@ if __name__ == "__main__":
                         ax_2d.scatter(
                             list(map(lambda x: x[0][0], err_dist_obj)),
                             list(map(lambda x: x[1], err_dist_obj)),
+                            alpha=0.5,
                             label="L1-error x (left, right)",
                         )
                         ax_2d.scatter(
                             list(map(lambda x: x[0][1], err_dist_obj)),
                             list(map(lambda x: x[1], err_dist_obj)),
+                            alpha=0.5,
                             label="L1-error y (elevation)",
                         )
                         ax_2d.scatter(
                             list(map(lambda x: x[0][2], err_dist_obj)),
                             list(map(lambda x: x[1], err_dist_obj)),
+                            alpha=0.5,
                             label="L1-error z (depth)",
+                        )
+                        ax_2d.scatter(
+                            list(map(lambda x: x[0][3], err_dist_obj)),
+                            list(map(lambda x: x[1], err_dist_obj)),
+                            label="L1-error total",
                         )
                         ax_2d.set_xscale("log")
                         ax_2d.set_xlabel("Error [m]")
                         ax_2d.set_ylabel("Distance [m]")
                         plt.legend()
                     if args.plot in ["both", "trajectory"]:
-                        ax_3d.view_init(0, -90)
+                        ax_3d.view_init(180, 0)
                         if args.plot == "both":
                             ax_3d.get_shared_x_axes().remove(ax_2d)
                             ax_3d.get_shared_y_axes().remove(ax_2d)
                         if args.save:
                             # ax_3d.axis("off")
                             ax_3d.grid(True)
-                        ax_3d.xaxis.pane.set_color((0, 0, 0, 0))
-                        ax_3d.yaxis.pane.set_color((0, 0, 0, 0))
-                        ax_3d.zaxis.pane.set_color((0, 0, 0, 0))
+                        ax_3d.xaxis.pane.set_color((1, 1, 1, 0))
+                        ax_3d.yaxis.pane.set_color((1, 1, 1, 0))
+                        ax_3d.zaxis.pane.set_color((1, 1, 1, 0))
                     if args.save:
                         path = save_dir / f"{track_id}-{args.plot}.png"
                         fig.suptitle(f"Object w/ ID {track_id}", color="w")
@@ -197,14 +247,14 @@ if __name__ == "__main__":
                         plt.show()
 
         if j == 1 and args.plot in ["both", "trajectory"]:
-            ax_3d.view_init(0, -90)
+            ax_3d.view_init(180, 0)
             ax_3d.dist = 5
             ax_3d.set_xlabel("x [m]", color="w")
             ax_3d.set_ylabel("y [m]", color="w")
             ax_3d.set_zlabel("z [m]", color="w")
-            ax_3d.xaxis.pane.set_color((0, 0, 0, 0))
-            ax_3d.yaxis.pane.set_color((0, 0, 0, 0))
-            ax_3d.zaxis.pane.set_color((0, 0, 0, 0))
+            # ax_3d.xaxis.pane.set_color((0, 0, 0, 0))
+            # ax_3d.yaxis.pane.set_color((0, 0, 0, 0))
+            # ax_3d.zaxis.pane.set_color((0, 0, 0, 0))
             fig.tight_layout()
             # fig.axes[0].axis("off")
             if args.save:

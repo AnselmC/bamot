@@ -3,20 +3,10 @@
 from typing import List, Tuple
 
 import numpy as np
-
-from bamot.core.base_types import (
-    ObjectDetection,
-    StereoCamera,
-    StereoImage,
-    StereoObjectDetection,
-)
-from bamot.util.cv import (
-    back_project,
-    from_homogeneous_pt,
-    get_convex_hull_mask,
-    project,
-    to_homogeneous_pt,
-)
+from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
+                                   StereoObjectDetection)
+from bamot.util.cv import (back_project, from_homogeneous_pt,
+                           get_convex_hull_mask, project, to_homogeneous_pt)
 
 
 def transform_object_points(

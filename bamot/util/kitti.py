@@ -5,7 +5,6 @@ from typing import Dict, List, Tuple
 import cv2
 import numpy as np
 import pandas as pd
-
 from bamot.core.base_types import (CameraParameters, ObjectDetection,
                                    StereoCamera)
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -33,15 +32,17 @@ def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
 
 
 TrackIdToPoseDict = Dict[int, Dict[int, np.ndarray]]
+TrackIdToOcclusionLevel = Dict[int, Dict[int, int]]
 
 
 def get_trajectories_from_kitti(
-    detection_file: Path, poses: List[np.ndarray], offset: int
-) -> Tuple[TrackIdToPoseDict, TrackIdToPoseDict]:
-    gt_trajectories = {}
+    detection_file: Path, poses: List[np.ndarray], offset: int, T02: np.ndarray
+) -> Tuple[TrackIdToPoseDict, TrackIdToPoseDict, TrackIdToOcclusionLevel]:
+    gt_trajectories_world = {}
     gt_trajectories_cam = {}
+    occlusion_levels = {}
     if not detection_file.exists():
-        return gt_trajectories, gt_trajectories_cam
+        return gt_trajectories_world, gt_trajectories_cam
     with open(detection_file.as_posix(), "r") as fp:
         for line in fp:
             cols = line.split(" ")
@@ -54,29 +55,35 @@ def get_trajectories_from_kitti(
             # cols[2] is type (car, ped, ...)
             # cols[3] is level of truncation
             # cols[4] is level of occlusion
+            occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
             # cols[6:10] is bbox
             # cols[10: 13] are 3D dimensions
-            location_cam = np.array(list(map(float, cols[13:16]))).reshape(
+            location_cam0 = np.array(list(map(float, cols[13:16]))).reshape(
                 (3, 1)
             )  # in camera coordinates
-            T_w_cam0 = poses[frame]
+            T_w_cam2 = poses[frame]
+            location_cam2 = from_homogeneous_pt(
+                np.linalg.inv(T02) @ to_homogeneous_pt(location_cam0)
+            )
             location_world = from_homogeneous_pt(
-                T_w_cam0 @ to_homogeneous_pt(location_cam)
+                T_w_cam2 @ to_homogeneous_pt(location_cam2)
             )
             # cols[16] is rotation of object
             # cols[17] is score
-            if gt_trajectories.get(track_id) is None:
-                gt_trajectories[track_id] = {}
+            if gt_trajectories_world.get(track_id) is None:
+                gt_trajectories_world[track_id] = {}
                 gt_trajectories_cam[track_id] = {}
-            gt_trajectories[track_id][frame] = location_world.tolist()
-            gt_trajectories_cam[track_id][frame] = location_cam.tolist()
-    LOGGER.debug("Extracted GT trajectories for %d objects", len(gt_trajectories))
-    return gt_trajectories, gt_trajectories_cam
+                occlusion_levels[track_id] = {}
+            gt_trajectories_world[track_id][frame] = location_world.tolist()
+            gt_trajectories_cam[track_id][frame] = location_cam2.tolist()
+            occlusion_levels[track_id][frame] = occlusion_level
+    LOGGER.debug("Extracted GT trajectories for %d objects", len(gt_trajectories_world))
+    return gt_trajectories_world, gt_trajectories_cam, occlusion_levels
 
 
 def get_gt_poses_from_kitti(oxts_file: Path) -> List[np.ndarray]:
-    """Adapted from Sergio Agostinho
+    """Adapted from Sergio Agostinho, returns GT poses of left cam
     """
     poses = []
     if not oxts_file.exists():
@@ -116,13 +123,41 @@ def get_gt_poses_from_kitti(oxts_file: Path) -> List[np.ndarray]:
     )
     df = pd.read_csv(oxts_file.as_posix(), sep=" ", names=cols, index_col=False)
 
-    # extract relative poses w.r.t. original frame
+    # extract relative poses w.r.t. original frame (i.e. world)
+    # get poses into expected frame
+    # rotate around 90 degrees around x
+    # rotation 90 degrees around z
+    # rot_x = np.array(
+    #    [
+    #        [1, 0, 0],
+    #        [0, np.cos(np.pi / 2), -np.sin(np.pi / 2)],
+    #        [0, np.sin(np.pi / 2), np.cos(np.pi / 2)],
+    #    ]
+    # )
+    # rot_z = np.array(
+    #    [
+    #        [np.cos(np.pi / 2), -np.sin(np.pi / 2), 0],
+    #        [np.sin(np.pi / 2), np.cos(np.pi / 2), 0],
+    #        [0, 0, 1],
+    #    ]
+    # )
+    # rot_y = np.array([[np.cos(0), 0, np.sin(0)], [0, 1, 0], [-np.sin(0), 0, np.cos(0)]])
+    # roll = np.identity(4)
+    # roll[:3, :3] = rot_x
+
+    # pitch = np.identity(4)
+    # pitch[:3, :3] = rot_y
+
+    # yaw = np.identity(4)
+    # yaw[:3, :3] = rot_z
+    rot = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
     poses = [
-        pose
-        for pose in _oxts_to_poses(
+        rot @ T_w_cam2
+        for T_w_cam2 in _oxts_to_poses(
             *df[["lat", "lon", "alt", "roll", "pitch", "yaw"]].values.T
         )
     ]
+
     return poses
 
 
@@ -192,7 +227,7 @@ def _oxts_to_poses(lat, lon, alt, roll, pitch, yaw):
     return T
 
 
-def get_cameras_from_kitti(calib_file: Path) -> StereoCamera:
+def get_cameras_from_kitti(calib_file: Path) -> Tuple[StereoCamera, np.ndarray]:
     with open(calib_file.as_posix(), "r") as fp:
         for line in fp:
             cols = line.split(" ")
@@ -230,11 +265,13 @@ def get_cameras_from_kitti(calib_file: Path) -> StereoCamera:
     T23 = np.identity(4)
     # T23[:3, :3] = R_rect_23
     T23[0, 3] = right_bx - left_bx
+    T02 = np.identity(4)
+    T02[0, 3] = left_bx
     # T23[0, 3] = 0.03
     # zu weit rechts -> nach links schieben
     # pos nach links
     # neg nach rechts
-    return StereoCamera(left_cam, right_cam, T23)
+    return StereoCamera(left_cam, right_cam, T23), T02
 
 
 def get_gt_obj_segmentations_from_kitti(instance_file: str) -> List[ObjectDetection]:
@@ -253,5 +290,7 @@ def get_gt_obj_segmentations_from_kitti(instance_file: str) -> List[ObjectDetect
         obj_mask = ObjectDetection(
             convex_hull=list(map(tuple, convex_hull.tolist())), track_id=track_id
         )
+        if len(obj_mask.convex_hull) < 2:
+            continue
         obj_detections.append(obj_mask)
     return obj_detections
