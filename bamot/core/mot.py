@@ -587,14 +587,3 @@ def _compute_estimated_trajectories(
         trajectories_world[track_id] = trajectory_world
         trajectories_cam[track_id] = trajectory_cam
     return trajectories_world, trajectories_cam
-
-
-# TODO: add constant motion constraint between keyframes
-# Given a graph, graph optimization aims to find an optimal estimation of the nodes values which minimize the errors that determined by the constraints.
-# i.e.: maybe it's enough to add constraints between
-
-
-#
-
-
-# weird error for cam coordinates --> less but still there

@@ -33,14 +33,21 @@ def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
 
 TrackIdToPoseDict = Dict[int, Dict[int, np.ndarray]]
 TrackIdToOcclusionLevel = Dict[int, Dict[int, int]]
+TrackIdToTruncationLevel = Dict[int, Dict[int, int]]
 
 
 def get_trajectories_from_kitti(
     detection_file: Path, poses: List[np.ndarray], offset: int, T02: np.ndarray
-) -> Tuple[TrackIdToPoseDict, TrackIdToPoseDict, TrackIdToOcclusionLevel]:
+) -> Tuple[
+    TrackIdToPoseDict,
+    TrackIdToPoseDict,
+    TrackIdToOcclusionLevel,
+    TrackIdToTruncationLevel,
+]:
     gt_trajectories_world = {}
     gt_trajectories_cam = {}
     occlusion_levels = {}
+    truncation_levels = {}
     if not detection_file.exists():
         return gt_trajectories_world, gt_trajectories_cam
     with open(detection_file.as_posix(), "r") as fp:
@@ -53,8 +60,7 @@ def get_trajectories_from_kitti(
             if track_id == -1:
                 continue
             # cols[2] is type (car, ped, ...)
-            # cols[3] is level of truncation
-            # cols[4] is level of occlusion
+            truncation_level = int(cols[3])
             occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
             # cols[6:10] is bbox
@@ -75,11 +81,18 @@ def get_trajectories_from_kitti(
                 gt_trajectories_world[track_id] = {}
                 gt_trajectories_cam[track_id] = {}
                 occlusion_levels[track_id] = {}
+                truncation_levels[track_id] = {}
             gt_trajectories_world[track_id][frame] = location_world.tolist()
             gt_trajectories_cam[track_id][frame] = location_cam2.tolist()
             occlusion_levels[track_id][frame] = occlusion_level
+            truncation_levels[track_id][frame] = truncation_level
     LOGGER.debug("Extracted GT trajectories for %d objects", len(gt_trajectories_world))
-    return gt_trajectories_world, gt_trajectories_cam, occlusion_levels
+    return (
+        gt_trajectories_world,
+        gt_trajectories_cam,
+        occlusion_levels,
+        truncation_levels,
+    )
 
 
 def get_gt_poses_from_kitti(oxts_file: Path) -> List[np.ndarray]:

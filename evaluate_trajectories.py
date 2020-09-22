@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
+from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
+                              get_trajectories_from_kitti)
+
 RNG = np.random.default_rng()
 COLORS = RNG.random((42, 3))
 
@@ -29,12 +32,30 @@ if __name__ == "__main__":
         const="both",
     )
     parser.add_argument(
+        "-k",
+        "--kitti",
+        dest="kitti",
+        help="path to kitti dataset (default is `./data/KITTI/tracking/training`",
+        type=str,
+        default="data/KITTI/tracking/training",
+    )
+    parser.add_argument(
+        "-sc",
+        "--scene",
+        dest="scene",
+        help="the kitti scene",
+        required=True,
+        choices=range(0, 20),
+        type=int,
+    )
+
+    parser.add_argument(
         "-s",
         "--save",
         dest="save",
         nargs="?",
-        help="Save plots w/ optional path (only valid if `--plot` is given, default directory is `data/plots/`)",
-        const="data/plots",
+        help="Save evaluation and plots (only valid if `--plot` is given, default directory is `data/evaluation/`)",
+        const="data/evaluation",
     )
 
     parser.add_argument(
@@ -51,75 +72,99 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     traj_path = Path(args.trajectories)
-    gt_trajectory_file = traj_path / "gt_trajectories_world.json"
-    gt_trajectory_file_cam = traj_path / "gt_trajectories_cam.json"
     est_trajectory_file = traj_path / "est_trajectories_world.json"
     est_trajectory_file_cam = traj_path / "est_trajectories_cam.json"
-    occlusion_levels_file = traj_path / "occlusion_levels.json"
-
-    with open(gt_trajectory_file.as_posix(), "r") as fp:
-        gt_trajectories = json.load(fp)
-
-    with open(gt_trajectory_file_cam.as_posix(), "r") as fp:
-        gt_trajectories_cam = json.load(fp)
 
     with open(est_trajectory_file.as_posix(), "r") as fp:
-        est_trajectories = json.load(fp)
+        est_trajectories_world = json.load(
+            fp,
+            object_hook=lambda d: {
+                int(k) if k.lstrip("-").isdigit() else k: v for k, v in d.items()
+            },
+        )
 
     with open(est_trajectory_file_cam.as_posix(), "r") as fp:
-        est_trajectories_cam = json.load(fp)
+        est_trajectories_cam = json.load(
+            fp,
+            object_hook=lambda d: {
+                int(k) if k.lstrip("-").isdigit() else k: v for k, v in d.items()
+            },
+        )
 
-    if occlusion_levels_file.exists():
-        with open(occlusion_levels_file.as_posix(), "r") as fp:
-            occlusion_levels = json.load(fp)
-    else:
-        occlusion_levels = {}
+    print("Loaded estimated trajectories")
+    kitti_path = Path(args.kitti)
+    scene = str(args.scene).zfill(4)
+    _, T02 = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
+    gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
+    (
+        gt_trajectories_world,
+        gt_trajectories_cam,
+        occlusion_levels,
+        truncation_levels,
+    ) = get_trajectories_from_kitti(
+        detection_file=kitti_path / "label_02" / (scene + ".txt"),
+        poses=gt_poses,
+        offset=0,
+        T02=T02,
+    )
+    print("Loaded GT trajectories")
 
-    # per object, get trajectories
-    if args.plot and args.save is not None:
-        mpl.rcParams["grid.color"] = "w"
-        mpl.rcParams["grid.color"] = "w"
-        mpl.rcParams["axes.edgecolor"] = "w"
-        mpl.rcParams["xtick.color"] = "w"
-        mpl.rcParams["ytick.color"] = "w"
-        save_dir = Path(args.save) / args.trajectories.split("/")[-1]
+    #if args.plot:
+    #    mpl.rcParams["grid.color"] = "w"
+    #    mpl.rcParams["grid.color"] = "w"
+    #    mpl.rcParams["axes.edgecolor"] = "w"
+    #    mpl.rcParams["xtick.color"] = "w"
+    #    mpl.rcParams["ytick.color"] = "w"
+    if args.save:
+        save_dir = Path(args.save) / args.trajectories.split("/")[-1] / scene
         save_dir.mkdir(exist_ok=True, parents=True)
-    err_dist = {}
-    num_objects = args.num_objects if args.num_objects else len(gt_trajectories)
+    err_per_obj = {}
+    num_objects = args.num_objects if args.num_objects else len(gt_trajectories_world)
+    print(f"Number of objects: {num_objects}")
     for j in range(2):
         if j != 0:
             fig = plt.figure(figsize=plt.figaspect(0.5))
             ax_3d = fig.add_subplot(1, 1, 1, projection="3d")
-        for i, track_id in enumerate(gt_trajectories.keys()):
+        for i, track_id in enumerate(gt_trajectories_world.keys()):
             if i > num_objects:
                 break
-            gt_traj_dict = gt_trajectories[track_id]
+            gt_traj_dict = gt_trajectories_world[track_id]
             gt_traj_cam_dict = gt_trajectories_cam[track_id]
 
-            if track_id not in est_trajectories:
+            if track_id not in est_trajectories_world:
                 continue
-            est_traj_dict = est_trajectories[track_id]
+            est_traj_dict = est_trajectories_world[track_id]
             est_traj_cam_dict = est_trajectories_cam[track_id]
-            err_dist_obj = []
+            err_per_image = {}
             valid_frames = []
+            prev_pt = None
+            gt_distances = []
             for img_id, est_pt in est_traj_cam_dict.items():
                 gt_pt = gt_traj_cam_dict.get(img_id)
                 if gt_pt is None:  # could be due to occlusion
                     continue
+
                 gt_pt = np.array(gt_pt).reshape(3,).tolist()
+                if prev_pt is not None:
+                    dist = np.linalg.norm(np.array(gt_pt) - prev_pt)
+                    # print("dist: ", dist)
+                    gt_distances.append(dist)
+                prev_pt = np.array(gt_pt)
                 est_pt = np.array(est_pt).reshape(3,).tolist()
                 error = np.linalg.norm(np.array(gt_pt) - np.array(est_pt))
                 gt_pt_world = np.array(gt_traj_dict[img_id]).reshape(3, 1)
                 est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
                 error_world = np.linalg.norm(gt_pt_world - est_pt_world)
-                print("error world: ", error_world)
-                print("error cam: ", error)
-                print("diff: ", np.abs(error_world - error))
+                # print("error world: ", error_world)
+                # print("error cam: ", error)
+                # print("diff: ", np.abs(error_world - error))
                 # err_x = np.abs(gt_pt[0] - est_pt[0])
                 # err_y = np.abs(gt_pt[1] - est_pt[1])
                 # err_z = np.abs(gt_pt[2] - est_pt[2])
                 dist = np.linalg.norm(np.array(gt_pt))
-                err_x, err_y, err_z = np.abs(gt_pt_world - est_pt_world)
+                err_x, err_y, err_z = (
+                    np.abs(gt_pt_world - est_pt_world).reshape(3,).tolist()
+                )
                 if args.distances:
                     min_dist, max_dist = map(int, args.distances)
                     if min_dist <= dist <= max_dist:
@@ -132,10 +177,10 @@ if __name__ == "__main__":
                     else:
                         if img_id in valid_frames:
                             valid_frames.remove(img_id)
-                err_dist_obj.append(([err_x, err_y, err_z, error], dist))
+                err_per_image[img_id] = ((err_x, err_y, err_z, error_world), dist)
             if not args.distances and not args.error:
                 valid_frames = list(est_traj_dict.keys())
-            err_dist[track_id] = err_dist_obj
+            err_per_obj[track_id] = err_per_image
             if args.plot:
                 if j == 0:
                     fig = plt.figure(figsize=plt.figaspect(0.5))
@@ -163,12 +208,19 @@ if __name__ == "__main__":
                 # 2: largely occluded
                 # 3: unknown
                 occlusion_map = {0: 1.0, 1: 0.75, 2: 0.3, 3: 0}
-                if occlusion_levels:
-                    alphas = list(
-                        map(occlusion_map.get, occlusion_levels[track_id].values())
-                    )
-                else:
-                    alphas = [1 for _ in range(len(gt_traj))]
+                # trunaction levels:
+                # 0: not truncated
+                # 1: partially truncated
+                # 2: even more truncated
+                truncated_map = {0: 1.0, 1: 0.75, 2: 0.3, 3:0}
+                alphas_occ = list(
+                    map(occlusion_map.get, occlusion_levels[track_id].values())
+                )
+                alphas_trunc = list(
+                    map(truncated_map.get, truncation_levels[track_id].values())
+                )
+                alphas = [min(occ, trunc) for occ, trunc in zip(alphas_occ, alphas_trunc)]
+                
                 colors = np.array(
                     [color.tolist() + [alphas[i]] for i in range(len(gt_traj))]
                 ).reshape(-1, 4)
@@ -198,30 +250,31 @@ if __name__ == "__main__":
                             ax_2d = fig.add_subplot(1, 2, 2)
                         else:
                             ax_2d = fig.add_subplot(1, 1, 1)
+                        err_dist = list(err_per_image.values())
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][0], err_dist_obj)),
-                            list(map(lambda x: x[1], err_dist_obj)),
+                            list(map(lambda x: x[0][0], err_dist)),
+                            list(map(lambda x: x[1], err_dist)),
                             alpha=0.5,
                             label="L1-error x (left, right)",
                         )
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][1], err_dist_obj)),
-                            list(map(lambda x: x[1], err_dist_obj)),
+                            list(map(lambda x: x[0][1], err_dist)),
+                            list(map(lambda x: x[1], err_dist)),
                             alpha=0.5,
                             label="L1-error y (elevation)",
                         )
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][2], err_dist_obj)),
-                            list(map(lambda x: x[1], err_dist_obj)),
+                            list(map(lambda x: x[0][2], err_dist)),
+                            list(map(lambda x: x[1], err_dist)),
                             alpha=0.5,
                             label="L1-error z (depth)",
                         )
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][3], err_dist_obj)),
-                            list(map(lambda x: x[1], err_dist_obj)),
+                            list(map(lambda x: x[0][3], err_dist)),
+                            list(map(lambda x: x[1], err_dist)),
                             label="L1-error total",
                         )
-                        ax_2d.set_xscale("log")
+                        #ax_2d.set_xscale("log")
                         ax_2d.set_xlabel("Error [m]")
                         ax_2d.set_ylabel("Distance [m]")
                         plt.legend()
@@ -240,7 +293,7 @@ if __name__ == "__main__":
                         path = save_dir / f"{track_id}-{args.plot}.png"
                         fig.suptitle(f"Object w/ ID {track_id}", color="w")
                         plt.savefig(
-                            path.as_posix(), transparent=True, bbox_inches="tight"
+                            path.as_posix(), transparent=False, bbox_inches="tight"
                         )
                     else:
                         fig.suptitle(f"Object w/ ID {track_id}")
@@ -260,31 +313,35 @@ if __name__ == "__main__":
             if args.save:
                 path = save_dir / "full_view.png"
                 ax_3d.set_yticks([])
-                plt.savefig(path.as_posix(), transparent=True, bbox_inches="tight")
+                plt.savefig(path.as_posix(), transparent=False, bbox_inches="tight")
             else:
                 plt.show()
 
-            # trajectory plot should draw world trajectories
-            # error estimates should be made in cam coordinates?
-    print("+++EVALUATION+++")
     mean_err_total = []
-    for track_id, err_and_dist in err_dist.items():
-        print("=" * 40)
-        print(f"Object with id {track_id}")
-        errors = [err[0] for err in err_and_dist]
-        mean_err = np.mean(errors)
-        mean_err_total.append(mean_err)
-        print(f"Mean error: {np.mean(errors)}")
-        print(f"Median error: {np.median(errors)}")
-        print(f"Std. dev: {np.std(errors)}")
-        print(f"Variance: {np.var(errors)}")
-        err_sorted_by_dist = map(
-            lambda y: y[0], sorted(err_and_dist, key=lambda x: x[1])
-        )
-        # print("Errors sorted by distance (from close to far):")
-        # print(
-        #    *list(err_sorted_by_dist), sep="\n",
-        # )
-    print(f"Mean error over all tracks: {np.mean(mean_err_total)}")
-    print(f"Std. dev over all tracks: {np.std(mean_err_total)}")
-    print(f"Variance total: {np.var(mean_err_total)}")
+    if args.save:
+        eval_file = save_dir / "evaluation.csv"
+        with open(eval_file.as_posix(), "w") as fp:
+            columns = [
+                "object id",
+                "image id",
+                "distance from camera",
+                "occlusion level",
+                "truncation level",
+                "error",
+                "error x",
+                "error y",
+                "error z",
+            ]
+            header = ",".join(columns) + "\n"
+            fp.write(header)
+            for track_id, err_per_image in err_per_obj.items():
+                for (
+                    img_id,
+                    ((err_x, err_y, err_z, error), dist),
+                ) in err_per_image.items():
+                    occ_lvl = occlusion_levels[track_id][img_id]
+                    trunc_lvl = truncation_levels[track_id][img_id]
+                    fp.write(
+                        f"{track_id},{img_id},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x:.4f},{err_y:.4f},{err_z:.4f}\n"
+                    )
+        print(f"Saved results to {eval_file.as_posix()}")

@@ -30,7 +30,6 @@ from bamot.util.viewer import run as run_viewer
 
 warnings.filterwarnings(action="ignore")
 
-
 LOG_LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "ERROR": logging.ERROR}
 LOGGER = colorlog.getLogger()
 HANDLER = TqdmLoggingHandler()
@@ -214,16 +213,18 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-t",
-        "--tag",
+        "--tags",
         type=str,
-        help="A tag for the given run (default=`YEAR_MONTH_DAY-HOUR_MINUTE`)",
-        default=datetime.datetime.strftime(datetime.datetime.now(), "%Y_%m_%d-%H_%M"),
+        nargs="+",
+        help="One or several tags for the given run (default=`YEAR_MONTH_DAY-HOUR_MINUTE`)",
+        default=[datetime.datetime.strftime(datetime.datetime.now(), "%Y_%m_%d-%H_%M")],
     )
     parser.add_argument(
         "--out",
         dest="out",
         type=str,
-        help="Where to save GT and estimated object trajectories (default: `<kitti>/trajectories/<scene>/<tag>`)",
+        help="""Where to save GT and estimated object trajectories
+        (default: `<kitti>/trajectories/<scene>/<features>/<tags>[0]/<tags>[1]/.../<tags>[N]`)""",
     )
     parser.add_argument(
         "-id",
@@ -292,11 +293,7 @@ if __name__ == "__main__":
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
     stereo_cam, T02 = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
     gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
-    (
-        gt_trajectories_world,
-        gt_trajectories_cam,
-        occlusion_levels,
-    ) = get_trajectories_from_kitti(
+    gt_trajectories_world, gt_trajectories_cam, _, _ = get_trajectories_from_kitti(
         detection_file=kitti_path / "label_02" / (scene + ".txt"),
         poses=gt_poses,
         offset=args.offset,
@@ -357,32 +354,23 @@ if __name__ == "__main__":
     returned_data.task_done()
     returned_data.join()
     if not args.out:
-        out_path = kitti_path / "trajectories" / scene / args.tag
+        out_path = kitti_path / "trajectories" / scene / args.features
+        for tag in args.tags:
+            out_path /= tag
     else:
         out_path = Path(args.out)
 
     # Save trajectories
     out_path.mkdir(exist_ok=True, parents=True)
-    out_gt_world = out_path / "gt_trajectories_world.json"
-    out_gt_cam = out_path / "gt_trajectories_cam.json"
     out_est_world = out_path / "est_trajectories_world.json"
     out_est_cam = out_path / "est_trajectories_cam.json"
-    out_occlusion_levels = out_path / "occlusion_levels.json"
     # estimated
     with open(out_est_world.as_posix(), "w") as fp:
         json.dump(estimated_trajectories_world, fp, indent=4, sort_keys=True)
     with open(out_est_cam.as_posix(), "w") as fp:
         json.dump(estimated_trajectories_cam, fp, indent=4, sort_keys=True)
-    # ground truth
-    with open(out_gt_world.as_posix(), "w") as fp:
-        json.dump(gt_trajectories_world, fp, indent=4, sort_keys=True)
-    with open(out_gt_cam.as_posix(), "w") as fp:
-        json.dump(gt_trajectories_cam, fp, indent=4, sort_keys=True)
-    with open(out_occlusion_levels.as_posix(), "w") as fp:
-        json.dump(occlusion_levels, fp, indent=4, sort_keys=True)
     LOGGER.info(
-        "Saved estimated and ground truth object track trajectories to %s",
-        out_path.as_posix(),
+        "Saved estimated object track trajectories to %s", out_path.as_posix(),
     )
 
     # Cleanly shutdown
