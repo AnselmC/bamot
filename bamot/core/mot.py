@@ -7,8 +7,9 @@ import time
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import pathos
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    ImageId, Landmark, Match, ObjectTrack,
@@ -404,10 +405,16 @@ def run(
                 # ):
                 if np.linalg.norm(lm.pt_3d - cluster_center) > 4.0:
                     landmarks_to_remove.append(lid)
+                    continue
+                if (
+                    len(lm.observations) < 2
+                    and (lm.observations[0].timecam_id[0] - img_id) > 3
+                ):
+                    landmarks_to_remove.append(lid)
             LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
             for lid in landmarks_to_remove:
                 track.landmarks.pop(lid)
-            if len(track.landmarks) < 25:
+            if len(track.landmarks) < 15:
                 track.active = False
         return track, left_features, right_features, stereo_matches
 
@@ -507,6 +514,11 @@ def step(
         for future, track_index in futures_to_track_index.items():
             track, left_features, right_features, stereo_matches = future.get()
             object_tracks[track_index] = track
+            # if track.active:
+            #    object_tracks[track_index] = track
+            # else:
+            #    if object_tracks.get(track_index):
+            #        del object_tracks[track_index]
             all_left_features.append(left_features)
             all_right_features.append(right_features)
             all_stereo_matches.append(stereo_matches)
