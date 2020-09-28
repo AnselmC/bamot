@@ -8,7 +8,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
 from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
-                              get_trajectories_from_kitti)
+                              get_label_data_from_kitti)
 
 RNG = np.random.default_rng()
 COLORS = RNG.random((42, 3))
@@ -44,7 +44,6 @@ if __name__ == "__main__":
         "--scene",
         dest="scene",
         help="the kitti scene",
-        required=True,
         choices=range(0, 20),
         type=int,
     )
@@ -93,23 +92,28 @@ if __name__ == "__main__":
 
     print("Loaded estimated trajectories")
     kitti_path = Path(args.kitti)
+    if not args.scene:
+        # infer scene from dir
+        scene = None
+        for part in traj_path.as_posix().split("/"):
+            try:
+                scene = int(part)
+                if scene not in range(0, 20):
+                    scene = None
+            except:
+                pass
+        if scene is None:
+            print(f"Could not infer scene from {kitti_path.as_posix()}")
+            exit()
+        else:
+            args.scene = scene
     scene = str(args.scene).zfill(4)
-    _, T02 = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
-    gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
-    (
-        gt_trajectories_world,
-        gt_trajectories_cam,
-        occlusion_levels,
-        truncation_levels,
-    ) = get_trajectories_from_kitti(
-        detection_file=kitti_path / "label_02" / (scene + ".txt"),
-        poses=gt_poses,
-        offset=0,
-        T02=T02,
-    )
+    _, T02 = get_cameras_from_kitti(kitti_path)
+    gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
+    label_data = get_label_data_from_kitti(kitti_path, scene, poses=gt_poses,)
     print("Loaded GT trajectories")
 
-    #if args.plot:
+    # if args.plot:
     #    mpl.rcParams["grid.color"] = "w"
     #    mpl.rcParams["grid.color"] = "w"
     #    mpl.rcParams["axes.edgecolor"] = "w"
@@ -119,17 +123,19 @@ if __name__ == "__main__":
         save_dir = Path(args.save) / args.trajectories.split("/")[-1] / scene
         save_dir.mkdir(exist_ok=True, parents=True)
     err_per_obj = {}
-    num_objects = args.num_objects if args.num_objects else len(gt_trajectories_world)
+    num_objects = (
+        args.num_objects if args.num_objects else len(label_data.world_positions)
+    )
     print(f"Number of objects: {num_objects}")
     for j in range(2):
         if j != 0:
             fig = plt.figure(figsize=plt.figaspect(0.5))
             ax_3d = fig.add_subplot(1, 1, 1, projection="3d")
-        for i, track_id in enumerate(gt_trajectories_world.keys()):
+        for i, track_id in enumerate(label_data.world_positions.keys()):
             if i > num_objects:
                 break
-            gt_traj_dict = gt_trajectories_world[track_id]
-            gt_traj_cam_dict = gt_trajectories_cam[track_id]
+            gt_traj_dict = label_data.world_positions[track_id]
+            gt_traj_cam_dict = label_data.cam_positions[track_id]
 
             if track_id not in est_trajectories_world:
                 continue
@@ -138,46 +144,39 @@ if __name__ == "__main__":
             err_per_image = {}
             valid_frames = []
             prev_pt = None
-            gt_distances = []
-            for img_id, est_pt in est_traj_cam_dict.items():
-                gt_pt = gt_traj_cam_dict.get(img_id)
-                if gt_pt is None:  # could be due to occlusion
+            for img_id, est_pt_cam in est_traj_cam_dict.items():
+                gt_pt_cam = gt_traj_cam_dict.get(img_id)
+                if gt_pt_cam is None:  # could be due to occlusion
                     continue
 
-                gt_pt = np.array(gt_pt).reshape(3,).tolist()
-                if prev_pt is not None:
-                    dist = np.linalg.norm(np.array(gt_pt) - prev_pt)
-                    # print("dist: ", dist)
-                    gt_distances.append(dist)
-                prev_pt = np.array(gt_pt)
-                est_pt = np.array(est_pt).reshape(3,).tolist()
-                error = np.linalg.norm(np.array(gt_pt) - np.array(est_pt))
+                gt_pt_cam = np.array(gt_pt_cam).reshape(3, 1)
+                est_pt_cam = np.array(est_pt_cam).reshape(3, 1)
+                error = np.linalg.norm(gt_pt_cam - est_pt_cam)
+                err_x, err_y, err_z = (
+                    np.abs(gt_pt_cam - est_pt_cam).reshape(3,).tolist()
+                )
+
                 gt_pt_world = np.array(gt_traj_dict[img_id]).reshape(3, 1)
                 est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
                 error_world = np.linalg.norm(gt_pt_world - est_pt_world)
-                # print("error world: ", error_world)
-                # print("error cam: ", error)
-                # print("diff: ", np.abs(error_world - error))
-                # err_x = np.abs(gt_pt[0] - est_pt[0])
-                # err_y = np.abs(gt_pt[1] - est_pt[1])
-                # err_z = np.abs(gt_pt[2] - est_pt[2])
-                dist = np.linalg.norm(np.array(gt_pt))
-                err_x, err_y, err_z = (
+                err_x_world, err_y_world, err_z_world = (
                     np.abs(gt_pt_world - est_pt_world).reshape(3,).tolist()
                 )
+
+                dist = np.linalg.norm(np.array(gt_pt_cam))
                 if args.distances:
                     min_dist, max_dist = map(int, args.distances)
                     if min_dist <= dist <= max_dist:
                         valid_frames.append(img_id)
                 if args.error:
                     max_error = float(args.error)
-                    if error_world < max_error:
+                    if error < max_error:
                         if img_id not in valid_frames:
                             valid_frames.append(img_id)
                     else:
                         if img_id in valid_frames:
                             valid_frames.remove(img_id)
-                err_per_image[img_id] = ((err_x, err_y, err_z, error_world), dist)
+                err_per_image[img_id] = ((err_x, err_y, err_z, error), dist)
             if not args.distances and not args.error:
                 valid_frames = list(est_traj_dict.keys())
             err_per_obj[track_id] = err_per_image
@@ -212,15 +211,23 @@ if __name__ == "__main__":
                 # 0: not truncated
                 # 1: partially truncated
                 # 2: even more truncated
-                truncated_map = {0: 1.0, 1: 0.75, 2: 0.3, 3:0}
+                truncated_map = {0: 1.0, 1: 0.75, 2: 0.3, 3: 0}
                 alphas_occ = list(
-                    map(occlusion_map.get, occlusion_levels[track_id].values())
+                    map(
+                        occlusion_map.get,
+                        label_data.occlusion_levels[track_id].values(),
+                    )
                 )
                 alphas_trunc = list(
-                    map(truncated_map.get, truncation_levels[track_id].values())
+                    map(
+                        truncated_map.get,
+                        label_data.truncation_levels[track_id].values(),
+                    )
                 )
-                alphas = [min(occ, trunc) for occ, trunc in zip(alphas_occ, alphas_trunc)]
-                
+                alphas = [
+                    min(occ, trunc) for occ, trunc in zip(alphas_occ, alphas_trunc)
+                ]
+
                 colors = np.array(
                     [color.tolist() + [alphas[i]] for i in range(len(gt_traj))]
                 ).reshape(-1, 4)
@@ -274,7 +281,7 @@ if __name__ == "__main__":
                             list(map(lambda x: x[1], err_dist)),
                             label="L1-error total",
                         )
-                        #ax_2d.set_xscale("log")
+                        # ax_2d.set_xscale("log")
                         ax_2d.set_xlabel("Error [m]")
                         ax_2d.set_ylabel("Distance [m]")
                         plt.legend()
@@ -339,8 +346,8 @@ if __name__ == "__main__":
                     img_id,
                     ((err_x, err_y, err_z, error), dist),
                 ) in err_per_image.items():
-                    occ_lvl = occlusion_levels[track_id][img_id]
-                    trunc_lvl = truncation_levels[track_id][img_id]
+                    occ_lvl = label_data.occlusion_levels[track_id][img_id]
+                    trunc_lvl = label_data.truncation_levels[track_id][img_id]
                     fp.write(
                         f"{track_id},{img_id},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x:.4f},{err_y:.4f},{err_z:.4f}\n"
                     )

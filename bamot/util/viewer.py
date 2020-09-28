@@ -4,15 +4,14 @@ from pathlib import Path
 from threading import Event
 from typing import Dict, List, Optional, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
-from bamot.util.cv import (from_homogeneous_pt, get_center_of_landmarks,
-                           to_homogeneous_pt)
+from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
-LOGGER.setLevel(logging.DEBUG)
 RNG = np.random.default_rng()
 Color = np.ndarray
 # Create some random colors
@@ -92,9 +91,8 @@ def _update_tracks(
         gt_points = []
         try:
             gt_traj = gt_trajectories[ido]
-        except:
-            print(ido)
-            print(gt_trajectories.keys())
+        except KeyError as e:
+            LOGGER.debug(e)
         points = []
         white = np.array([1.0, 1.0, 1.0])
         lighter_color = color + 0.75 * white
@@ -137,9 +135,8 @@ def _update_tracks(
             path_points.append(center.reshape(3,).tolist())
             try:
                 gt_points.append(gt_traj[img_id])
-            except:
-                print(img_id)
-                print(gt_traj.keys())
+            except KeyError as e:
+                LOGGER.debug(e)
             if i == len(track.poses) - 1:
                 track_size = len(points)
             if ido == -1:

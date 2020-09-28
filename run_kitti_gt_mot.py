@@ -24,7 +24,7 @@ from bamot.core.mot import run
 from bamot.util.cv import (get_orb_feature_matcher,
                            get_superpoint_feature_matcher)
 from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
-                              get_trajectories_from_kitti)
+                              get_label_data_from_kitti)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
@@ -248,6 +248,13 @@ if __name__ == "__main__":
         help="Show objects in world coordinates in viewer",
         action="store_true",
     )
+    parser.add_argument(
+        "-cs",
+        "--cluster-size",
+        dest="cluster_size",
+        help="Set the appropriate cluster size (used to cull landmarks). If set to 0, determine cluster size dynamically using standard dev of point clouds (default=6.0)",
+        default=6.0,
+    )
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
@@ -291,13 +298,10 @@ if __name__ == "__main__":
     next_step.set()
     img_shape = _get_image_shape(kitti_path)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
-    stereo_cam, T02 = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
-    gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
-    gt_trajectories_world, gt_trajectories_cam, _, _ = get_trajectories_from_kitti(
-        detection_file=kitti_path / "label_02" / (scene + ".txt"),
-        poses=gt_poses,
-        offset=args.offset,
-        T02=T02,
+    stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
+    gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
+    label_data = get_label_data_from_kitti(
+        kitti_path, scene, poses=gt_poses, offset=args.offset
     )
     detection_stream = _get_detection_stream(
         obj_detections_path,
@@ -323,6 +327,7 @@ if __name__ == "__main__":
             "next_step": next_step,
             "returned_data": returned_data,
             "continuous": args.continuous,
+            "cluster_size": args.cluster_size,
         },
         name="BAMOT",
     )
@@ -341,7 +346,7 @@ if __name__ == "__main__":
             shared_data=shared_data,
             stop_flag=stop_flag,
             next_step=next_step,
-            gt_trajectories=gt_trajectories_world,
+            gt_trajectories=label_data.world_positions,
             save_path=Path(args.record) if args.record else None,
             poses=gt_poses if args.world else None,
         )

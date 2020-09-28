@@ -41,12 +41,12 @@ def _plt_hist_no_outliers(df, dst_dir, save):
     _, ymax = plt.ylim()
     plt.title("Histogram of errors < stddev (60 bins)")
     plt.axvline(
-        errs.mean(), linestyle="dashed", label=f"Mean: {errs.mean():.2f}%", color="b",
+        errs.mean(), linestyle="dashed", label=f"Mean: {errs.mean():.2f}", color="b",
     )
     plt.axvline(
         errs.median(),
         linestyle="dotted",
-        label=f"Median: {errs.median():.2f}%",
+        label=f"Median: {errs.median():.2f}",
         color="r",
     )
     plt.xlabel("Error")
@@ -107,6 +107,17 @@ def _write_summary(df, dst_dir, save):
         f"Standard dev (no occlusion or truncation): {df_fully_visible.error.std()}"
     )
     summary.append("-" * 30)
+    df_close = df.loc[df["distance from camera"] < 5]
+    df_mid = df.loc[
+        (df["distance from camera"] >= 5) & (df["distance from camera"] < 30)
+    ]
+    df_far = df.loc[df["distance from camera"] >= 30]
+    summary.append(f"Mean error (0-5m from camera): {df_close.error.mean()}")
+    summary.append(f"Median error (0-5m from camera): {df_close.error.median()}")
+    summary.append(f"Mean error (5-30m from camera): {df_mid.error.mean()}")
+    summary.append(f"Median error (5-30m from camera): {df_mid.error.median()}")
+    summary.append(f"Mean error (>30m from camera): {df_far.error.mean()}")
+    summary.append(f"Median error (>30m from camera): {df_far.error.median()}")
     df_scenes = df.groupby("scene")
     num_scenes = len(df_scenes)
     mean_errors = df_scenes.error.mean()
@@ -152,6 +163,8 @@ def _write_summary(df, dst_dir, save):
     summary.append(
         f"% objects w/ median error < 1m: {(100*(median_error < 1).sum()/num_objs):.2f}%"
     )
+    summary.append(f"10 best objects: {df_objs.error.nsmallest(n=10)}")
+    summary.append(f"10 worst objects: {df_objs.error.nlargest(n=10)}")
     summary.append("+" * 30)
     summary.append("SCENES")
     for scene in sorted(df.scene.unique()):

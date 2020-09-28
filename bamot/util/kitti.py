@@ -1,15 +1,30 @@
+import glob
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Tuple
 
-import cv2
 import numpy as np
 import pandas as pd
+
+import cv2
 from bamot.core.base_types import (CameraParameters, ObjectDetection,
                                    StereoCamera)
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 
 LOGGER = logging.getLogger("Util:Kitti")
+
+
+def get_image_stream(
+    kitti_path: Path, scene: str
+) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
+    left_img_path = kitti_path / "image_02" / scene
+    right_img_path = kitti_path / "image_03" / scene
+    left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
+    right_imgs = sorted(glob.glob(right_img_path.as_posix() + "/*.png"))
+    for left, right in zip(left_imgs, right_imgs):
+        left_img = cv2.imread(left, cv2.IMREAD_COLOR).astype(np.uint8)
+        right_img = cv2.imread(right, cv2.IMREAD_COLOR).astype(np.uint8)
+        yield left_img, right_img
 
 
 def _project(pt_3d_cam: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
@@ -31,25 +46,52 @@ def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
     return (np.array([mx, my, 1]) / length).reshape(3, 1)
 
 
-TrackIdToPoseDict = Dict[int, Dict[int, np.ndarray]]
+def _get_oxts_file(kitti_path: Path, scene: str) -> Path:
+    return kitti_path / "oxts" / (scene + ".txt")
+
+
+def _get_calib_cam_to_cam_file(kitti_path: Path) -> Path:
+    return kitti_path / "calib_cam_to_cam.txt"
+
+
+def _get_calib_file(kitti_path: Path, scene: str) -> Path:
+    return kitti_path / "calib" / (scene + ".txt")
+
+
+def _get_detection_file(kitti_path: Path, scene: str) -> Path:
+    return kitti_path / "label_02" / (scene + ".txt")
+
+
+TrackIdToPositionDict = Dict[int, Dict[int, np.ndarray]]
 TrackIdToOcclusionLevel = Dict[int, Dict[int, int]]
 TrackIdToTruncationLevel = Dict[int, Dict[int, int]]
+TrackIdToBoundingBox = Dict[int, Dict[int, int]]
 
 
-def get_trajectories_from_kitti(
-    detection_file: Path, poses: List[np.ndarray], offset: int, T02: np.ndarray
-) -> Tuple[
-    TrackIdToPoseDict,
-    TrackIdToPoseDict,
-    TrackIdToOcclusionLevel,
-    TrackIdToTruncationLevel,
-]:
+class LabelData(NamedTuple):
+    world_positions: TrackIdToPositionDict
+    cam_positions: TrackIdToPositionDict
+    occlusion_levels: TrackIdToOcclusionLevel
+    truncation_levels: TrackIdToTruncationLevel
+    bbox2d: TrackIdToBoundingBox
+
+
+def get_label_data_from_kitti(
+    kitti_path: Path, scene: str, poses: List[np.ndarray], offset: int = 0
+) -> LabelData:
     gt_trajectories_world = {}
     gt_trajectories_cam = {}
     occlusion_levels = {}
     truncation_levels = {}
+    bounding_boxes = {}
+    detection_file = _get_detection_file(kitti_path, scene)
     if not detection_file.exists():
-        return gt_trajectories_world, gt_trajectories_cam
+        return (
+            gt_trajectories_world,
+            gt_trajectories_cam,
+            occlusion_levels,
+            truncation_levels,
+        )
     with open(detection_file.as_posix(), "r") as fp:
         for line in fp:
             cols = line.split(" ")
@@ -64,14 +106,13 @@ def get_trajectories_from_kitti(
             occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
             # cols[6:10] is bbox
+            bbox = list(map(float, cols[6:10]))
             # cols[10: 13] are 3D dimensions
-            location_cam0 = np.array(list(map(float, cols[13:16]))).reshape(
+
+            location_cam2 = np.array(list(map(float, cols[13:16]))).reshape(
                 (3, 1)
             )  # in camera coordinates
             T_w_cam2 = poses[frame]
-            location_cam2 = from_homogeneous_pt(
-                np.linalg.inv(T02) @ to_homogeneous_pt(location_cam0)
-            )
             location_world = from_homogeneous_pt(
                 T_w_cam2 @ to_homogeneous_pt(location_cam2)
             )
@@ -82,25 +123,29 @@ def get_trajectories_from_kitti(
                 gt_trajectories_cam[track_id] = {}
                 occlusion_levels[track_id] = {}
                 truncation_levels[track_id] = {}
+                bounding_boxes[track_id] = {}
             gt_trajectories_world[track_id][frame] = location_world.tolist()
             gt_trajectories_cam[track_id][frame] = location_cam2.tolist()
             occlusion_levels[track_id][frame] = occlusion_level
             truncation_levels[track_id][frame] = truncation_level
+            bounding_boxes[track_id][frame] = bbox
     LOGGER.debug("Extracted GT trajectories for %d objects", len(gt_trajectories_world))
-    return (
-        gt_trajectories_world,
-        gt_trajectories_cam,
-        occlusion_levels,
-        truncation_levels,
+    return LabelData(
+        world_positions=gt_trajectories_world,
+        cam_positions=gt_trajectories_cam,
+        occlusion_levels=occlusion_levels,
+        truncation_levels=truncation_levels,
+        bbox2d=bounding_boxes,
     )
 
 
-def get_gt_poses_from_kitti(oxts_file: Path) -> List[np.ndarray]:
+def get_gt_poses_from_kitti(kitti_path: Path, scene: str) -> List[np.ndarray]:
     """Adapted from Sergio Agostinho, returns GT poses of left cam
     """
+    oxts_file = _get_oxts_file(kitti_path, scene)
     poses = []
     if not oxts_file.exists():
-        return poses
+        raise FileNotFoundError(oxts_file.as_posix())
 
     cols = (
         "lat",
@@ -135,42 +180,13 @@ def get_gt_poses_from_kitti(oxts_file: Path) -> List[np.ndarray]:
         "orimode",
     )
     df = pd.read_csv(oxts_file.as_posix(), sep=" ", names=cols, index_col=False)
-
-    # extract relative poses w.r.t. original frame (i.e. world)
-    # get poses into expected frame
-    # rotate around 90 degrees around x
-    # rotation 90 degrees around z
-    # rot_x = np.array(
-    #    [
-    #        [1, 0, 0],
-    #        [0, np.cos(np.pi / 2), -np.sin(np.pi / 2)],
-    #        [0, np.sin(np.pi / 2), np.cos(np.pi / 2)],
-    #    ]
-    # )
-    # rot_z = np.array(
-    #    [
-    #        [np.cos(np.pi / 2), -np.sin(np.pi / 2), 0],
-    #        [np.sin(np.pi / 2), np.cos(np.pi / 2), 0],
-    #        [0, 0, 1],
-    #    ]
-    # )
-    # rot_y = np.array([[np.cos(0), 0, np.sin(0)], [0, 1, 0], [-np.sin(0), 0, np.cos(0)]])
-    # roll = np.identity(4)
-    # roll[:3, :3] = rot_x
-
-    # pitch = np.identity(4)
-    # pitch[:3, :3] = rot_y
-
-    # yaw = np.identity(4)
-    # yaw[:3, :3] = rot_z
-    rot = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
+    Tr_cam_imu = get_transformation_cam_to_imu(kitti_path, scene)
     poses = [
-        rot @ T_w_cam2
-        for T_w_cam2 in _oxts_to_poses(
+        T_w_imu @ np.linalg.inv(Tr_cam_imu)
+        for T_w_imu in _oxts_to_poses(
             *df[["lat", "lon", "alt", "roll", "pitch", "yaw"]].values.T
         )
     ]
-
     return poses
 
 
@@ -240,7 +256,25 @@ def _oxts_to_poses(lat, lon, alt, roll, pitch, yaw):
     return T
 
 
-def get_cameras_from_kitti(calib_file: Path) -> Tuple[StereoCamera, np.ndarray]:
+def get_transformation_cam_to_imu(kitti_path: Path, scene) -> np.ndarray:
+    calib_file = _get_calib_file(kitti_path, scene)
+    with open(calib_file.as_posix(), "r") as fp:
+        for line in fp:
+            cols = line.split(" ")
+            name = cols[0]
+            if name == "Tr_imu_velo":
+                Tr_imu_velo = np.array(list(map(float, cols[1:-2]))).reshape(3, 4)
+                Tr_imu_velo = np.vstack([Tr_imu_velo, np.array([[0, 0, 0, 1]])])
+            elif name == "Tr_velo_cam":
+                Tr_velo_cam = np.array(list(map(float, cols[1:-2]))).reshape(3, 4)
+                Tr_velo_cam = np.vstack([Tr_velo_cam, np.array([[0, 0, 0, 1]])])
+
+    Tr_imu_cam = Tr_imu_velo @ Tr_velo_cam
+    return Tr_imu_cam
+
+
+def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
+    calib_file = _get_calib_cam_to_cam_file(kitti_path)
     with open(calib_file.as_posix(), "r") as fp:
         for line in fp:
             cols = line.split(" ")
@@ -261,7 +295,6 @@ def get_cameras_from_kitti(calib_file: Path) -> Tuple[StereoCamera, np.ndarray]:
                 R_rect_02 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
             elif "R_rect_03" in name:
                 R_rect_03 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
-
     left_fx = P_rect_left[0, 0]
     left_fy = P_rect_left[1, 1]
     left_cx = P_rect_left[0, 2]
