@@ -29,7 +29,7 @@ def timer(func):
     def func_wrapper(*args, **kwargs):
         start = time.time()
         res = func(*args, **kwargs)
-        LOGGER.info("%s took %f s", func.__name__, time.time() - start)
+        LOGGER.debug("%s took %f s", func.__name__, time.time() - start)
         return res
 
     return func_wrapper

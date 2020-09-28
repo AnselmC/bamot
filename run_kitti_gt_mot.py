@@ -327,7 +327,7 @@ if __name__ == "__main__":
             "next_step": next_step,
             "returned_data": returned_data,
             "continuous": args.continuous,
-            "cluster_size": args.cluster_size,
+            "cluster_size": float(args.cluster_size),
         },
         name="BAMOT",
     )
