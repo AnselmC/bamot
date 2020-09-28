@@ -13,11 +13,11 @@ import warnings
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple, Union
 
-import numpy as np
-
 import colorlog
 import cv2
+import numpy as np
 import tqdm
+
 from bamot.core.base_types import (ObjectDetection, StereoImage,
                                    StereoObjectDetection)
 from bamot.core.mot import run
@@ -248,6 +248,13 @@ if __name__ == "__main__":
         help="Show objects in world coordinates in viewer",
         action="store_true",
     )
+    parser.add_argument(
+        "-cs",
+        "--cluster-size",
+        dest="cluster_size",
+        help="Set the appropriate cluster size (used to cull landmarks). If set to 0, determine cluster size dynamically using standard dev of point clouds (default=6.0)",
+        default=6.0,
+    )
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
@@ -320,6 +327,7 @@ if __name__ == "__main__":
             "next_step": next_step,
             "returned_data": returned_data,
             "continuous": args.continuous,
+            "cluster_size": args.cluster_size,
         },
         name="BAMOT",
     )

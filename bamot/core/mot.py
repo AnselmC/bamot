@@ -5,11 +5,10 @@ import logging
 import queue
 import time
 from threading import Event
-from typing import Dict, Iterable, List, Tuple
-
-import numpy as np
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import cv2
+import numpy as np
 import pathos
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    ImageId, Landmark, Match, ObjectTrack,
@@ -294,6 +293,7 @@ def run(
     stop_flag: Event,
     next_step: Event,
     continuous: bool,
+    cluster_size: Optional[Union[bool, float]] = 6.0,
 ):
     object_tracks: Dict[int, ObjectTrack] = {}
     LOGGER.info("Starting MOT run")
@@ -400,17 +400,15 @@ def run(
             cluster_center = np.mean(points, axis=0)
             stddev = np.std(points, axis=0)
             for lid, lm in track.landmarks.items():
-                # if np.linalg.norm(lm.pt_3d - cluster_center) > np.linalg.norm(
-                #    2 * stddev
-                # ):
-                if np.linalg.norm(lm.pt_3d - cluster_center) > 4.0:
-                    landmarks_to_remove.append(lid)
-                    continue
-                if (
-                    len(lm.observations) < 2
-                    and (lm.observations[0].timecam_id[0] - img_id) > 3
-                ):
-                    landmarks_to_remove.append(lid)
+                if cluster_size:
+                    if np.linalg.norm(lm.pt_3d - cluster_center) > (cluster_size / 2):
+                        landmarks_to_remove.append(lid)
+                else:
+                    if np.linalg.norm(lm.pt_3d - cluster_center) > 3 * np.linalg.norm(
+                        stddev
+                    ):
+                        landmarks_to_remove.append(lid)
+
             LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
             for lid in landmarks_to_remove:
                 track.landmarks.pop(lid)
@@ -489,7 +487,7 @@ def step(
     active_tracks = []
     matched_detections = []
     LOGGER.debug("%d matches with object tracks", len(matches))
-    with pathos.threading.ThreadPool(nodes=len(matches) if matches else 1) as executor:
+    with pathos.threading.ThreadPool(nodes=len(matches) if False else 1) as executor:
         futures_to_track_index = {}
         for match in matches:
             detection = new_detections[match.detection_index]
