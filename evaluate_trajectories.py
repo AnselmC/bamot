@@ -108,7 +108,6 @@ if __name__ == "__main__":
         else:
             args.scene = scene
     scene = str(args.scene).zfill(4)
-    _, T02 = get_cameras_from_kitti(kitti_path)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
     label_data = get_label_data_from_kitti(kitti_path, scene, poses=gt_poses,)
     print("Loaded GT trajectories")
@@ -128,9 +127,9 @@ if __name__ == "__main__":
     )
     print(f"Number of objects: {num_objects}")
     for j in range(2):
-        if j != 0:
-            fig = plt.figure(figsize=plt.figaspect(0.5))
-            ax_3d = fig.add_subplot(1, 1, 1, projection="3d")
+        if args.plot:
+            fig_world = plt.figure(figsize=plt.figaspect(0.5))
+            ax_3d_world = fig_world.add_subplot(1, 1, 1, projection="3d")
         for i, track_id in enumerate(label_data.world_positions.keys()):
             if i > num_objects:
                 break
@@ -151,8 +150,8 @@ if __name__ == "__main__":
 
                 gt_pt_cam = np.array(gt_pt_cam).reshape(3, 1)
                 est_pt_cam = np.array(est_pt_cam).reshape(3, 1)
-                error = np.linalg.norm(gt_pt_cam - est_pt_cam)
-                err_x, err_y, err_z = (
+                error_cam = np.linalg.norm(gt_pt_cam - est_pt_cam)
+                err_x_cam, err_y_cam, err_z_cam = (
                     np.abs(gt_pt_cam - est_pt_cam).reshape(3,).tolist()
                 )
 
@@ -164,6 +163,10 @@ if __name__ == "__main__":
                 )
 
                 dist = np.linalg.norm(np.array(gt_pt_cam))
+                error = error_cam
+                err_x = err_x_cam
+                err_y = err_y_cam
+                err_z = err_z_cam
                 if args.distances:
                     min_dist, max_dist = map(int, args.distances)
                     if min_dist <= dist <= max_dist:
@@ -191,12 +194,23 @@ if __name__ == "__main__":
                         ax_3d.set_xlabel("x [m]", color="w")
                         ax_3d.set_ylabel("y [m]", color="w")
                         ax_3d.set_zlabel("z [m]", color="w")
+                        ax_3d_world.set_xlabel("x [m]", color="w")
+                        ax_3d_world.set_ylabel("y [m]", color="w")
+                        ax_3d_world.set_zlabel("z [m]", color="w")
                         # ax_3d.set_yticks([])
-                gt_traj = np.array(list(gt_traj_dict.values())).reshape(-1, 3)
-                est_traj = np.array(
+                gt_traj_world = np.array(list(gt_traj_dict.values())).reshape(-1, 3)
+                gt_traj_cam = np.array(list(gt_traj_cam_dict.values())).reshape(-1, 3)
+                est_traj_world = np.array(
                     [
                         pt
                         for img_id, pt in est_traj_dict.items()
+                        if img_id in valid_frames
+                    ]
+                ).reshape(-1, 3)
+                est_traj_cam = np.array(
+                    [
+                        pt
+                        for img_id, pt in est_traj_cam_dict.items()
                         if img_id in valid_frames
                     ]
                 ).reshape(-1, 3)
@@ -229,13 +243,23 @@ if __name__ == "__main__":
                 ]
 
                 colors = np.array(
-                    [color.tolist() + [alphas[i]] for i in range(len(gt_traj))]
+                    [color.tolist() + [alphas[i]] for i in range(len(gt_traj_world))]
                 ).reshape(-1, 4)
                 if args.plot in ["both", "trajectory"]:
                     ax_3d.scatter(
-                        gt_traj[:, 0],
-                        gt_traj[:, 2],
-                        gt_traj[:, 1],
+                        gt_traj_cam[:, 0],
+                        gt_traj_cam[:, 2],
+                        gt_traj_cam[:, 1],
+                        label="GT trajectory",
+                        color=colors,
+                        norm=NoNormalize(),
+                        linewidths=0.5,
+                        marker=".",
+                    )
+                    ax_3d_world.scatter(
+                        gt_traj_world[:, 0],
+                        gt_traj_world[:, 1],
+                        gt_traj_world[:, 2],
                         label="GT trajectory",
                         color=colors,
                         norm=NoNormalize(),
@@ -243,9 +267,16 @@ if __name__ == "__main__":
                         marker=".",
                     )
                     ax_3d.plot(
-                        est_traj[:, 0],
-                        est_traj[:, 2],
-                        est_traj[:, 1],
+                        est_traj_cam[:, 0],
+                        est_traj_cam[:, 2],
+                        est_traj_cam[:, 1],
+                        label="Estimated trajectory",
+                        color=color,
+                    )
+                    ax_3d_world.plot(
+                        est_traj_world[:, 0],
+                        est_traj_world[:, 1],
+                        est_traj_world[:, 2],
                         label="Estimated trajectory",
                         color=color,
                     )
@@ -286,7 +317,7 @@ if __name__ == "__main__":
                         ax_2d.set_ylabel("Distance [m]")
                         plt.legend()
                     if args.plot in ["both", "trajectory"]:
-                        ax_3d.view_init(180, 0)
+                        ax_3d.view_init(90, -90)
                         if args.plot == "both":
                             ax_3d.get_shared_x_axes().remove(ax_2d)
                             ax_3d.get_shared_y_axes().remove(ax_2d)
@@ -307,19 +338,19 @@ if __name__ == "__main__":
                         plt.show()
 
         if j == 1 and args.plot in ["both", "trajectory"]:
-            ax_3d.view_init(180, 0)
-            ax_3d.dist = 5
-            ax_3d.set_xlabel("x [m]", color="w")
-            ax_3d.set_ylabel("y [m]", color="w")
-            ax_3d.set_zlabel("z [m]", color="w")
+            ax_3d_world.view_init(90, -180)
+            ax_3d_world.dist = 8
+            ax_3d_world.set_xlabel("x [m]", color="w")
+            ax_3d_world.set_ylabel("y [m]", color="w")
+            ax_3d_world.set_zlabel("z [m]", color="w")
             # ax_3d.xaxis.pane.set_color((0, 0, 0, 0))
             # ax_3d.yaxis.pane.set_color((0, 0, 0, 0))
             # ax_3d.zaxis.pane.set_color((0, 0, 0, 0))
-            fig.tight_layout()
+            fig_world.tight_layout()
             # fig.axes[0].axis("off")
             if args.save:
                 path = save_dir / "full_view.png"
-                ax_3d.set_yticks([])
+                ax_3d_world.set_yticks([])
                 plt.savefig(path.as_posix(), transparent=False, bbox_inches="tight")
             else:
                 plt.show()
@@ -344,11 +375,11 @@ if __name__ == "__main__":
             for track_id, err_per_image in err_per_obj.items():
                 for (
                     img_id,
-                    ((err_x, err_y, err_z, error), dist),
+                    ((err_x_cam, err_y_cam, err_z_cam, error), dist),
                 ) in err_per_image.items():
                     occ_lvl = label_data.occlusion_levels[track_id][img_id]
                     trunc_lvl = label_data.truncation_levels[track_id][img_id]
                     fp.write(
-                        f"{track_id},{img_id},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x:.4f},{err_y:.4f},{err_z:.4f}\n"
+                        f"{track_id},{img_id},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x_cam:.4f},{err_y_cam:.4f},{err_z_cam:.4f}\n"
                     )
         print(f"Saved results to {eval_file.as_posix()}")

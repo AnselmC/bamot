@@ -7,6 +7,7 @@ import json
 import logging
 import multiprocessing as mp
 import queue
+import subprocess
 import threading
 import time
 import warnings
@@ -255,6 +256,13 @@ if __name__ == "__main__":
         help="Set the appropriate cluster size (used to cull landmarks). If set to 0, determine cluster size dynamically using standard dev of point clouds (default=6.0)",
         default=6.0,
     )
+    parser.add_argument(
+        "-cm",
+        "--const-motion",
+        dest="const_motion",
+        action="store_true",
+        help="Use motion constraint",
+    )
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
@@ -328,6 +336,7 @@ if __name__ == "__main__":
             "returned_data": returned_data,
             "continuous": args.continuous,
             "cluster_size": float(args.cluster_size),
+            "motion_constraint": args.const_motion,
         },
         name="BAMOT",
     )
@@ -377,6 +386,18 @@ if __name__ == "__main__":
     LOGGER.info(
         "Saved estimated object track trajectories to %s", out_path.as_posix(),
     )
+
+    # Save git hash
+    hash_file = out_path / "hash.txt"
+    with open(hash_file.as_posix(), "w") as fp:
+        fp.write(
+            subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                encoding="utf-8",
+                check=True,
+            ).stdout.strip()
+        )
 
     # Cleanly shutdown
     while not shared_data.empty():

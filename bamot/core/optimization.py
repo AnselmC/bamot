@@ -3,7 +3,6 @@ from typing import Dict
 
 import g2o
 import numpy as np
-
 from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera, TimeCamId
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 
@@ -15,6 +14,7 @@ def object_bundle_adjustment(
     all_poses: Dict[ImageId, np.ndarray],
     stereo_cam: StereoCamera,
     max_iterations: int = 10,
+    motion_constraint: bool = False,
 ) -> ObjectTrack:
     # setup optimizer
     optimizer = g2o.SparseOptimizer()
@@ -30,6 +30,7 @@ def object_bundle_adjustment(
     # iterate over all landmarks of object
     num_landmarks = 0
     # optimize over all landmarks
+    prev_cam, prev_prev_cam = None, None
     for idx, landmark in object_track.landmarks.items():
         # add landmark as vertex
         point_vertex = g2o.VertexSBAPointXYZ()
@@ -75,6 +76,22 @@ def object_bundle_adjustment(
                 pose_vertex.set_id(pose_id)
                 pose_vertex.set_estimate(sba_cam)
                 pose_vertex.set_fixed(pose_id == 0)  # fix first cam
+                if motion_constraint:
+                    if prev_cam is None:
+                        prev_cam = pose_vertex
+                    elif prev_prev_cam is None:
+                        prev_prev_cam = pose_vertex
+                    else:
+                        const_motion_edge = g2o.EdgeSBALinearMotion()
+                        const_motion_edge.set_vertex(0, prev_prev_cam)
+                        const_motion_edge.set_vertex(1, prev_cam)
+                        const_motion_edge.set_vertex(2, pose_vertex)
+                        info = 1000 * np.identity(6)
+                        const_motion_edge.set_information(info)
+                        optimizer.add_edge(const_motion_edge)
+                        prev_prev_cam = prev_cam
+                        prev_cam = pose_vertex
+
                 added_poses[obs.timecam_id] = pose_id
                 pose_id += 2
                 optimizer.add_vertex(pose_vertex)

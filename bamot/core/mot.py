@@ -294,6 +294,7 @@ def run(
     next_step: Event,
     continuous: bool,
     cluster_size: Optional[Union[bool, float]] = 6.0,
+    motion_constraint: bool = False,
 ):
     object_tracks: Dict[int, ObjectTrack] = {}
     LOGGER.info("Starting MOT run")
@@ -389,6 +390,7 @@ def run(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
                 stereo_cam=stereo_cam,
+                motion_constraint=motion_constraint,
             )
         # remove outlier landmarks
         if track_index != -1 and track.landmarks:
@@ -584,10 +586,10 @@ def _compute_estimated_trajectories(
         object_center = get_center_of_landmarks(track.landmarks.values())
         trajectory_world = {}
         trajectory_cam = {}
-        pose_cam_world = np.linalg.inv(all_poses[track_id])
         for img_id, pose_world_obj in track.poses.items():
+            Tr_world_cam = all_poses[img_id]
             object_center_world = pose_world_obj @ to_homogeneous_pt(object_center)
-            object_center_cam = pose_cam_world @ object_center_world
+            object_center_cam = np.linalg.inv(Tr_world_cam) @ object_center_world
             trajectory_world[img_id] = tuple(
                 from_homogeneous_pt(object_center_world).tolist()
             )
