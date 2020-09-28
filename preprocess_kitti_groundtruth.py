@@ -50,7 +50,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    scenes = args.s if args.s != "all" else range(0, 20)
+    scenes = args.s if "all" not in args.s else range(0, 20)
 
     for scene in tqdm.tqdm(scenes, position=0):
         scene = str(scene).zfill(4)
