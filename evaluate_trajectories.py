@@ -144,46 +144,39 @@ if __name__ == "__main__":
             err_per_image = {}
             valid_frames = []
             prev_pt = None
-            gt_distances = []
-            for img_id, est_pt in est_traj_cam_dict.items():
-                gt_pt = gt_traj_cam_dict.get(img_id)
-                if gt_pt is None:  # could be due to occlusion
+            for img_id, est_pt_cam in est_traj_cam_dict.items():
+                gt_pt_cam = gt_traj_cam_dict.get(img_id)
+                if gt_pt_cam is None:  # could be due to occlusion
                     continue
 
-                gt_pt = np.array(gt_pt).reshape(3,).tolist()
-                if prev_pt is not None:
-                    dist = np.linalg.norm(np.array(gt_pt) - prev_pt)
-                    # print("dist: ", dist)
-                    gt_distances.append(dist)
-                prev_pt = np.array(gt_pt)
-                est_pt = np.array(est_pt).reshape(3,).tolist()
-                error = np.linalg.norm(np.array(gt_pt) - np.array(est_pt))
+                gt_pt_cam = np.array(gt_pt_cam).reshape(3, 1)
+                est_pt_cam = np.array(est_pt_cam).reshape(3, 1)
+                error = np.linalg.norm(gt_pt_cam - est_pt_cam)
+                err_x, err_y, err_z = (
+                    np.abs(gt_pt_cam - est_pt_cam).reshape(3,).tolist()
+                )
+
                 gt_pt_world = np.array(gt_traj_dict[img_id]).reshape(3, 1)
                 est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
                 error_world = np.linalg.norm(gt_pt_world - est_pt_world)
-                # print("error world: ", error_world)
-                # print("error cam: ", error)
-                # print("diff: ", np.abs(error_world - error))
-                # err_x = np.abs(gt_pt[0] - est_pt[0])
-                # err_y = np.abs(gt_pt[1] - est_pt[1])
-                # err_z = np.abs(gt_pt[2] - est_pt[2])
-                dist = np.linalg.norm(np.array(gt_pt))
-                err_x, err_y, err_z = (
+                err_x_world, err_y_world, err_z_world = (
                     np.abs(gt_pt_world - est_pt_world).reshape(3,).tolist()
                 )
+
+                dist = np.linalg.norm(np.array(gt_pt_cam))
                 if args.distances:
                     min_dist, max_dist = map(int, args.distances)
                     if min_dist <= dist <= max_dist:
                         valid_frames.append(img_id)
                 if args.error:
                     max_error = float(args.error)
-                    if error_world < max_error:
+                    if error < max_error:
                         if img_id not in valid_frames:
                             valid_frames.append(img_id)
                     else:
                         if img_id in valid_frames:
                             valid_frames.remove(img_id)
-                err_per_image[img_id] = ((err_x, err_y, err_z, error_world), dist)
+                err_per_image[img_id] = ((err_x, err_y, err_z, error), dist)
             if not args.distances and not args.error:
                 valid_frames = list(est_traj_dict.keys())
             err_per_obj[track_id] = err_per_image
