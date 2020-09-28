@@ -13,18 +13,18 @@ import warnings
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple, Union
 
+import numpy as np
+
 import colorlog
 import cv2
-import numpy as np
 import tqdm
-
 from bamot.core.base_types import (ObjectDetection, StereoImage,
                                    StereoObjectDetection)
 from bamot.core.mot import run
 from bamot.util.cv import (get_orb_feature_matcher,
                            get_superpoint_feature_matcher)
 from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
-                              get_trajectories_from_kitti)
+                              get_label_data_from_kitti)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
@@ -291,13 +291,10 @@ if __name__ == "__main__":
     next_step.set()
     img_shape = _get_image_shape(kitti_path)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
-    stereo_cam, T02 = get_cameras_from_kitti(kitti_path / "calib_cam_to_cam.txt")
-    gt_poses = get_gt_poses_from_kitti(kitti_path / "oxts" / (scene + ".txt"))
-    gt_trajectories_world, gt_trajectories_cam, _, _ = get_trajectories_from_kitti(
-        detection_file=kitti_path / "label_02" / (scene + ".txt"),
-        poses=gt_poses,
-        offset=args.offset,
-        T02=T02,
+    stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
+    gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
+    label_data = get_label_data_from_kitti(
+        kitti_path, scene, poses=gt_poses, offset=args.offset
     )
     detection_stream = _get_detection_stream(
         obj_detections_path,
@@ -341,7 +338,7 @@ if __name__ == "__main__":
             shared_data=shared_data,
             stop_flag=stop_flag,
             next_step=next_step,
-            gt_trajectories=gt_trajectories_world,
+            gt_trajectories=label_data.world_positions,
             save_path=Path(args.record) if args.record else None,
             poses=gt_poses if args.world else None,
         )

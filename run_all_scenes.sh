@@ -4,11 +4,6 @@ while getopts ":f:t:" arg; do
         t) tags=$OPTARG;;
     esac
 done
-for scene in {0..19}
-do
-    echo $scene
-done
-
 
 for scene in {0..19}
 do
