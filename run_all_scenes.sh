@@ -1,3 +1,8 @@
+git update-index --really-refresh
+if ! git diff-index --quiet HEAD; then
+    echo "Git tree is dirty"
+    exit
+fi
 while getopts ":f:t:c:" arg; do
     case $arg in
         f) feature=$OPTARG;;
