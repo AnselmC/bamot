@@ -13,6 +13,6 @@ done
 
 for scene in {0..19}
 do
-    python run_kitti_gt_mot.py -s $scene -v INFO -f $feature -c --no-viewer --tags $tags --cluster-size $cluster_size
+    python run_kitti_gt_mot.py -s $scene -v INFO -f $feature -c --no-viewer --tags $tags --cluster-size $cluster_size -cm
 done
 
