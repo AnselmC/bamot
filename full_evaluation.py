@@ -163,8 +163,18 @@ def _write_summary(df, dst_dir, save):
     summary.append(
         f"% objects w/ median error < 1m: {(100*(median_error < 1).sum()/num_objs):.2f}%"
     )
-    summary.append(f"10 best objects: {df_objs.error.nsmallest(n=10)}")
-    summary.append(f"10 worst objects: {df_objs.error.nlargest(n=10)}")
+    summary.append(
+        f"10 objects w/ best mean error: {df_objs.error.mean().nsmallest(n=10)}"
+    )
+    summary.append(
+        f"10 objects w/ best median error: {df_objs.error.median().nsmallest(n=10)}"
+    )
+    summary.append(
+        f"10 objects w/ worst mean error: {df_objs.error.mean().nlargest(n=10)}"
+    )
+    summary.append(
+        f"10 objects w/ worst median error: {df_objs.error.median().nlargest(n=10)}"
+    )
     summary.append("+" * 30)
     summary.append("SCENES")
     for scene in sorted(df.scene.unique()):
