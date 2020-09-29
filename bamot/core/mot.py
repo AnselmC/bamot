@@ -118,8 +118,6 @@ def _add_new_landmarks_and_observations(
     # add new observations to existing landmarks
     # explicitly add stereo features --> look at visnav
     already_added_features = []
-    left_timecam_id = (img_id, 0)
-    right_timecam_id = (img_id, 1)
     stereo_match_dict = {}
     for left_feature_idx, right_feature_idx in stereo_matches:
         stereo_match_dict[left_feature_idx] = right_feature_idx
@@ -133,7 +131,7 @@ def _add_new_landmarks_and_observations(
         z = pt_cam[2]
         if (
             z < 0.5 or np.linalg.norm(pt_cam) > MAX_DIST
-        ):  # don't add landmark matches with great discrepancy
+        ):  # don't add landmarks that are very behind camera/very close or far away
             continue
         # print(landmark_mapping[landmark_idx])
         # print(pt_cam)
@@ -150,7 +148,7 @@ def _add_new_landmarks_and_observations(
         else:
             feature_pt = np.array([feature.u, feature.v])
         obs = Observation(
-            descriptor=feature.descriptor, pt_2d=feature_pt, timecam_id=left_timecam_id,
+            descriptor=feature.descriptor, pt_2d=feature_pt, img_id=img_id
         )
         already_added_features.append(features_idx)
         landmarks[landmark_mapping[landmark_idx]].observations.append(obs)
@@ -201,9 +199,7 @@ def _add_new_landmarks_and_observations(
         # print(pt_3d_obj)
         # create new landmark
         obs = Observation(
-            descriptor=left_feature.descriptor,
-            pt_2d=feature_pt,
-            timecam_id=left_timecam_id,
+            descriptor=left_feature.descriptor, pt_2d=feature_pt, img_id=img_id
         )
         landmark = Landmark(pt_3d_obj, [obs])
         landmarks[landmark_id] = landmark
@@ -385,7 +381,7 @@ def run(
         # -> SLAM optimizes motion of camera
         # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
         if len(track.poses) > 3 and len(track.landmarks) > 0:
-            LOGGER.debug("Running BA")
+            LOGGER.debug("Running BA for object %d", track_index)
             track = object_bundle_adjustment(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,

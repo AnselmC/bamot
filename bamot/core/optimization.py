@@ -3,7 +3,7 @@ from typing import Dict
 
 import g2o
 import numpy as np
-from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera, TimeCamId
+from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 
 LOGGER = logging.getLogger("CORE:OPTIMIZATION")
@@ -21,8 +21,41 @@ def object_bundle_adjustment(
     solver = g2o.BlockSolverSE3(g2o.LinearSolverEigenSE3())
     algorithm = g2o.OptimizationAlgorithmLevenberg(solver)
     optimizer.set_algorithm(algorithm)
-    added_poses: Dict[TimeCamId, int] = {}
+    added_poses: Dict[ImageId, int] = {}
     pose_id = 0  # even numbes
+    prev_cam, prev_prev_cam = None, None
+    const_motion_edges = []
+    for img_id, T_world_obj in object_track.poses.items():
+        T_world_cam = all_poses[img_id]
+        params = stereo_cam.left
+        T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
+        pose = g2o.Isometry3d(T_obj_cam)
+        sba_cam = g2o.SBACam(pose.orientation(), pose.position())
+        baseline = stereo_cam.T_left_right[0, 3]
+        sba_cam.set_cam(params.fx, params.fy, params.cx, params.cy, baseline)
+        pose_vertex = g2o.VertexCam()
+        pose_vertex.set_id(pose_id)
+        pose_vertex.set_estimate(sba_cam)
+        pose_vertex.set_fixed(pose_id == 0)
+        if motion_constraint:
+            if prev_cam is None:
+                prev_cam = pose_vertex
+            elif prev_prev_cam is None:
+                prev_prev_cam = pose_vertex
+            else:
+                const_motion_edge = g2o.EdgeSBALinearMotion()
+                const_motion_edge.set_vertex(0, prev_prev_cam)
+                const_motion_edge.set_vertex(1, prev_cam)
+                const_motion_edge.set_vertex(2, pose_vertex)
+                info = 10 * np.identity(6)
+                const_motion_edge.set_information(info)
+                const_motion_edges.append(const_motion_edge)
+                optimizer.add_edge(const_motion_edge)
+                prev_prev_cam = prev_cam
+                prev_cam = pose_vertex
+        added_poses[img_id] = pose_id
+        pose_id += 2
+        optimizer.add_vertex(pose_vertex)
     landmark_id = 1  # odd numbers
     landmark_mapping = {}
     mono_edges = []
@@ -30,7 +63,6 @@ def object_bundle_adjustment(
     # iterate over all landmarks of object
     num_landmarks = 0
     # optimize over all landmarks
-    prev_cam, prev_prev_cam = None, None
     for idx, landmark in object_track.landmarks.items():
         # add landmark as vertex
         point_vertex = g2o.VertexSBAPointXYZ()
@@ -38,64 +70,11 @@ def object_bundle_adjustment(
         landmark_mapping[idx] = landmark_id
         point_vertex.set_marginalized(True)
         point_vertex.set_estimate(landmark.pt_3d.reshape(3,))
-        # print(landmark.pt_3d)
         landmark_id += 2
         optimizer.add_vertex(point_vertex)
         num_landmarks += 1
         # optimize over all observations
         for obs in landmark.observations:
-            # x_t_i is the 2d pt of an observation (i.e. landmark i at frame t) -> i.e. feature location
-            # X_q_i is the landmark in object coordinates (doesn't vary over t)
-            # T_c_q is the object pose at frame t (T_cam_obj)
-            img_id = obs.timecam_id[0]
-            left = obs.timecam_id[1] == 0
-            T_world_left = all_poses[img_id]
-            if left:
-                T_world_cam = T_world_left
-                params = stereo_cam.left
-            else:
-                T_world_cam = T_world_left @ stereo_cam.T_left_right
-                params = stereo_cam.right
-            T_world_obj = object_track.poses[obs.timecam_id[0]]
-            # get pose for observations, i.e. camera pose * object_pose
-            T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-            # print(T_obj_cam)
-            # print(landmark.pt_3d)
-            # pt_cam = from_homogeneous_pt(
-            #    np.linalg.inv(T_obj_cam) @ to_homogeneous_pt(landmark.pt_3d)
-            # )
-            # print(pt_cam)
-            # print(1 / pt_cam[0] ** 2)
-            # add pose to graph if it hasn't been added yet
-            if obs.timecam_id not in added_poses.keys():
-                pose = g2o.Isometry3d(T_obj_cam)
-                sba_cam = g2o.SBACam(pose.orientation(), pose.position())
-                baseline = 0.5
-                sba_cam.set_cam(params.fx, params.fy, params.cx, params.cy, baseline)
-                pose_vertex = g2o.VertexCam()
-                pose_vertex.set_id(pose_id)
-                pose_vertex.set_estimate(sba_cam)
-                pose_vertex.set_fixed(pose_id == 0)  # fix first cam
-                if motion_constraint:
-                    if prev_cam is None:
-                        prev_cam = pose_vertex
-                    elif prev_prev_cam is None:
-                        prev_prev_cam = pose_vertex
-                    else:
-                        const_motion_edge = g2o.EdgeSBALinearMotion()
-                        const_motion_edge.set_vertex(0, prev_prev_cam)
-                        const_motion_edge.set_vertex(1, prev_cam)
-                        const_motion_edge.set_vertex(2, pose_vertex)
-                        info = 1000 * np.identity(6)
-                        const_motion_edge.set_information(info)
-                        optimizer.add_edge(const_motion_edge)
-                        prev_prev_cam = prev_cam
-                        prev_cam = pose_vertex
-
-                added_poses[obs.timecam_id] = pose_id
-                pose_id += 2
-                optimizer.add_vertex(pose_vertex)
-
             # add edge between landmark and cam
             # feature coordinates of observation are x_i_t
             measurement = obs.pt_2d
@@ -112,8 +91,8 @@ def object_bundle_adjustment(
                 mono_edges.append((edge, idx))
 
             edge.set_vertex(0, point_vertex)
-            edge.set_vertex(1, optimizer.vertex(added_poses[obs.timecam_id]))
-            edge.set_measurement(obs.pt_2d)
+            edge.set_vertex(1, optimizer.vertex(added_poses[obs.img_id]))
+            edge.set_measurement(measurement)
             edge.set_information(info)
             robust_kernel = g2o.RobustKernelHuber()
             robust_kernel.set_delta(delta)
@@ -127,7 +106,7 @@ def object_bundle_adjustment(
         len(mono_edges) + len(stereo_edges),
     )
     optimizer.initialize_optimization(0)
-    optimizer.set_verbose(LOGGER.level == logging.DEBUG)
+    optimizer.set_verbose(logging.getLogger().level == logging.DEBUG)
     optimizer.optimize(max_iterations)
     num_outliers = 0
     for edge, _ in mono_edges:
@@ -198,19 +177,13 @@ def object_bundle_adjustment(
     LOGGER.debug("Removing %d landmarks", len(landmarks_to_remove))
     for lmid in landmarks_to_remove:
         object_track.landmarks.pop(lmid)
-    for timecam_id, vertex_idx in added_poses.items():
-        T_obj_cam = optimizer.vertex(vertex_idx).estimate().matrix().copy()
-        img_id = timecam_id[0]
-        left = timecam_id[1] == 0
-        T_world_left = all_poses[img_id]
-        if left:
-            T_world_cam = T_world_left
-        else:
-            T_world_cam = T_world_left @ stereo_cam.T_left_right
+    for img_id, vertex_idx in added_poses.items():
+        T_obj_cam = optimizer.vertex(vertex_idx).estimate().matrix()
+        T_world_cam = all_poses[img_id]
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
         # print("Updating pose from")
         # print(object_track.poses[timecam_id[0]])
-        object_track.poses[timecam_id[0]] = T_world_obj
+        object_track.poses[img_id] = T_world_obj.copy()
         # print("to")
         # print(object_track.poses[timecam_id[0]])
     return object_track

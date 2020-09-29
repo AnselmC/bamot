@@ -88,7 +88,7 @@ class StereoCamera:
 class Observation:
     descriptor: np.ndarray
     pt_2d: np.ndarray  # feature coordinates -- u, v, and if stereo u_r
-    timecam_id: TimeCamId
+    img_id: ImageId
 
 
 @dataclass
