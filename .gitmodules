@@ -1,3 +1,6 @@
 [submodule "bamot/thirdparty/SuperPoint"]
 	path = bamot/thirdparty/SuperPoint
 	url = git@github.com:rpautrat/SuperPoint.git
+[submodule "g2opy"]
+	path = bamot/thirdparty/g2opy
+	url = git@github.com:AnselmC/g2opy.git
