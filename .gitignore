@@ -214,3 +214,4 @@ tags
 data
 .DS_Store
 .coverage
+/config.yaml

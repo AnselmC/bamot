@@ -1,13 +1,12 @@
 import logging
 from functools import partial
-from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 import cv2
 import numpy as np
 import tensorflow as tf
-from bamot import SUPERPOINT_WEIGHTS_PATH
+from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
 from PIL import Image, ImageDraw
@@ -125,12 +124,10 @@ def from_homogeneous_pt(pt_hom: np.ndarray) -> np.ndarray:
     return pt
 
 
-def get_superpoint_feature_matcher(
-    num_features: int = 1000, weights_path: Path = SUPERPOINT_WEIGHTS_PATH
-):
+def get_superpoint_feature_matcher():
 
     tf.get_logger().setLevel("ERROR")  # surpress TF1 -> TF2 warnings
-    loaded = tf.saved_model.load(weights_path.as_posix())
+    loaded = tf.saved_model.load(config.SUPERPOINT_WEIGHTS_PATH)
     model = loaded.signatures["serving_default"]
 
     def preprocess_image(
@@ -165,7 +162,7 @@ def get_superpoint_feature_matcher(
         kp_map = out["prob_nms"].numpy()[0].astype(np.float)
         desc_map = out["descriptors"].numpy()[0].astype(np.float)
         kp, desc = sp.extract_superpoint_keypoints_and_descriptors(
-            kp_map, desc_map, num_features
+            kp_map, desc_map, config.NUM_FEATURES
         )
         desc = desc.astype(np.float32)
         return _get_features_from_kp_and_desc(kp, desc)
@@ -189,12 +186,22 @@ def _get_features_from_kp_and_desc(
     return features
 
 
-def get_orb_feature_matcher(num_features: int = 8000):
+def get_feature_matcher():
+    name = config.FEATURE_MATCHER
+    if name.lower() == "orb":
+        return get_orb_feature_matcher()
+    elif name.lower() in ["sp", "superpoint", "superpoints"]:
+        return get_superpoint_feature_matcher()
+    else:
+        raise ValueError(f"Unknown feature matcher: {name}")
+
+
+def get_orb_feature_matcher():
     def detect_features(
         img: np.ndarray, mask: Optional[np.ndarray] = None
     ) -> List[Feature]:
         # mask = None
-        orb = cv2.ORB_create(nfeatures=num_features)
+        orb = cv2.ORB_create(nfeatures=config.NUM_FEATURES)
         keypoints, descriptors = orb.detectAndCompute(
             img, mask=255 * mask.astype(np.uint8) if mask is not None else None
         )

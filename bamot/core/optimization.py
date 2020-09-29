@@ -3,6 +3,7 @@ from typing import Dict
 
 import g2o
 import numpy as np
+from bamot.config import CONFIG as config
 from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 
@@ -14,7 +15,6 @@ def object_bundle_adjustment(
     all_poses: Dict[ImageId, np.ndarray],
     stereo_cam: StereoCamera,
     max_iterations: int = 10,
-    motion_constraint: bool = False,
 ) -> ObjectTrack:
     # setup optimizer
     optimizer = g2o.SparseOptimizer()
@@ -37,7 +37,7 @@ def object_bundle_adjustment(
         pose_vertex.set_id(pose_id)
         pose_vertex.set_estimate(sba_cam)
         pose_vertex.set_fixed(pose_id == 0)
-        if motion_constraint:
+        if config.CONSTANT_MOTION:
             if prev_cam is None:
                 prev_cam = pose_vertex
             elif prev_prev_cam is None:

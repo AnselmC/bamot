@@ -5,11 +5,12 @@ import logging
 import queue
 import time
 from threading import Event
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Tuple
 
 import cv2
 import numpy as np
 import pathos
+from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    ImageId, Landmark, Match, ObjectTrack,
                                    Observation, StereoCamera, StereoImage,
@@ -18,8 +19,8 @@ from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
 from bamot.core.optimization import object_bundle_adjustment
 from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
                            get_center_of_landmarks, get_convex_hull,
-                           get_convex_hull_mask, mask_img, project_landmarks,
-                           to_homogeneous_pt, triangulate)
+                           get_convex_hull_mask, get_feature_matcher,
+                           project_landmarks, to_homogeneous_pt, triangulate)
 from bamot.util.misc import timer
 from hungarian_algorithm import algorithm as ha
 from shapely.geometry import Polygon
@@ -27,17 +28,6 @@ from shapely.geometry import Polygon
 LOGGER = logging.getLogger("CORE:MOT")
 
 MAX_DIST = 150
-
-
-def max_lm(track):
-    if isinstance(track, ObjectTrack):
-        if not track.landmarks:
-            return None
-        return max(np.linalg.norm(lm.pt_3d) for lm in track.landmarks.values())
-    else:
-        if not track:
-            return None
-        return max(np.linalg.norm(lm.pt_3d) for lm in track.values())
 
 
 def _localize_object(
@@ -186,7 +176,7 @@ def _add_new_landmarks_and_observations(
             # LOGGER.error("Encountered error during triangulation: %s", e)
             bad_matches.append((left_feature_idx, right_feature_idx))
             continue
-        if pt_3d_left_cam[-1] < 0.5 or np.linalg.norm(pt_3d_left_cam) > MAX_DIST:
+        if pt_3d_left_cam[-1] < 0.5 or np.linalg.norm(pt_3d_left_cam) > config.MAX_DIST:
             # triangulated point should not be behind camera (or very close) or too far away
             bad_matches.append((left_feature_idx, right_feature_idx))
             continue
@@ -281,7 +271,6 @@ def _get_features_from_landmarks(
 def run(
     images: Iterable[StereoImage],
     detections: Iterable[List[StereoObjectDetection]],
-    feature_matcher: FeatureMatcher,
     stereo_cam: StereoCamera,
     slam_data: queue.Queue,
     shared_data: queue.Queue,
@@ -289,8 +278,6 @@ def run(
     stop_flag: Event,
     next_step: Event,
     continuous: bool,
-    cluster_size: Optional[Union[bool, float]] = 6.0,
-    motion_constraint: bool = False,
 ):
     object_tracks: Dict[int, ObjectTrack] = {}
     LOGGER.info("Starting MOT run")
@@ -307,6 +294,7 @@ def run(
         current_cam_pose,
     ):
         track.active = True
+        feature_matcher = get_feature_matcher()
         # mask out object from image
         left_obj_mask = get_convex_hull_mask(
             np.array(detection.left.convex_hull), img_shape=img_shape
@@ -386,7 +374,6 @@ def run(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
                 stereo_cam=stereo_cam,
-                motion_constraint=motion_constraint,
             )
         # remove outlier landmarks
         if track_index != -1 and track.landmarks:
@@ -398,8 +385,10 @@ def run(
             cluster_center = np.mean(points, axis=0)
             stddev = np.std(points, axis=0)
             for lid, lm in track.landmarks.items():
-                if cluster_size:
-                    if np.linalg.norm(lm.pt_3d - cluster_center) > (cluster_size / 2):
+                if config.CLUSTER_SIZE:
+                    if np.linalg.norm(lm.pt_3d - cluster_center) > (
+                        config.CLUSTER_SIZE / 2
+                    ):
                         landmarks_to_remove.append(lid)
                 else:
                     if np.linalg.norm(lm.pt_3d - cluster_center) > 3 * np.linalg.norm(

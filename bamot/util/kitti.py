@@ -3,10 +3,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Tuple
 
+import cv2
 import numpy as np
 import pandas as pd
-
-import cv2
 from bamot.core.base_types import (CameraParameters, ObjectDetection,
                                    StereoCamera)
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
