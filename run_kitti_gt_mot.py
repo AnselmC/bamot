@@ -328,7 +328,7 @@ if __name__ == "__main__":
     with open(state_file, "w") as fp:
         fp.write("CONFIG:\n")
         fp.write(json.dumps(get_config_dict(), indent=4))
-        fp.write("GIT HASH:\n")
+        fp.write("\nGIT HASH:\n")
         fp.write(
             subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"],

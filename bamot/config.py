@@ -40,7 +40,9 @@ else:
     USER_CONFIG: Dict[str, Any] = {}
 
 
-_kitti_path = Path(USER_CONFIG.get("kitti_path", "./data/KITTI/tracking/training"))
+_kitti_path = Path(
+    USER_CONFIG.get("kitti_path", "./data/KITTI/tracking/training")
+).absolute()
 CONFIG = Config(
     USING_CONFIG_FILE=CONFIG_FILE.exists(),
     CLUSTER_SIZE=USER_CONFIG.get("cluster_size", 6.0),
