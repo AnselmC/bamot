@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
+from bamot.config import CONFIG as config
 from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
                               get_label_data_from_kitti)
 
@@ -30,14 +31,6 @@ if __name__ == "__main__":
         help="Turn plotting on (default when passed is `both`)",
         choices=["both", "error", "trajectory"],
         const="both",
-    )
-    parser.add_argument(
-        "-k",
-        "--kitti",
-        dest="kitti",
-        help="path to kitti dataset (default is `./data/KITTI/tracking/training`",
-        type=str,
-        default="data/KITTI/tracking/training",
     )
     parser.add_argument(
         "-sc",
@@ -91,7 +84,7 @@ if __name__ == "__main__":
         )
 
     print("Loaded estimated trajectories")
-    kitti_path = Path(args.kitti)
+    kitti_path = Path(config.KITTI_PATH)
     if not args.scene:
         # infer scene from dir
         scene = None

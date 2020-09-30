@@ -20,7 +20,7 @@ import numpy as np
 import tqdm
 
 from bamot.config import CONFIG as config
-from bamot.config import get_config_dict
+from bamot.config import get_config_dict, update_config
 from bamot.core.base_types import (ObjectDetection, StereoImage,
                                    StereoObjectDetection)
 from bamot.core.mot import run
@@ -157,15 +157,6 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
-        "-f",
-        "--features",
-        help="Which feature type to use (default: orb)",
-        dest="features",
-        choices=["orb", "superpoint"],
-        type=str.lower,
-        default="orb",
-    )
-    parser.add_argument(
         "-mp",
         "--multiprocessing",
         help="Whether to run viewer in separate process (default separate thread).",
@@ -215,11 +206,19 @@ if __name__ == "__main__":
         help="Show objects in camera coordinates in viewer (instead of world)",
         action="store_true",
     )
+    parser.add_argument(
+        "-cfg",
+        "--config",
+        dest="config",
+        help="Use different config file (default: `config.yaml` (if available))",
+    )
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
     kitti_path = Path(config.KITTI_PATH)
     obj_detections_path = Path(config.DETECTIONS_PATH) / scene
+    if args.config:
+        update_config(args.config)
     LOGGER.setLevel(LOG_LEVELS[args.verbosity])
 
     LOGGER.info(30 * "+")
@@ -304,7 +303,7 @@ if __name__ == "__main__":
     returned_data.task_done()
     returned_data.join()
     if not args.out:
-        out_path = kitti_path / "trajectories" / scene / args.features
+        out_path = kitti_path / "trajectories" / scene / config.FEATURE_MATCHER
         for tag in args.tags:
             out_path /= tag
     else:
@@ -324,19 +323,18 @@ if __name__ == "__main__":
     )
 
     # Save config + git hash
-    state_file = out_path / "state.txt"
+    state_file = out_path / "state.json"
     with open(state_file, "w") as fp:
-        fp.write("CONFIG:\n")
-        fp.write(json.dumps(get_config_dict(), indent=4))
-        fp.write("\nGIT HASH:\n")
-        fp.write(
-            subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
-                capture_output=True,
-                encoding="utf-8",
-                check=True,
-            ).stdout.strip()
-        )
+        state = {}
+        state["CONFIG"] = get_config_dict()
+        state["HASH"] = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.strip()
+        json.dump(state, fp)
+        fp.write(json.dumps(state, indent=4))
 
     # Cleanly shutdown
     while not shared_data.empty():
