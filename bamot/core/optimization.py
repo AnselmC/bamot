@@ -47,7 +47,7 @@ def object_bundle_adjustment(
                 const_motion_edge.set_vertex(0, prev_prev_cam)
                 const_motion_edge.set_vertex(1, prev_cam)
                 const_motion_edge.set_vertex(2, pose_vertex)
-                info = 10 * np.identity(6)
+                info = config.CONSTANT_MOTION_WEIGHT * np.identity(6)
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
                 optimizer.add_edge(const_motion_edge)
