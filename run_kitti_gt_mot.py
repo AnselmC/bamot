@@ -20,7 +20,7 @@ import numpy as np
 import tqdm
 
 from bamot.config import CONFIG as config
-from bamot.config import get_config_dict, update_config
+from bamot.config import get_config_dict
 from bamot.core.base_types import (ObjectDetection, StereoImage,
                                    StereoObjectDetection)
 from bamot.core.mot import run
