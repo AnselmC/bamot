@@ -32,8 +32,8 @@ except ModuleNotFoundError:
         f.write('EXPER_PATH=""')
 
 CONFIG_FILE = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
-CONST_MOTION_WEIGHT_DEFAULT = os.environ.get("CONST_MOTION_WEIGHT", default=6)
-CLUSTER_SIZE_DEFAULT = os.environ.get("CLUSTER_SIZE", default=8)
+CONST_MOTION_WEIGHT_DEFAULT = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
+CLUSTER_SIZE_DEFAULT = float(os.environ.get("CLUSTER_SIZE", default=8))
 
 if CONFIG_FILE.exists():
     with open(CONFIG_FILE.as_posix(), "r") as fp:
