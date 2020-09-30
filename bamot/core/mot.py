@@ -409,16 +409,27 @@ def run(
         next_step.clear()
         all_poses = slam_data.get()
         current_pose = all_poses[img_id]
-        object_tracks, all_left_features, all_right_features, all_stereo_matches = step(
-            new_detections=new_detections,
-            stereo_image=stereo_image,
-            object_tracks=copy.deepcopy(object_tracks),  # weird behavior w/o deepcopy
-            process_match=_process_match,
-            stereo_cam=stereo_cam,
-            img_id=img_id,
-            current_cam_pose=current_pose,
-            all_poses=all_poses,
-        )
+        try:
+            (
+                object_tracks,
+                all_left_features,
+                all_right_features,
+                all_stereo_matches,
+            ) = step(
+                new_detections=new_detections,
+                stereo_image=stereo_image,
+                object_tracks=copy.deepcopy(
+                    object_tracks
+                ),  # weird behavior w/o deepcopy
+                process_match=_process_match,
+                stereo_cam=stereo_cam,
+                img_id=img_id,
+                current_cam_pose=current_pose,
+                all_poses=all_poses,
+            )
+        except Exception as exc:
+            LOGGER.error("Unexpected error: %s", exc)
+            break
         shared_data.put(
             {
                 "object_tracks": copy.deepcopy(object_tracks),
