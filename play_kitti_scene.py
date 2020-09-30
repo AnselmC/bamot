@@ -1,11 +1,12 @@
 import argparse
 from pathlib import Path
 
+import cv2
+import g2o
 import matplotlib.pyplot as plt
 import numpy as np
 
-import cv2
-import g2o
+from bamot.config import CONFIG as config
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
                               get_image_stream, get_label_data_from_kitti)
@@ -31,21 +32,16 @@ def _get_euler_angles(rot):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "-k",
-        "--kitti-path",
-        dest="kitti_path",
-        default="./data/KITTI/tracking/training/",
-    )
-    parser.add_argument(
         "-s",
         "--scene",
         dest="scene",
         help="the scene to plot",
         choices=list(map(str, range(0, 20))),
     )
+    parser.add_argument("--ids", type=int, nargs="+", help="Only show specific objects")
     args = parser.parse_args()
     scene = args.scene.zfill(4)
-    kitti_path = Path(args.kitti_path)
+    kitti_path = Path(config.KITTI_PATH)
     _, T02 = get_cameras_from_kitti(kitti_path)
     gt_poses_world = get_gt_poses_from_kitti(kitti_path, scene)
     label_data = get_label_data_from_kitti(kitti_path, scene, gt_poses_world)
@@ -54,16 +50,21 @@ if __name__ == "__main__":
     bounding_boxes_by_img_id = {}
     all_x = []
     all_y = []
+    print(args.ids)
     for i in range(len(gt_poses_world)):
         boxes = []
-        for track_boxes in label_data.bbox2d.values():
+        for track_id, track_boxes in label_data.bbox2d.items():
+            if args.ids and track_id not in args.ids:
+                continue
             for img_id, box in track_boxes.items():
                 if img_id == i:
                     boxes.append(box)
         bounding_boxes_by_img_id[i] = boxes
 
         tracks = []
-        for track in label_data.world_positions.values():
+        for track_id, track in label_data.world_positions.items():
+            if args.ids and track_id not in args.ids:
+                continue
             if i not in track.keys():
                 continue
             obj_positions = []
@@ -124,3 +125,5 @@ if __name__ == "__main__":
 
     # plt.plot(gt_poses_x, gt_poses_z, linestyle="solid")
     # plt.show()
+
+    # TODO: continuous option
