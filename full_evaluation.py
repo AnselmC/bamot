@@ -65,11 +65,11 @@ def _plt_error_by_dist(df, dst_dir, save):
     colors = cycle(plt.cm.Spectral(np.linspace(0, 1, 100)).tolist())
     for scene in df.scene.unique():
         marker = next(markers)
-        for obj in df[df.scene == scene]["object id"].unique():
-            obj_df = df.where(df.scene == scene).where(df["object id"] == obj)
+        for obj in df[df.scene == scene].object_id.unique():
+            obj_df = df.where(df.scene == scene).where(df.object_id == obj)
             plt.scatter(
                 obj_df.error,
-                obj_df["distance from camera"],
+                obj_df.distance,
                 color=next(colors),
                 marker=marker,
                 label=f"{scene}, {obj}",
@@ -90,10 +90,11 @@ def _write_summary(df, dst_dir, save):
         csv_dir.mkdir(exist_ok=True)
         df.to_csv((csv_dir / "full.csv").as_posix())
     summary = ["SUMMARY"]
-    df_fully_visible = df.loc[
-        (df["truncation level"] == 0) & (df["occlusion level"] == 0)
-    ]
+    df_fully_visible = df.loc[(df.truncation_lvl == 0) & (df.occlusion_lvl == 0)]
+    df_ped = df.loc[df.obj_class == "Pedestrian"]
+    df_car = df.loc[df.obj_class == "Car"]
     summary.append("*" * 30)
+    summary.append("OVERALL:")
     summary.append(f"Mean error: {df.error.mean()}")
     summary.append(
         f"Mean error (no occlusion or truncation): {df_fully_visible.error.mean()}"
@@ -107,11 +108,16 @@ def _write_summary(df, dst_dir, save):
         f"Standard dev (no occlusion or truncation): {df_fully_visible.error.std()}"
     )
     summary.append("-" * 30)
-    df_close = df.loc[df["distance from camera"] < 5]
-    df_mid = df.loc[
-        (df["distance from camera"] >= 5) & (df["distance from camera"] < 30)
-    ]
-    df_far = df.loc[df["distance from camera"] >= 30]
+    summary.append("OBJECT CLASSES:")
+    summary.append(f"Mean error pedestrian: {df_ped.error.mean()}")
+    summary.append(f"Median error pedestrian: {df_ped.error.median()}")
+    summary.append(f"Mean error car: {df_car.error.mean()}")
+    summary.append(f"Median error car: {df_car.error.median()}")
+    summary.append("-" * 30)
+    df_close = df.loc[df.distance < 5]
+    df_mid = df.loc[(df.distance >= 5) & (df.distance < 30)]
+    df_far = df.loc[df.distance >= 30]
+    summary.append("DISTANCE FROM CAMERA:")
     summary.append(f"Mean error (0-5m from camera): {df_close.error.mean()}")
     summary.append(f"Median error (0-5m from camera): {df_close.error.median()}")
     summary.append(f"Mean error (5-30m from camera): {df_mid.error.mean()}")
@@ -141,7 +147,7 @@ def _write_summary(df, dst_dir, save):
         f"% scenes w/ median error < 1m: {(100*(median_errors < 1).sum()/num_scenes):.2f}%"
     )
     summary.append("-" * 30)
-    df_objs = df.groupby(["scene", "object id"])
+    df_objs = df.groupby(["scene", "object_id"])
     num_objs = len(df_objs)
     mean_error = df_objs.error.mean()
     median_error = df_objs.error.median()
@@ -183,9 +189,9 @@ def _write_summary(df, dst_dir, save):
         scene_summary.append(f"Mean error: {scene_df.error.mean()}")
         scene_summary.append(f"Median error: {scene_df.error.median()}")
         scene_summary.append(f"Standard dev: {scene_df.error.std()}")
-        num_objs = len(scene_df.groupby("object id"))
-        mean_errors = scene_df.groupby("object id").error.mean()
-        median_errors = scene_df.groupby("object id").error.median()
+        num_objs = len(scene_df.groupby("object_id"))
+        mean_errors = scene_df.groupby("object_id").error.mean()
+        median_errors = scene_df.groupby("object_id").error.median()
         scene_summary.append(
             f"% objects w/ mean error < 5m: {(100*(mean_errors < 5).sum()/num_objs):.2f}%"
         )
@@ -206,9 +212,9 @@ def _write_summary(df, dst_dir, save):
         )
         scene_summary.append("+" * 30)
         scene_summary.append("OBJECTS")
-        for obj in sorted(df[df.scene == scene]["object id"].unique()):
+        for obj in sorted(df[df.scene == scene].object_id.unique()):
             obj_summary = [f"TRACK {obj}"]
-            obj_df = scene_df.where(df["object id"] == obj)
+            obj_df = scene_df.where(df.object_id == obj)
             obj_summary.append(f"Mean error: {obj_df.error.mean()}")
             obj_summary.append(f"Median error: {obj_df.error.median()}")
             obj_summary.append(f"Standard dev: {obj_df.error.std()}")
@@ -254,6 +260,18 @@ if __name__ == "__main__":
         if not eval_file.exists():
             continue
         scene_df = pd.read_csv(eval_file.as_posix())
+        # for backward compatibility
+        scene_df.rename(
+            columns={
+                "occlusion level": "occlusion_lvl",
+                "truncation level": "truncation_lvl",
+                "object id": "object_id",
+                "image id": "image_id",
+                "distance from camera": "distance",
+            },
+            inplace=True,
+        )
+
         scene_df.insert(0, "scene", scene_dir.name)
         if df is None:
             df = scene_df

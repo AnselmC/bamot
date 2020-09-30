@@ -73,6 +73,7 @@ class LabelData(NamedTuple):
     occlusion_levels: TrackIdToOcclusionLevel
     truncation_levels: TrackIdToTruncationLevel
     bbox2d: TrackIdToBoundingBox
+    object_classes: str
 
 
 def get_label_data_from_kitti(
@@ -83,6 +84,7 @@ def get_label_data_from_kitti(
     occlusion_levels = {}
     truncation_levels = {}
     bounding_boxes = {}
+    object_classes = {}
     detection_file = _get_detection_file(kitti_path, scene)
     if not detection_file.exists():
         return (
@@ -100,7 +102,7 @@ def get_label_data_from_kitti(
             track_id = int(cols[1])
             if track_id == -1:
                 continue
-            # cols[2] is type (car, ped, ...)
+            object_class = str(cols[2])
             truncation_level = int(cols[3])
             occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
@@ -123,6 +125,7 @@ def get_label_data_from_kitti(
                 occlusion_levels[track_id] = {}
                 truncation_levels[track_id] = {}
                 bounding_boxes[track_id] = {}
+                object_classes[track_id] = object_class
             gt_trajectories_world[track_id][frame] = location_world.tolist()
             gt_trajectories_cam[track_id][frame] = location_cam2.tolist()
             occlusion_levels[track_id][frame] = occlusion_level
@@ -135,6 +138,7 @@ def get_label_data_from_kitti(
         occlusion_levels=occlusion_levels,
         truncation_levels=truncation_levels,
         bbox2d=bounding_boxes,
+        object_classes=object_classes,
     )
 
 

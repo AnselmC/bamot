@@ -353,19 +353,21 @@ if __name__ == "__main__":
         eval_file = save_dir / "evaluation.csv"
         with open(eval_file.as_posix(), "w") as fp:
             columns = [
-                "object id",
-                "image id",
-                "distance from camera",
-                "occlusion level",
-                "truncation level",
+                "object_id",
+                "image_id",
+                "obj_class",
+                "distance",
+                "occlusion_lvl",
+                "truncation_lvl",
                 "error",
-                "error x",
-                "error y",
-                "error z",
+                "error_x",
+                "error_y",
+                "error_z",
             ]
             header = ",".join(columns) + "\n"
             fp.write(header)
             for track_id, err_per_image in err_per_obj.items():
+                cls = label_data.object_classes[track_id]
                 for (
                     img_id,
                     ((err_x_cam, err_y_cam, err_z_cam, error), dist),
@@ -373,6 +375,6 @@ if __name__ == "__main__":
                     occ_lvl = label_data.occlusion_levels[track_id][img_id]
                     trunc_lvl = label_data.truncation_levels[track_id][img_id]
                     fp.write(
-                        f"{track_id},{img_id},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x_cam:.4f},{err_y_cam:.4f},{err_z_cam:.4f}\n"
+                        f"{track_id},{img_id},{cls},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x_cam:.4f},{err_y_cam:.4f},{err_z_cam:.4f}\n"
                     )
         print(f"Saved results to {eval_file.as_posix()}")

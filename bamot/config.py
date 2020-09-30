@@ -44,7 +44,7 @@ def _build_config(config_file=Path(".").parent / "config.yaml") -> Config:
     ).absolute()
     return Config(
         USING_CONFIG_FILE=config_file.exists(),
-        CLUSTER_SIZE=user_config.get("cluster_size", 6.0),
+        CLUSTER_SIZE=user_config.get("cluster_size", 8.0),
         KITTI_PATH=kitti_path.as_posix(),
         DETECTIONS_PATH=user_config.get(
             "detections_path", (kitti_path / "preprocessed" / "mot").as_posix()

@@ -210,7 +210,7 @@ if __name__ == "__main__":
         "-cfg",
         "--config",
         dest="config",
-        help="Use different config file (default: `config.yaml` (if available))",
+        help="DOESNT WORK - Use different config file (default: `config.yaml` (if available))",
     )
 
     args = parser.parse_args()
