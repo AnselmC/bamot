@@ -32,6 +32,8 @@ except ModuleNotFoundError:
         f.write('EXPER_PATH=""')
 
 CONFIG_FILE = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
+CONST_MOTION_WEIGHT_DEFAULT = os.environ.get("CONST_MOTION_WEIGHT", default=6)
+CLUSTER_SIZE_DEFAULT = os.environ.get("CLUSTER_SIZE", default=8)
 
 if CONFIG_FILE.exists():
     with open(CONFIG_FILE.as_posix(), "r") as fp:
@@ -44,13 +46,15 @@ kitti_path = Path(
 
 CONFIG = Config(
     USING_CONFIG_FILE=CONFIG_FILE.exists(),
-    CLUSTER_SIZE=USER_CONFIG.get("cluster_size", 8.0),
+    CLUSTER_SIZE=USER_CONFIG.get("cluster_size", CLUSTER_SIZE_DEFAULT),
     KITTI_PATH=kitti_path.as_posix(),
     DETECTIONS_PATH=USER_CONFIG.get(
         "detections_path", (kitti_path / "preprocessed" / "mot").as_posix()
     ),
     CONSTANT_MOTION=USER_CONFIG.get("constant_motion", False),
-    CONSTANT_MOTION_WEIGHT=USER_CONFIG.get("constant_motion_weight", 6.0),
+    CONSTANT_MOTION_WEIGHT=USER_CONFIG.get(
+        "constant_motion_weight", CONST_MOTION_WEIGHT_DEFAULT
+    ),
     MAX_DIST=USER_CONFIG.get("max_dist", 150),
     FEATURE_MATCHER=USER_CONFIG.get("feature_matcher", "orb"),
     NUM_FEATURES=USER_CONFIG.get("num_features", 8000),
