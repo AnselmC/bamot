@@ -206,17 +206,9 @@ if __name__ == "__main__":
         help="Show objects in camera coordinates in viewer (instead of world)",
         action="store_true",
     )
-    parser.add_argument(
-        "-cfg",
-        "--config",
-        dest="config",
-        help="DOESNT WORK - Use different config file (default: `config.yaml` (if available))",
-    )
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
-    if args.config:
-        update_config(Path(args.config))
     kitti_path = Path(config.KITTI_PATH)
     obj_detections_path = Path(config.DETECTIONS_PATH) / scene
 

@@ -31,42 +31,34 @@ except ModuleNotFoundError:
     with open(SUPERPOINT_SETTINGS, "w") as f:
         f.write('EXPER_PATH=""')
 
+CONFIG_FILE = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
 
-def _build_config(config_file=Path(".").parent / "config.yaml") -> Config:
+if CONFIG_FILE.exists():
+    with open(CONFIG_FILE.as_posix(), "r") as fp:
+        USER_CONFIG = yaml.load(fp, Loader=yaml.FullLoader)
+else:
+    USER_CONFIG: Dict[str, Any] = {}
+kitti_path = Path(
+    USER_CONFIG.get("kitti_path", "./data/KITTI/tracking/training")
+).absolute()
 
-    if config_file.exists():
-        with open(config_file.as_posix(), "r") as fp:
-            user_config = yaml.load(fp, Loader=yaml.FullLoader)
-    else:
-        user_config: Dict[str, Any] = {}
-    kitti_path = Path(
-        user_config.get("kitti_path", "./data/KITTI/tracking/training")
-    ).absolute()
-    return Config(
-        USING_CONFIG_FILE=config_file.exists(),
-        CLUSTER_SIZE=user_config.get("cluster_size", 8.0),
-        KITTI_PATH=kitti_path.as_posix(),
-        DETECTIONS_PATH=user_config.get(
-            "detections_path", (kitti_path / "preprocessed" / "mot").as_posix()
-        ),
-        CONSTANT_MOTION=user_config.get("constant_motion", False),
-        CONSTANT_MOTION_WEIGHT=user_config.get("constant_motion_weight", 6.0),
-        MAX_DIST=user_config.get("max_dist", 150),
-        FEATURE_MATCHER=user_config.get("feature_matcher", "orb"),
-        NUM_FEATURES=user_config.get("num_features", 8000),
-        SUPERPOINT_WEIGHTS_PATH=user_config.get(
-            "superpoint_weights",
-            (MODULE_PATH / "thirdparty" / "data" / "sp_v6").as_posix(),
-        ),
-    )
-
-
-CONFIG = _build_config()
-
-
-def update_config(config_file: Path):
-    global CONFIG
-    CONFIG = _build_config(config_file)
+CONFIG = Config(
+    USING_CONFIG_FILE=CONFIG_FILE.exists(),
+    CLUSTER_SIZE=USER_CONFIG.get("cluster_size", 8.0),
+    KITTI_PATH=kitti_path.as_posix(),
+    DETECTIONS_PATH=USER_CONFIG.get(
+        "detections_path", (kitti_path / "preprocessed" / "mot").as_posix()
+    ),
+    CONSTANT_MOTION=USER_CONFIG.get("constant_motion", False),
+    CONSTANT_MOTION_WEIGHT=USER_CONFIG.get("constant_motion_weight", 6.0),
+    MAX_DIST=USER_CONFIG.get("max_dist", 150),
+    FEATURE_MATCHER=USER_CONFIG.get("feature_matcher", "orb"),
+    NUM_FEATURES=USER_CONFIG.get("num_features", 8000),
+    SUPERPOINT_WEIGHTS_PATH=USER_CONFIG.get(
+        "superpoint_weights",
+        (MODULE_PATH / "thirdparty" / "data" / "sp_v6").as_posix(),
+    ),
+)
 
 
 def get_config_dict() -> Dict[str, Any]:

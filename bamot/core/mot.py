@@ -254,7 +254,7 @@ def _get_median_descriptor(observations: List[Observation], norm: int) -> np.nda
 def _get_features_from_landmarks(
     landmarks: Dict[int, Landmark]
 ) -> Tuple[List[Feature], Dict[int, int]]:
-    # todo: refactor
+    # todo: refactor --> very slow, probably due to median descriptor
     features = []
     landmark_mapping = {}
     idx = 0

@@ -14,13 +14,13 @@ def _plt_hist(df, dst_dir, save):
     plt.axvline(
         df.error.mean(),
         linestyle="dashed",
-        label=f"Mean: {df.error.mean():.2f}%",
+        label=f"Mean: {df.error.mean():.2f}",
         color="b",
     )
     plt.axvline(
         df.error.median(),
         linestyle="dotted",
-        label=f"Median: {df.error.median():.2f}%",
+        label=f"Median: {df.error.median():.2f}",
         color="r",
     )
     plt.xlabel("Error")
