@@ -215,10 +215,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
+    if args.config:
+        update_config(Path(args.config))
     kitti_path = Path(config.KITTI_PATH)
     obj_detections_path = Path(config.DETECTIONS_PATH) / scene
-    if args.config:
-        update_config(args.config)
+
     LOGGER.setLevel(LOG_LEVELS[args.verbosity])
 
     LOGGER.info(30 * "+")

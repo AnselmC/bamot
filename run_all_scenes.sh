@@ -10,7 +10,7 @@ while getopts ":f:t:c:" arg; do
     esac
 done
 
-if ! $config; then
+if [ -z $config ]; then
     config="config.yaml"
 fi
 
