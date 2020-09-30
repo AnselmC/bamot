@@ -1,19 +1,27 @@
 import logging
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 import cv2
 import numpy as np
-import tensorflow as tf
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
 from PIL import Image, ImageDraw
 
-tf.config.threading.set_inter_op_parallelism_threads(
-    2
-)  # s.t. extraction can run in parallel
+if TYPE_CHECKING:
+    import tensorflow as tf
+
+if config.FEATURE_MATCHER != "orb":
+    import tensorflow as tf
+
+    tf.get_logger().setLevel(logging.ERROR)  # surpress TF1 -> TF2 warnings
+    tf.config.threading.set_inter_op_parallelism_threads(
+        2
+    )  # s.t. extraction can run in parallel
+    LOADED = tf.saved_model.load(config.SUPERPOINT_WEIGHTS_PATH)
+    MODEL = LOADED.signatures["serving_default"]
 
 LOGGER = logging.getLogger("UTIL:CV")
 
@@ -125,10 +133,7 @@ def from_homogeneous_pt(pt_hom: np.ndarray) -> np.ndarray:
 
 
 def get_superpoint_feature_matcher():
-
-    tf.get_logger().setLevel("ERROR")  # surpress TF1 -> TF2 warnings
-    loaded = tf.saved_model.load(config.SUPERPOINT_WEIGHTS_PATH)
-    model = loaded.signatures["serving_default"]
+    global MODEL
 
     def preprocess_image(
         img: np.ndarray, mask: Optional[np.ndarray] = None
@@ -158,7 +163,7 @@ def get_superpoint_feature_matcher():
     ) -> List[Feature]:
         # mask = None
         tensor = preprocess_image(img, mask)
-        out = model(tensor)
+        out = MODEL(tensor)
         kp_map = out["prob_nms"].numpy()[0].astype(np.float)
         desc_map = out["descriptors"].numpy()[0].astype(np.float)
         kp, desc = sp.extract_superpoint_keypoints_and_descriptors(
