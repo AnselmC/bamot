@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 tf.config.threading.set_inter_op_parallelism_threads(
     2
 )  # s.t. extraction can run in parallel
+tf.get_logger().setLevel("ERROR")
 
 LOGGER = logging.getLogger("UTIL:CV")
 
