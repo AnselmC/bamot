@@ -115,20 +115,16 @@ if __name__ == "__main__":
         save_dir = Path(args.save) / args.trajectories.split("/")[-1] / scene
         save_dir.mkdir(exist_ok=True, parents=True)
     err_per_obj = {}
-    num_objects = (
-        args.num_objects if args.num_objects else len(label_data.world_positions)
-    )
+    num_objects = args.num_objects if args.num_objects else len(label_data)
     print(f"Number of objects: {num_objects}")
     for j in range(2):
         if args.plot:
             fig_world = plt.figure(figsize=plt.figaspect(0.5))
             ax_3d_world = fig_world.add_subplot(1, 1, 1, projection="3d")
-        for i, track_id in enumerate(label_data.world_positions.keys()):
+        for i, track_id in enumerate(label_data.keys()):
             if i > num_objects:
                 break
-            gt_traj_dict = label_data.world_positions[track_id]
-            gt_traj_cam_dict = label_data.cam_positions[track_id]
-
+            track_dict = label_data[track_id]
             if track_id not in est_trajectories_world:
                 continue
             est_traj_dict = est_trajectories_world[track_id]
@@ -137,10 +133,10 @@ if __name__ == "__main__":
             valid_frames = []
             prev_pt = None
             for img_id, est_pt_cam in est_traj_cam_dict.items():
-                gt_pt_cam = gt_traj_cam_dict.get(img_id)
-                if gt_pt_cam is None:  # could be due to occlusion
+                row_data = track_dict.get(img_id)
+                if row_data is None:  # could be due to occlusion
                     continue
-
+                gt_pt_cam = track_dict[img_id][img_id].cam_pos
                 gt_pt_cam = np.array(gt_pt_cam).reshape(3, 1)
                 est_pt_cam = np.array(est_pt_cam).reshape(3, 1)
                 error_cam = np.linalg.norm(gt_pt_cam - est_pt_cam)
@@ -148,7 +144,8 @@ if __name__ == "__main__":
                     np.abs(gt_pt_cam - est_pt_cam).reshape(3,).tolist()
                 )
 
-                gt_pt_world = np.array(gt_traj_dict[img_id]).reshape(3, 1)
+                gt_pt_world = track_dict[img_id][img_id].world_pos
+                gt_pt_world = np.array(gt_pt_world).reshape(3, 1)
                 est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
                 error_world = np.linalg.norm(gt_pt_world - est_pt_world)
                 err_x_world, err_y_world, err_z_world = (
@@ -191,8 +188,12 @@ if __name__ == "__main__":
                         ax_3d_world.set_ylabel("y [m]", color="w")
                         ax_3d_world.set_zlabel("z [m]", color="w")
                         # ax_3d.set_yticks([])
-                gt_traj_world = np.array(list(gt_traj_dict.values())).reshape(-1, 3)
-                gt_traj_cam = np.array(list(gt_traj_cam_dict.values())).reshape(-1, 3)
+                gt_traj_world = np.array(
+                    [row.world_pos for row in track_dict.values()]
+                ).reshape(-1, 3)
+                gt_traj_cam = np.array(
+                    [row.cam_pos for row in track_dict.values()]
+                ).reshape(-1, 3)
                 est_traj_world = np.array(
                     [
                         pt

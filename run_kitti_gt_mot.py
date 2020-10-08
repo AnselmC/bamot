@@ -21,8 +21,7 @@ import tqdm
 
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
-from bamot.core.base_types import (ObjectDetection, StereoImage,
-                                   StereoObjectDetection)
+from bamot.core.base_types import StereoImage, StereoObjectDetection
 from bamot.core.mot import run
 from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
                               get_label_data_from_kitti)
@@ -283,9 +282,10 @@ if __name__ == "__main__":
             shared_data=shared_data,
             stop_flag=stop_flag,
             next_step=next_step,
-            gt_trajectories=label_data.world_positions,
+            label_data=label_data,
             save_path=Path(args.record) if args.record else None,
-            poses=gt_poses if args.cam else None,
+            gt_poses=gt_poses,
+            cam_coordinates=args.cam,
         )
     LOGGER.info("No more frames - terminating processes")
     slam_process.join()

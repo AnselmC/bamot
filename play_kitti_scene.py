@@ -50,27 +50,23 @@ if __name__ == "__main__":
     bounding_boxes_by_img_id = {}
     all_x = []
     all_y = []
-    print(args.ids)
     for i in range(len(gt_poses_world)):
         boxes = []
-        for track_id, track_boxes in label_data.bbox2d.items():
-            if args.ids and track_id not in args.ids:
-                continue
-            for img_id, box in track_boxes.items():
-                if img_id == i:
-                    boxes.append(box)
-        bounding_boxes_by_img_id[i] = boxes
-
         tracks = []
-        for track_id, track in label_data.world_positions.items():
+        for track_id, track_data in label_data.items():
+            # only selected tracks
             if args.ids and track_id not in args.ids:
                 continue
-            if i not in track.keys():
+            # only tracks that are in current image
+            if i not in track_data.keys():
                 continue
             obj_positions = []
-            for img_id, position in track.items():
+            for img_id, label_row in track_data.items():
+                bbox = label_row.bbox2d
+                if img_id == i:
+                    boxes.append(bbox)
                 if img_id <= i:
-                    x, y, z = position
+                    x, y, z = label_row.world_pos
                     x = x[0]
                     y = y[0]
                     z = z[0]
@@ -79,6 +75,7 @@ if __name__ == "__main__":
                     obj_positions.append([x, y, z])
             if obj_positions:
                 tracks.append(obj_positions)
+        bounding_boxes_by_img_id[i] = boxes
         if tracks:
             object_poses_by_img_id[i] = tracks
 

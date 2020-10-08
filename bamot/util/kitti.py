@@ -6,11 +6,26 @@ from typing import Dict, Iterable, List, NamedTuple, Tuple
 import cv2
 import numpy as np
 import pandas as pd
-from bamot.core.base_types import (CameraParameters, ObjectDetection,
-                                   StereoCamera)
+from bamot.core.base_types import (CameraParameters, ImageId, ObjectDetection,
+                                   StereoCamera, TrackId)
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
+from g2o import AngleAxis
 
 LOGGER = logging.getLogger("Util:Kitti")
+
+
+class LabelDataRow(NamedTuple):
+    world_pos: np.ndarray
+    cam_pos: np.ndarray
+    occ_lvl: int
+    trunc_lvl: int
+    bbox2d: Tuple[float, float, float, float]
+    object_class: str
+    dim_3d: Tuple[float, float, float]
+    rot_3d: np.ndarray
+
+
+LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
 
 
 def get_image_stream(
@@ -26,73 +41,15 @@ def get_image_stream(
         yield left_img, right_img
 
 
-def _project(pt_3d_cam: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
-    pt_3d_cam = pt_3d_cam[:4] / pt_3d_cam[3]
-    pt_2d_hom = intrinsics[:3, :3] @ pt_3d_cam[:3]
-    return pt_2d_hom
-
-
-def _back_project(pt_2d: np.ndarray, intrinsics: np.ndarray) -> np.ndarray:
-    pt_2d = pt_2d.reshape(2, 1)
-    fx = intrinsics[0, 0]
-    fy = intrinsics[1, 1]
-    cx = intrinsics[0, 2]
-    cy = intrinsics[1, 2]
-    u, v = map(float, pt_2d)
-    mx = (u - cx) / fx
-    my = (v - cy) / fy
-    length = np.sqrt(mx ** 2 + my ** 2 + 1)
-    return (np.array([mx, my, 1]) / length).reshape(3, 1)
-
-
-def _get_oxts_file(kitti_path: Path, scene: str) -> Path:
-    return kitti_path / "oxts" / (scene + ".txt")
-
-
-def _get_calib_cam_to_cam_file(kitti_path: Path) -> Path:
-    return kitti_path / "calib_cam_to_cam.txt"
-
-
-def _get_calib_file(kitti_path: Path, scene: str) -> Path:
-    return kitti_path / "calib" / (scene + ".txt")
-
-
-def _get_detection_file(kitti_path: Path, scene: str) -> Path:
-    return kitti_path / "label_02" / (scene + ".txt")
-
-
-TrackIdToPositionDict = Dict[int, Dict[int, np.ndarray]]
-TrackIdToOcclusionLevel = Dict[int, Dict[int, int]]
-TrackIdToTruncationLevel = Dict[int, Dict[int, int]]
-TrackIdToBoundingBox = Dict[int, Dict[int, int]]
-
-
-class LabelData(NamedTuple):
-    world_positions: TrackIdToPositionDict
-    cam_positions: TrackIdToPositionDict
-    occlusion_levels: TrackIdToOcclusionLevel
-    truncation_levels: TrackIdToTruncationLevel
-    bbox2d: TrackIdToBoundingBox
-    object_classes: str
-
-
 def get_label_data_from_kitti(
     kitti_path: Path, scene: str, poses: List[np.ndarray], offset: int = 0
 ) -> LabelData:
-    gt_trajectories_world = {}
-    gt_trajectories_cam = {}
-    occlusion_levels = {}
-    truncation_levels = {}
-    bounding_boxes = {}
-    object_classes = {}
     detection_file = _get_detection_file(kitti_path, scene)
     if not detection_file.exists():
-        return (
-            gt_trajectories_world,
-            gt_trajectories_cam,
-            occlusion_levels,
-            truncation_levels,
+        raise FileNotFoundError(
+            f"Detection file {detection_file.as_posix()} doesn't exist"
         )
+    label_data: LabelData = {}
     with open(detection_file.as_posix(), "r") as fp:
         for line in fp:
             cols = line.split(" ")
@@ -106,40 +63,33 @@ def get_label_data_from_kitti(
             truncation_level = int(cols[3])
             occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
-            # cols[6:10] is bbox
-            bbox = list(map(float, cols[6:10]))
-            # cols[10: 13] are 3D dimensions
-
+            bbox = list(map(float, cols[6:10]))  # in left image coordinates
+            dim_3d = list(map(float, cols[10:13]))  # in camera coordinates
             location_cam2 = np.array(list(map(float, cols[13:16]))).reshape(
                 (3, 1)
             )  # in camera coordinates
+            rot_angle = float(cols[16])  # in camera coordinates
+            rot_3d = AngleAxis(rot_angle, np.array([0, 1, 0])).rotation_matrix()
             T_w_cam2 = poses[frame]
             location_world = from_homogeneous_pt(
                 T_w_cam2 @ to_homogeneous_pt(location_cam2)
             )
-            # cols[16] is rotation of object
-            # cols[17] is score
-            if gt_trajectories_world.get(track_id) is None:
-                gt_trajectories_world[track_id] = {}
-                gt_trajectories_cam[track_id] = {}
-                occlusion_levels[track_id] = {}
-                truncation_levels[track_id] = {}
-                bounding_boxes[track_id] = {}
-                object_classes[track_id] = object_class
-            gt_trajectories_world[track_id][frame] = location_world.tolist()
-            gt_trajectories_cam[track_id][frame] = location_cam2.tolist()
-            occlusion_levels[track_id][frame] = occlusion_level
-            truncation_levels[track_id][frame] = truncation_level
-            bounding_boxes[track_id][frame] = bbox
-    LOGGER.debug("Extracted GT trajectories for %d objects", len(gt_trajectories_world))
-    return LabelData(
-        world_positions=gt_trajectories_world,
-        cam_positions=gt_trajectories_cam,
-        occlusion_levels=occlusion_levels,
-        truncation_levels=truncation_levels,
-        bbox2d=bounding_boxes,
-        object_classes=object_classes,
-    )
+            if not label_data.get(track_id):
+                label_data[track_id] = {}
+            label_row = LabelDataRow(
+                world_pos=location_world.tolist(),
+                cam_pos=location_cam2.tolist(),
+                occ_lvl=occlusion_level,
+                trunc_lvl=truncation_level,
+                object_class=object_class,
+                bbox2d=bbox,
+                dim_3d=dim_3d,
+                rot_3d=rot_3d,
+            )
+            label_data[track_id][frame] = label_row
+
+    LOGGER.debug("Extracted GT trajectories for %d objects", len(label_data))
+    return label_data
 
 
 def get_gt_poses_from_kitti(kitti_path: Path, scene: str) -> List[np.ndarray]:
@@ -191,72 +141,6 @@ def get_gt_poses_from_kitti(kitti_path: Path, scene: str) -> List[np.ndarray]:
         )
     ]
     return poses
-
-
-def _oxts_to_poses(lat, lon, alt, roll, pitch, yaw):
-    """This implementation is a python reimplementation of the convertOxtsToPose
-    MATLAB function in the original development toolkit for raw data
-    """
-
-    def rot_x(theta):
-        theta = np.atleast_1d(theta)
-        n = len(theta)
-        return np.stack(
-            (
-                np.stack([np.ones(n), np.zeros(n), np.zeros(n)], axis=-1),
-                np.stack([np.zeros(n), np.cos(theta), -np.sin(theta)], axis=-1),
-                np.stack([np.zeros(n), np.sin(theta), np.cos(theta)], axis=-1),
-            ),
-            axis=-2,
-        )
-
-    def rot_y(theta):
-        theta = np.atleast_1d(theta)
-        n = len(theta)
-        return np.stack(
-            (
-                np.stack([np.cos(theta), np.zeros(n), np.sin(theta)], axis=-1),
-                np.stack([np.zeros(n), np.ones(n), np.zeros(n)], axis=-1),
-                np.stack([-np.sin(theta), np.zeros(n), np.cos(theta)], axis=-1),
-            ),
-            axis=-2,
-        )
-
-    def rot_z(theta):
-        theta = np.atleast_1d(theta)
-        n = len(theta)
-        return np.stack(
-            (
-                np.stack([np.cos(theta), -np.sin(theta), np.zeros(n)], axis=-1),
-                np.stack([np.sin(theta), np.cos(theta), np.zeros(n)], axis=-1),
-                np.stack([np.zeros(n), np.zeros(n), np.ones(n)], axis=-1),
-            ),
-            axis=-2,
-        )
-
-    n = len(lat)
-
-    # converts lat/lon coordinates to mercator coordinates using mercator scale
-    #        mercator scale             * earth radius
-    scale = np.cos(lat[0] * np.pi / 180.0) * 6378137
-
-    position = np.stack(
-        [
-            scale * lon * np.pi / 180.0,
-            scale * np.log(np.tan((90.0 + lat) * np.pi / 360.0)),
-            alt,
-        ],
-        axis=-1,
-    )
-
-    R = rot_z(yaw) @ rot_y(pitch) @ rot_x(roll)
-
-    # extract relative transformation with respect to the first frame
-    T0_inv = np.block([[R[0].T, -R[0].T @ position[0].reshape(3, 1)], [0, 0, 0, 1]])
-    T = T0_inv @ np.block(
-        [[R, position[:, :, None]], [np.zeros((n, 1, 3)), np.ones((n, 1, 1))]]
-    )
-    return T
 
 
 def get_transformation_cam_to_imu(kitti_path: Path, scene) -> np.ndarray:
@@ -343,3 +227,85 @@ def get_gt_obj_segmentations_from_kitti(instance_file: str) -> List[ObjectDetect
             continue
         obj_detections.append(obj_mask)
     return obj_detections
+
+
+def _get_oxts_file(kitti_path: Path, scene: str) -> Path:
+    return kitti_path / "oxts" / (scene + ".txt")
+
+
+def _get_calib_cam_to_cam_file(kitti_path: Path) -> Path:
+    return kitti_path / "calib_cam_to_cam.txt"
+
+
+def _get_calib_file(kitti_path: Path, scene: str) -> Path:
+    return kitti_path / "calib" / (scene + ".txt")
+
+
+def _get_detection_file(kitti_path: Path, scene: str) -> Path:
+    return kitti_path / "label_02" / (scene + ".txt")
+
+
+def _oxts_to_poses(lat, lon, alt, roll, pitch, yaw):
+    """This implementation is a python reimplementation of the convertOxtsToPose
+    MATLAB function in the original development toolkit for raw data
+    """
+
+    def rot_x(theta):
+        theta = np.atleast_1d(theta)
+        n = len(theta)
+        return np.stack(
+            (
+                np.stack([np.ones(n), np.zeros(n), np.zeros(n)], axis=-1),
+                np.stack([np.zeros(n), np.cos(theta), -np.sin(theta)], axis=-1),
+                np.stack([np.zeros(n), np.sin(theta), np.cos(theta)], axis=-1),
+            ),
+            axis=-2,
+        )
+
+    def rot_y(theta):
+        theta = np.atleast_1d(theta)
+        n = len(theta)
+        return np.stack(
+            (
+                np.stack([np.cos(theta), np.zeros(n), np.sin(theta)], axis=-1),
+                np.stack([np.zeros(n), np.ones(n), np.zeros(n)], axis=-1),
+                np.stack([-np.sin(theta), np.zeros(n), np.cos(theta)], axis=-1),
+            ),
+            axis=-2,
+        )
+
+    def rot_z(theta):
+        theta = np.atleast_1d(theta)
+        n = len(theta)
+        return np.stack(
+            (
+                np.stack([np.cos(theta), -np.sin(theta), np.zeros(n)], axis=-1),
+                np.stack([np.sin(theta), np.cos(theta), np.zeros(n)], axis=-1),
+                np.stack([np.zeros(n), np.zeros(n), np.ones(n)], axis=-1),
+            ),
+            axis=-2,
+        )
+
+    n = len(lat)
+
+    # converts lat/lon coordinates to mercator coordinates using mercator scale
+    #        mercator scale             * earth radius
+    scale = np.cos(lat[0] * np.pi / 180.0) * 6378137
+
+    position = np.stack(
+        [
+            scale * lon * np.pi / 180.0,
+            scale * np.log(np.tan((90.0 + lat) * np.pi / 360.0)),
+            alt,
+        ],
+        axis=-1,
+    )
+
+    R = rot_z(yaw) @ rot_y(pitch) @ rot_x(roll)
+
+    # extract relative transformation with respect to the first frame
+    T0_inv = np.block([[R[0].T, -R[0].T @ position[0].reshape(3, 1)], [0, 0, 0, 1]])
+    T = T0_inv @ np.block(
+        [[R, position[:, :, None]], [np.zeros((n, 1, 3)), np.ones((n, 1, 1))]]
+    )
+    return T
