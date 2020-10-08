@@ -7,8 +7,9 @@ import time
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -26,8 +27,6 @@ from hungarian_algorithm import algorithm as ha
 from shapely.geometry import Polygon
 
 LOGGER = logging.getLogger("CORE:MOT")
-
-MAX_DIST = 150
 
 
 def _localize_object(
@@ -120,7 +119,7 @@ def _add_new_landmarks_and_observations(
         )
         z = pt_cam[2]
         if (
-            z < 0.5 or np.linalg.norm(pt_cam) > MAX_DIST
+            z < 0.5 or np.linalg.norm(pt_cam) > config.MAX_DIST
         ):  # don't add landmarks that are very behind camera/very close or far away
             continue
         # print(landmark_mapping[landmark_idx])
@@ -399,7 +398,8 @@ def run(
             LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
             for lid in landmarks_to_remove:
                 track.landmarks.pop(lid)
-            if len(track.landmarks) < 15:
+            # settings min_landmarks to 0 disables deactivating tracks like this
+            if config.MIN_LANDMARKS and len(track.landmarks) < config.MIN_LANDMARKS:
                 track.active = False
         return track, left_features, right_features, stereo_matches
 
@@ -510,23 +510,24 @@ def step(
         for future, track_index in futures_to_track_index.items():
             track, left_features, right_features, stereo_matches = future.get()
             object_tracks[track_index] = track
-            # if track.active:
-            #    object_tracks[track_index] = track
-            # else:
-            #    if object_tracks.get(track_index):
-            #        del object_tracks[track_index]
+            if track.active:
+                object_tracks[track_index] = track
+            else:
+                if object_tracks.get(track_index):
+                    del object_tracks[track_index]
             all_left_features.append(left_features)
             all_right_features.append(right_features)
             all_stereo_matches.append(stereo_matches)
 
+    # TODO: remove old code
     # Set old tracks inactive
-    old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
-    num_deactivated = 0
-    for track_id in old_tracks:
-        if object_tracks[track_id].active:
-            object_tracks[track_id].active = False
-            num_deactivated += 1
-    LOGGER.debug("Deactivated %d tracks", num_deactivated)
+    # old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
+    # num_deactivated = 0
+    # for track_id in old_tracks:
+    #    if object_tracks[track_id].active:
+    #        object_tracks[track_id].active = False
+    #        num_deactivated += 1
+    # LOGGER.debug("Deactivated %d tracks", num_deactivated)
     # add new tracks
     # new_tracks = set(range(len(new_detections))).difference(set(matched_detections))
     # LOGGER.debug("Adding %d new tracks", len(new_tracks))

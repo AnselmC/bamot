@@ -12,6 +12,7 @@ class Config(NamedTuple):
     KITTI_PATH: str
     DETECTIONS_PATH: str
     MAX_DIST: float
+    MIN_LANDMARKS: int
     FEATURE_MATCHER: str
     NUM_FEATURES: str
     CONSTANT_MOTION: bool
@@ -56,6 +57,7 @@ CONFIG = Config(
         "constant_motion_weight", CONST_MOTION_WEIGHT_DEFAULT
     ),
     MAX_DIST=USER_CONFIG.get("max_dist", 150),
+    MIN_LANDMARKS=USER_CONFIG.get("min_landmarks", 0),
     FEATURE_MATCHER=USER_CONFIG.get("feature_matcher", "orb"),
     NUM_FEATURES=USER_CONFIG.get("num_features", 8000),
     SUPERPOINT_WEIGHTS_PATH=USER_CONFIG.get(
