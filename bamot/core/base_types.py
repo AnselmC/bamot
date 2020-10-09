@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
-from dataclasses_json import config, dataclass_json
-from marshmallow import fields
 
 ObjectId = int
 FeatureId = int
@@ -16,11 +14,6 @@ TimeCamId = Tuple[ImageId, CamId]
 
 
 FeatureTrack = Dict[ObjectId, FeatureId]
-numpy_serialization_config = config(
-    encoder=lambda x: x.tolist(),
-    decoder=np.array,
-    mm_field=fields.List(fields.List(fields.Float())),
-)
 
 
 @dataclass
@@ -29,17 +22,17 @@ class StereoImage:
     right: np.ndarray
 
 
-@dataclass_json
+# @dataclass_json
 @dataclass
 class Feature:
     u: float
     v: float
-    descriptor: np.ndarray = field(metadata=numpy_serialization_config)
+    descriptor: np.ndarray
 
 
-@dataclass_json
 @dataclass
 class ObjectDetection:
+    mask: np.ndarray
     convex_hull: List[Tuple[int, int]]
     track_id: Optional[TrackId] = None
     features: Optional[List[Feature]] = None
@@ -104,7 +97,6 @@ class ObjectTrack:
     active: bool = True
 
 
-@dataclass_json
 @dataclass
 class StereoObjectDetection:
     left: ObjectDetection

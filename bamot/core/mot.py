@@ -7,9 +7,8 @@ import time
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import numpy as np
-
 import cv2
+import numpy as np
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -287,19 +286,13 @@ def run(
         track.active = True
         feature_matcher = get_feature_matcher()
         # mask out object from image
-        left_obj_mask = get_convex_hull_mask(
-            np.array(detection.left.convex_hull), img_shape=img_shape
-        )
-        right_obj_mask = get_convex_hull_mask(
-            np.array(detection.right.convex_hull), img_shape=img_shape
-        )
         left_features = feature_matcher.detect_features(
-            stereo_image.left, left_obj_mask
+            stereo_image.left, detection.left.mask, img_id, track_index,"left"
         )
         LOGGER.debug("Detected %d features on left object", len(left_features))
         # TODO: why does using left_obj_mask with no dilation work best here?
         right_features = feature_matcher.detect_features(
-            stereo_image.right, dilate_mask(left_obj_mask, num_pixels=0)
+            stereo_image.right, detection.right.mask, img_id, track_index, "right"
         )
         LOGGER.debug("Detected %d features on right object", len(right_features))
         detection.left.features = left_features
@@ -338,6 +331,7 @@ def run(
             if not successful:
                 track_matches.clear()
             T_obj_cam = np.linalg.inv(T_cam_obj)
+        # TODO: clear track matches if less than 5?
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
         track.poses[img_id] = T_world_obj
         # add new landmark observations from track matches

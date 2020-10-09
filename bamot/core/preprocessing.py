@@ -60,13 +60,15 @@ def preprocess_frame(
     for obj in object_detections:
         # get masks for object
         left_hull_pts = np.array(obj.convex_hull)
-        left_obj_mask = get_convex_hull_mask(left_hull_pts, img_shape)
+        left_obj_mask = obj.mask
         left_mask[left_obj_mask] = 0
         right_obj_pts = transform_object_points(left_hull_pts, stereo_camera)
         right_obj_mask = get_convex_hull_mask(right_obj_pts, img_shape)
         right_mask[right_obj_mask] = 0
         right_obj = ObjectDetection(
-            convex_hull=list(map(tuple, right_obj_pts.tolist())), track_id=obj.track_id
+            mask=right_mask,
+            convex_hull=list(map(tuple, right_obj_pts.tolist())),
+            track_id=obj.track_id,
         )
         stereo_object_detections.append(StereoObjectDetection(obj, right_obj))
 

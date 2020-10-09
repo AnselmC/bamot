@@ -1,13 +1,15 @@
 import glob
 import logging
+import pickle
 from pathlib import Path
-from typing import Dict, Iterable, List, NamedTuple, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
 import cv2
 import numpy as np
 import pandas as pd
 from bamot.core.base_types import (CameraParameters, ImageId, ObjectDetection,
-                                   StereoCamera, TrackId)
+                                   StereoCamera, StereoImage,
+                                   StereoObjectDetection, TrackId)
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 from g2o import AngleAxis
 
@@ -28,17 +30,53 @@ class LabelDataRow(NamedTuple):
 LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
 
 
+def get_detection_stream(
+    obj_detections_path: Path, offset: int, object_ids: Optional[List[int]],
+) -> Iterable[List[StereoObjectDetection]]:
+    detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
+    if not detection_files:
+        raise ValueError(f"No detection files found at {obj_detections_path}")
+    LOGGER.debug("Found %d detection files", len(detection_files))
+    for f in detection_files[offset:]:
+        with open(f, "rb") as fp:
+            detections = pickle.load(fp)
+        if object_ids:
+            detections = list(
+                filter(lambda x: x.left.track_id in object_ids, detections)
+            )
+        yield detections
+    LOGGER.debug("Finished yielding object detections")
+
+
 def get_image_stream(
-    kitti_path: Path, scene: str
-) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
+    kitti_path: Path, scene: str, with_file_names: bool = False
+) -> Iterable[StereoImage]:
+    class Stream:
+        def __init__(self, generator, length):
+            self._generator = generator
+            self._length = length
+
+        def __len__(self):
+            return self._length
+
+        def __iter__(self):
+            return self._generator
+
     left_img_path = kitti_path / "image_02" / scene
     right_img_path = kitti_path / "image_03" / scene
     left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
     right_imgs = sorted(glob.glob(right_img_path.as_posix() + "/*.png"))
-    for left, right in zip(left_imgs, right_imgs):
-        left_img = cv2.imread(left, cv2.IMREAD_COLOR).astype(np.uint8)
-        right_img = cv2.imread(right, cv2.IMREAD_COLOR).astype(np.uint8)
-        yield left_img, right_img
+
+    def _generator(with_file_names: bool):
+        for left, right in zip(left_imgs, right_imgs):
+            left_img = cv2.imread(left, cv2.IMREAD_COLOR).astype(np.uint8)
+            right_img = cv2.imread(right, cv2.IMREAD_COLOR).astype(np.uint8)
+            if with_file_names:
+                yield StereoImage(left_img, right_img), (left, right)
+            else:
+                yield StereoImage(left_img, right_img)
+
+    return Stream(_generator(with_file_names), len(left_imgs))
 
 
 def get_label_data_from_kitti(
@@ -201,14 +239,14 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     T02 = np.identity(4)
     T02[0, 3] = left_bx
     # T23[0, 3] = 0.03
-    # zu weit rechts -> nach links schieben
-    # pos nach links
-    # neg nach rechts
     return StereoCamera(left_cam, right_cam, T23), T02
 
 
-def get_gt_obj_segmentations_from_kitti(instance_file: str) -> List[ObjectDetection]:
-    img = np.array(cv2.imread(instance_file, cv2.IMREAD_ANYDEPTH))
+def get_gt_obj_segmentations_from_kitti(
+    kitti_path: Path, scene: str, img_id: int
+) -> List[ObjectDetection]:
+    instance_file = _get_instance_file(kitti_path, scene, str(img_id).zfill(6))
+    img = np.array(cv2.imread(instance_file.as_posix(), cv2.IMREAD_ANYDEPTH))
     obj_ids = np.unique(img)
     obj_detections = []
     for obj_id in obj_ids:
@@ -220,12 +258,14 @@ def get_gt_obj_segmentations_from_kitti(instance_file: str) -> List[ObjectDetect
             -1, 2
         )
         convex_hull = np.flip(convex_hull)
-        obj_mask = ObjectDetection(
-            convex_hull=list(map(tuple, convex_hull.tolist())), track_id=track_id
+        obj_det = ObjectDetection(
+            mask=obj_mask,
+            convex_hull=list(map(tuple, convex_hull.tolist())),
+            track_id=track_id,
         )
-        if len(obj_mask.convex_hull) < 2:
+        if len(obj_det.convex_hull) < 2:
             continue
-        obj_detections.append(obj_mask)
+        obj_detections.append(obj_det)
     return obj_detections
 
 
@@ -239,6 +279,10 @@ def _get_calib_cam_to_cam_file(kitti_path: Path) -> Path:
 
 def _get_calib_file(kitti_path: Path, scene: str) -> Path:
     return kitti_path / "calib" / (scene + ".txt")
+
+
+def _get_instance_file(kitti_path: Path, scene: str, img_id: str) -> Path:
+    return kitti_path / "instances" / scene / (img_id + ".png")
 
 
 def _get_detection_file(kitti_path: Path, scene: str) -> Path:

@@ -12,7 +12,7 @@ import threading
 import time
 import warnings
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Iterable, List, Tuple, Union
 
 import colorlog
 import cv2
@@ -21,9 +21,10 @@ import tqdm
 
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
-from bamot.core.base_types import StereoImage, StereoObjectDetection
+from bamot.core.base_types import StereoImage
 from bamot.core.mot import run
-from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
+from bamot.util.kitti import (get_cameras_from_kitti, get_detection_stream,
+                              get_gt_poses_from_kitti,
                               get_label_data_from_kitti)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
@@ -97,28 +98,6 @@ def _get_image_stream(
         img_id += 1
     LOGGER.debug("Setting stop flag")
     stop_flag.set()
-
-
-def _get_detection_stream(
-    obj_detections_path: Path,
-    offset: int,
-    img_shape: Tuple[int, int],
-    object_ids: Optional[List[int]],
-) -> Iterable[List[StereoObjectDetection]]:
-    detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.json"))
-    if not detection_files:
-        raise ValueError(f"No detection files found at {obj_detections_path}")
-    LOGGER.debug("Found %d detection files", len(detection_files))
-    for f in detection_files[offset:]:
-        with open(f, "r") as fd:
-            json_data = fd.read()
-        detections = StereoObjectDetection.schema().loads(json_data, many=True)
-        if object_ids:
-            detections = list(
-                filter(lambda x: x.left.track_id in object_ids, detections)
-            )
-        yield detections
-    LOGGER.debug("Finished yielding object detections")
 
 
 if __name__ == "__main__":
@@ -242,7 +221,7 @@ if __name__ == "__main__":
     label_data = get_label_data_from_kitti(
         kitti_path, scene, poses=gt_poses, offset=args.offset
     )
-    detection_stream = _get_detection_stream(
+    detection_stream = get_detection_stream(
         obj_detections_path,
         img_shape=img_shape,
         offset=args.offset,
