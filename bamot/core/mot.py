@@ -38,7 +38,7 @@ def _localize_object(
     camera_params: CameraParameters,
     num_iterations: int = 2000,
     reprojection_error: float = 1.0,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, bool]:
     pts_3d = []
     pts_2d = []
 
@@ -88,9 +88,9 @@ def _localize_object(
             optimized_pose[:3, :3] = rot
             optimized_pose[:3, 3] = tvec
             LOGGER.debug("Optimized pose from \n%s\nto\n%s", T_cam_obj, optimized_pose)
-            return optimized_pose
+            return optimized_pose, True
     LOGGER.debug("Optimization failed...")
-    return T_cam_obj
+    return T_cam_obj, False
 
 
 def _add_new_landmarks_and_observations(
@@ -122,8 +122,6 @@ def _add_new_landmarks_and_observations(
             z < 0.5 or np.linalg.norm(pt_cam) > config.MAX_DIST
         ):  # don't add landmarks that are very behind camera/very close or far away
             continue
-        # print(landmark_mapping[landmark_idx])
-        # print(pt_cam)
         # stereo observation
         if stereo_match_dict.get(features_idx) is not None:
             right_feature = right_features[stereo_match_dict[features_idx]]
@@ -169,8 +167,6 @@ def _add_new_landmarks_and_observations(
             pt_3d_left_cam = triangulate(
                 vec_left, vec_right, R_left_right, t_left_right
             )
-            # print("tri:")
-            # print(pt_3d_left_cam)
         except np.linalg.LinAlgError as e:
             # LOGGER.error("Encountered error during triangulation: %s", e)
             bad_matches.append((left_feature_idx, right_feature_idx))
@@ -182,10 +178,6 @@ def _add_new_landmarks_and_observations(
         pt_3d_obj = from_homogeneous_pt(
             T_obj_cam @ to_homogeneous_pt(pt_3d_left_cam)
         ).reshape(3, 1)
-        # print(landmark_id)
-        # print(pt_3d_obj)
-        # print("obj:")
-        # print(pt_3d_obj)
         # create new landmark
         obs = Observation(
             descriptor=left_feature.descriptor, pt_2d=feature_pt, img_id=img_id
@@ -329,18 +321,13 @@ def run(
                 print(track.poses.keys())
                 raise e
             T_obj0_obj1 = np.linalg.inv(T_world_obj0) @ T_world_obj1
-            # print(track.poses)
-            # print(T_world_obj0)
-            # print(T_world_obj1)
-            # print("Relative transform: ", T_obj0_obj1)
             T_world_obj = T_world_obj1 @ T_obj0_obj1  # constant motion assumption
-            # print(T_world_obj)
         else:
             T_world_obj = T_world_obj1
         T_world_cam = current_cam_pose
         T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
         if len(track_matches) >= 5 and track_index != -1:
-            T_cam_obj = _localize_object(
+            T_cam_obj, successful = _localize_object(
                 left_features=left_features,
                 track_matches=track_matches,
                 landmark_mapping=lm_mapping,
@@ -348,6 +335,8 @@ def run(
                 T_cam_obj=np.linalg.inv(T_obj_cam),
                 camera_params=stereo_cam.left,
             )
+            if not successful:
+                track_matches.clear()
             T_obj_cam = np.linalg.inv(T_cam_obj)
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
         track.poses[img_id] = T_world_obj
@@ -381,7 +370,7 @@ def run(
             for landmark in track.landmarks.values():
                 points.append(landmark.pt_3d)
             points = np.array(points)
-            cluster_center = np.mean(points, axis=0)
+            cluster_center = np.median(points, axis=0)
             stddev = np.std(points, axis=0)
             for lid, lm in track.landmarks.items():
                 if config.CLUSTER_SIZE:
@@ -398,8 +387,12 @@ def run(
             LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
             for lid in landmarks_to_remove:
                 track.landmarks.pop(lid)
-            # settings min_landmarks to 0 disables deactivating tracks like this
-            if config.MIN_LANDMARKS and len(track.landmarks) < config.MIN_LANDMARKS:
+            # settings min_landmarks to 0 disables robust initialization
+            if (
+                len(track.poses) == 1
+                and config.MIN_LANDMARKS
+                and len(track.landmarks) < config.MIN_LANDMARKS
+            ):
                 track.active = False
         return track, left_features, right_features, stereo_matches
 
@@ -490,6 +483,7 @@ def step(
         for match in matches:
             detection = new_detections[match.detection_index]
             track = object_tracks[match.track_index]
+            track = object_tracks[match.track_index]
             active_tracks.append(match.track_index)
             matched_detections.append(match.detection_index)
             futures_to_track_index[
@@ -521,13 +515,13 @@ def step(
 
     # TODO: remove old code
     # Set old tracks inactive
-    # old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
-    # num_deactivated = 0
-    # for track_id in old_tracks:
-    #    if object_tracks[track_id].active:
-    #        object_tracks[track_id].active = False
-    #        num_deactivated += 1
-    # LOGGER.debug("Deactivated %d tracks", num_deactivated)
+    old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
+    num_deactivated = 0
+    for track_id in old_tracks:
+        if object_tracks[track_id].active:
+            object_tracks[track_id].active = False
+            num_deactivated += 1
+    LOGGER.debug("Deactivated %d tracks", num_deactivated)
     # add new tracks
     # new_tracks = set(range(len(new_detections))).difference(set(matched_detections))
     # LOGGER.debug("Adding %d new tracks", len(new_tracks))
