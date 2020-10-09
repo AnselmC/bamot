@@ -18,6 +18,7 @@ class Config(NamedTuple):
     CONSTANT_MOTION: bool
     CONSTANT_MOTION_WEIGHT: float
     SUPERPOINT_WEIGHTS_PATH: str
+    SUPERPOINT_PREPROCESSED_PATH: str
 
 
 MODULE_PATH = Path(os.path.dirname(__file__)).absolute()
@@ -36,6 +37,8 @@ CONFIG_FILE = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.y
 CONST_MOTION_WEIGHT_DEFAULT = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
 CLUSTER_SIZE_DEFAULT = float(os.environ.get("CLUSTER_SIZE", default=8))
 
+KITTI_SCENE = os.environ.get("SCENE", default="UNKNOWN")
+
 if CONFIG_FILE.exists():
     with open(CONFIG_FILE.as_posix(), "r") as fp:
         USER_CONFIG = yaml.load(fp, Loader=yaml.FullLoader)
@@ -45,6 +48,7 @@ kitti_path = Path(
     USER_CONFIG.get("kitti_path", "./data/KITTI/tracking/training")
 ).absolute()
 
+preprocessed_path = kitti_path / "preprocessed"
 CONFIG = Config(
     USING_CONFIG_FILE=CONFIG_FILE.exists(),
     CLUSTER_SIZE=USER_CONFIG.get("cluster_size", CLUSTER_SIZE_DEFAULT),
@@ -63,6 +67,10 @@ CONFIG = Config(
     SUPERPOINT_WEIGHTS_PATH=USER_CONFIG.get(
         "superpoint_weights",
         (MODULE_PATH / "thirdparty" / "data" / "sp_v6").as_posix(),
+    ),
+    SUPERPOINT_PREPROCESSED_PATH=USER_CONFIG.get(
+        "superpoint_preprocessed_path",
+        (preprocessed_path / "superpoint" / KITTI_SCENE.zfill(4)).as_posix(),
     ),
 )
 

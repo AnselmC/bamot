@@ -134,6 +134,31 @@ def from_homogeneous_pt(pt_hom: np.ndarray) -> np.ndarray:
     return pt
 
 
+def get_preprocessed_superpoint_feature_matcher(path: str):
+    def detect_features(
+        img: np.ndarray,
+        mask: Optional[np.ndarray] = None,
+        img_id: Optional[int] = None,
+        track_index: Optional[int] = None,
+        cam: Optional[str] = None,
+    ) -> List[Feature]:
+        feature_path = (
+            path
+            / f"{str(img_id).zfill(6)}"
+            / f"{str(track_index).zfill(4)}"
+            / f"{cam}.pkl"
+        )
+        with open(feature_path, "rb") as fp:
+            features = pickle.load(fp)
+        return features
+
+    return FeatureMatcher(
+        "SuperPoint",
+        detect_features=detect_features,
+        match_features=partial(match_features, norm=cv2.NORM_L2, threshold=2.0),
+    )
+
+
 def get_superpoint_feature_matcher():
     # TODO: investigate why this needs to be done
     if tf.config.list_physical_devices("GPU"):
@@ -166,7 +191,11 @@ def get_superpoint_feature_matcher():
         return tf.constant(img)
 
     def detect_features(
-        img: np.ndarray, mask: Optional[np.ndarray] = None
+        img: np.ndarray,
+        mask: Optional[np.ndarray] = None,
+        img_id: Optional[int] = None,
+        track_index: Optional[int] = None,
+        cam: Optional[str] = None,
     ) -> List[Feature]:
         # mask = None
         tensor = preprocess_image(img, mask)
@@ -204,13 +233,21 @@ def get_feature_matcher():
         return get_orb_feature_matcher()
     elif name.lower() in ["sp", "superpoint", "superpoints"]:
         return get_superpoint_feature_matcher()
+    elif name.lower() == "superpoint_preprocessed":
+        return get_preprocessed_superpoint_feature_matcher(
+            path=config.SUPERPOINT_PREPROCESSED_PATH
+        )
     else:
         raise ValueError(f"Unknown feature matcher: {name}")
 
 
 def get_orb_feature_matcher():
     def detect_features(
-        img: np.ndarray, mask: Optional[np.ndarray] = None
+        img: np.ndarray,
+        mask: Optional[np.ndarray] = None,
+        img_id: Optional[int] = None,
+        track_index: Optional[int] = None,
+        cam: Optional[str] = None,
     ) -> List[Feature]:
         # mask = None
         orb = cv2.ORB_create(nfeatures=config.NUM_FEATURES)
@@ -267,3 +304,8 @@ def triangulate(
     xm = l[0] * vec_left
     xn = t_left_right + l[1] * vec_right_unrotated
     return ((xm + xn) / 2).reshape((3, 1))
+
+
+def draw_features(img: np.ndarray, features: List[Feature]) -> np.ndarray:
+    keypoints = [cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in features]
+    return cv2.drawKeypoints(img, keypoints, None)

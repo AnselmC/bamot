@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
-from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
+from bamot.util.cv import draw_features, from_homogeneous_pt, to_homogeneous_pt
 from bamot.util.kitti import LabelData, LabelDataRow
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
@@ -30,11 +30,6 @@ class TrackGeometries(NamedTuple):
 class EgoGeometries(NamedTuple):
     trajectory: o3d.geometry.LineSet
     curr_pose: o3d.geometry.TriangleMesh
-
-
-def _draw_features(img: np.ndarray, features: List[Feature]) -> np.ndarray:
-    keypoints = [cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in features]
-    return cv2.drawKeypoints(img, keypoints, None)
 
 
 def _draw_matches(
