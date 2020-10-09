@@ -2,13 +2,14 @@ import logging
 from functools import partial
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
+import numpy as np
+from PIL import Image, ImageDraw
+
 import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 import cv2
-import numpy as np
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
-from PIL import Image, ImageDraw
 
 if TYPE_CHECKING:
     import tensorflow as tf
@@ -20,8 +21,9 @@ if config.FEATURE_MATCHER != "orb":
     tf.config.threading.set_inter_op_parallelism_threads(
         2
     )  # s.t. extraction can run in parallel
-    LOADED = tf.saved_model.load(config.SUPERPOINT_WEIGHTS_PATH)
-    MODEL = LOADED.signatures["serving_default"]
+    if tf.config.list_physical_devices("GPU"):
+        LOADED = tf.saved_model.load(config.SUPERPOINT_WEIGHTS_PATH)
+        MODEL = LOADED.signatures["serving_default"]
 
 LOGGER = logging.getLogger("UTIL:CV")
 
@@ -133,7 +135,12 @@ def from_homogeneous_pt(pt_hom: np.ndarray) -> np.ndarray:
 
 
 def get_superpoint_feature_matcher():
-    global MODEL
+    # TODO: investigate why this needs to be done
+    if tf.config.list_physical_devices("GPU"):
+        global MODEL
+    else:
+        LOADED = tf.saved_model.load(config.SUPERPOINT_WEIGHTS_PATH)
+        MODEL = LOADED.signatures["serving_default"]
 
     def preprocess_image(
         img: np.ndarray, mask: Optional[np.ndarray] = None
@@ -175,7 +182,7 @@ def get_superpoint_feature_matcher():
     return FeatureMatcher(
         "SuperPoint",
         detect_features=detect_features,
-        match_features=partial(match_features, norm=cv2.NORM_L2, threshold=1.0),
+        match_features=partial(match_features, norm=cv2.NORM_L2, threshold=2.0),
     )
 
 
