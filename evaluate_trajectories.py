@@ -136,7 +136,7 @@ if __name__ == "__main__":
                 row_data = track_dict.get(img_id)
                 if row_data is None:  # could be due to occlusion
                     continue
-                gt_pt_cam = track_dict[img_id][img_id].cam_pos
+                gt_pt_cam = row_data.cam_pos
                 gt_pt_cam = np.array(gt_pt_cam).reshape(3, 1)
                 est_pt_cam = np.array(est_pt_cam).reshape(3, 1)
                 error_cam = np.linalg.norm(gt_pt_cam - est_pt_cam)
@@ -144,7 +144,7 @@ if __name__ == "__main__":
                     np.abs(gt_pt_cam - est_pt_cam).reshape(3,).tolist()
                 )
 
-                gt_pt_world = track_dict[img_id][img_id].world_pos
+                gt_pt_world = row_data.world_pos
                 gt_pt_world = np.array(gt_pt_world).reshape(3, 1)
                 est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
                 error_world = np.linalg.norm(gt_pt_world - est_pt_world)
@@ -220,18 +220,10 @@ if __name__ == "__main__":
                 # 1: partially truncated
                 # 2: even more truncated
                 truncated_map = {0: 1.0, 1: 0.75, 2: 0.3, 3: 0}
-                alphas_occ = list(
-                    map(
-                        occlusion_map.get,
-                        label_data.occlusion_levels[track_id].values(),
-                    )
-                )
-                alphas_trunc = list(
-                    map(
-                        truncated_map.get,
-                        label_data.truncation_levels[track_id].values(),
-                    )
-                )
+                alphas_occ = [occlusion_map[row.occ_lvl] for row in track_dict.values()]
+                alphas_trunc = [
+                    truncated_map[row.trunc_lvl] for row in track_dict.values()
+                ]
                 alphas = [
                     min(occ, trunc) for occ, trunc in zip(alphas_occ, alphas_trunc)
                 ]
@@ -368,13 +360,13 @@ if __name__ == "__main__":
             header = ",".join(columns) + "\n"
             fp.write(header)
             for track_id, err_per_image in err_per_obj.items():
-                cls = label_data.object_classes[track_id]
+                cls = list(label_data[track_id].values())[0].object_class
                 for (
                     img_id,
                     ((err_x_cam, err_y_cam, err_z_cam, error), dist),
                 ) in err_per_image.items():
-                    occ_lvl = label_data.occlusion_levels[track_id][img_id]
-                    trunc_lvl = label_data.truncation_levels[track_id][img_id]
+                    occ_lvl = label_data[track_id][img_id].occ_lvl
+                    trunc_lvl = label_data[track_id][img_id].trunc_lvl
                     fp.write(
                         f"{track_id},{img_id},{cls},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x_cam:.4f},{err_y_cam:.4f},{err_z_cam:.4f}\n"
                     )
