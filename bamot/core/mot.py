@@ -21,7 +21,7 @@ from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
                            get_center_of_landmarks, get_convex_hull,
                            get_convex_hull_mask, get_feature_matcher,
                            project_landmarks, to_homogeneous_pt, triangulate)
-from bamot.util.misc import timer
+from bamot.util.misc import get_mad, timer
 from hungarian_algorithm import algorithm as ha
 from shapely.geometry import Polygon
 
@@ -287,7 +287,7 @@ def run(
         feature_matcher = get_feature_matcher()
         # mask out object from image
         left_features = feature_matcher.detect_features(
-            stereo_image.left, detection.left.mask, img_id, track_index,"left"
+            stereo_image.left, detection.left.mask, img_id, track_index, "left"
         )
         LOGGER.debug("Detected %d features on left object", len(left_features))
         # TODO: why does using left_obj_mask with no dilation work best here?
@@ -364,18 +364,17 @@ def run(
             for landmark in track.landmarks.values():
                 points.append(landmark.pt_3d)
             points = np.array(points)
-            cluster_center = np.median(points, axis=0)
-            stddev = np.std(points, axis=0)
+            cluster_median_center = np.median(points, axis=0)
             for lid, lm in track.landmarks.items():
                 if config.CLUSTER_SIZE:
-                    if np.linalg.norm(lm.pt_3d - cluster_center) > (
+                    if np.linalg.norm(lm.pt_3d - cluster_median_center) > (
                         config.CLUSTER_SIZE / 2
                     ):
                         landmarks_to_remove.append(lid)
                 else:
-                    if np.linalg.norm(lm.pt_3d - cluster_center) > 3 * np.linalg.norm(
-                        stddev
-                    ):
+                    if np.linalg.norm(
+                        lm.pt_3d - cluster_median_center
+                    ) > config.MAD_SCALE_FACTOR * get_mad(points):
                         landmarks_to_remove.append(lid)
 
             LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))

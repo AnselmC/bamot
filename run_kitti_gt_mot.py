@@ -223,7 +223,6 @@ if __name__ == "__main__":
     )
     detection_stream = get_detection_stream(
         obj_detections_path,
-        img_shape=img_shape,
         offset=args.offset,
         object_ids=[int(idx) for idx in args.indeces] if args.indeces else None,
     )

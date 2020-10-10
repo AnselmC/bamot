@@ -31,7 +31,7 @@ LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
 
 
 def get_detection_stream(
-    obj_detections_path: Path, offset: int
+    obj_detections_path: Path, offset: int, object_ids: Optional[List[int]] = None
 ) -> Iterable[List[StereoObjectDetection]]:
     detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
     if not detection_files:
@@ -40,6 +40,8 @@ def get_detection_stream(
     for f in detection_files[offset:]:
         with open(f, "rb") as fp:
             detections = pickle.load(fp)
+        if object_ids:
+            detections = [d for d in detections if d.left.track_id in object_ids]
         yield detections
     LOGGER.debug("Finished yielding object detections")
 
