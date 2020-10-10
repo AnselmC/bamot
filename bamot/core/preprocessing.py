@@ -5,7 +5,7 @@ from typing import List, Tuple
 import numpy as np
 from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
                                    StereoObjectDetection)
-from bamot.util.cv import (back_project, from_homogeneous_pt,
+from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
                            get_convex_hull_mask, project, to_homogeneous_pt)
 
 
@@ -64,9 +64,10 @@ def preprocess_frame(
         left_mask[left_obj_mask] = 0
         right_obj_pts = transform_object_points(left_hull_pts, stereo_camera)
         right_obj_mask = get_convex_hull_mask(right_obj_pts, img_shape)
+        right_obj_mask = dilate_mask(right_obj_mask, num_pixels=5)
         right_mask[right_obj_mask] = 0
         right_obj = ObjectDetection(
-            mask=right_mask,
+            mask=right_obj_mask,
             convex_hull=list(map(tuple, right_obj_pts.tolist())),
             track_id=obj.track_id,
         )
