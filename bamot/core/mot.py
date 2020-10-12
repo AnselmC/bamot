@@ -17,10 +17,10 @@ from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    StereoObjectDetection, TrackMatch,
                                    get_camera_parameters_matrix)
 from bamot.core.optimization import object_bundle_adjustment
-from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
+from bamot.util.cv import (back_project, from_homogeneous_pt,
                            get_center_of_landmarks, get_convex_hull,
-                           get_convex_hull_mask, get_feature_matcher,
-                           project_landmarks, to_homogeneous_pt, triangulate)
+                           get_feature_matcher, project_landmarks,
+                           to_homogeneous_pt, triangulate)
 from bamot.util.misc import get_mad, timer
 from hungarian_algorithm import algorithm as ha
 from shapely.geometry import Polygon
@@ -290,7 +290,6 @@ def run(
             stereo_image.left, detection.left.mask, img_id, track_index, "left"
         )
         LOGGER.debug("Detected %d features on left object", len(left_features))
-        # TODO: why does using left_obj_mask with no dilation work best here?
         right_features = feature_matcher.detect_features(
             stereo_image.right, detection.right.mask, img_id, track_index, "right"
         )
@@ -319,7 +318,9 @@ def run(
             T_world_obj = T_world_obj1
         T_world_cam = current_cam_pose
         T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-        if len(track_matches) >= 5 and track_index != -1:
+        if (
+            len(track_matches) >= 5
+        ):  # and len(track_matches) > (0.1 * len(track.landmarks)):
             T_cam_obj, successful = _localize_object(
                 left_features=left_features,
                 track_matches=track_matches,
@@ -331,7 +332,9 @@ def run(
             if not successful:
                 track_matches.clear()
             T_obj_cam = np.linalg.inv(T_cam_obj)
-        # TODO: clear track matches if less than 5?
+        else:
+            track_matches.clear()
+
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
         track.poses[img_id] = T_world_obj
         # add new landmark observations from track matches

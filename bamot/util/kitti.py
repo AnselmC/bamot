@@ -240,7 +240,7 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     return StereoCamera(left_cam, right_cam, T23), T02
 
 
-def get_gt_obj_segmentations_from_kitti(
+def get_gt_obj_detections_from_kitti(
     kitti_path: Path, scene: str, img_id: int
 ) -> List[ObjectDetection]:
     instance_file = _get_instance_file(kitti_path, scene, str(img_id).zfill(6))
@@ -255,11 +255,14 @@ def get_gt_obj_segmentations_from_kitti(
         convex_hull = cv2.convexHull(np.argwhere(obj_mask), returnPoints=True).reshape(
             -1, 2
         )
+        class_id = obj_id // 1000
+        obj_class = "car" if class_id == 1 else "pedestrian"
         convex_hull = np.flip(convex_hull)
         obj_det = ObjectDetection(
             mask=obj_mask,
             convex_hull=list(map(tuple, convex_hull.tolist())),
             track_id=track_id,
+            cls=obj_class,
         )
         if len(obj_det.convex_hull) < 2:
             continue

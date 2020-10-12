@@ -161,6 +161,7 @@ def get_preprocessed_superpoint_feature_matcher(path: str):
 
 def get_superpoint_feature_matcher():
     # TODO: investigate why this needs to be done
+    import tensorflow as tf
     if tf.config.list_physical_devices("GPU"):
         global MODEL
     else:
