@@ -70,6 +70,7 @@ def preprocess_frame(
             mask=right_obj_mask,
             convex_hull=list(map(tuple, right_obj_pts.tolist())),
             track_id=obj.track_id,
+            cls=obj.cls,
         )
         stereo_object_detections.append(StereoObjectDetection(obj, right_obj))
 
