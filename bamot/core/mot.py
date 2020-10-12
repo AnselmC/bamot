@@ -577,12 +577,12 @@ def _compute_estimated_trajectories(
             Tr_world_cam = all_poses[img_id]
             object_center_world = pose_world_obj @ to_homogeneous_pt(object_center)
             object_center_cam = np.linalg.inv(Tr_world_cam) @ object_center_world
-            trajectory_world[img_id] = tuple(
+            trajectory_world[int(img_id)] = tuple(
                 from_homogeneous_pt(object_center_world).tolist()
             )
-            trajectory_cam[img_id] = tuple(
+            trajectory_cam[int(img_id)] = tuple(
                 from_homogeneous_pt(object_center_cam).tolist()
             )
-        trajectories_world[track_id] = trajectory_world
-        trajectories_cam[track_id] = trajectory_cam
+        trajectories_world[int(track_id)] = trajectory_world
+        trajectories_cam[int(track_id)] = trajectory_cam
     return trajectories_world, trajectories_cam

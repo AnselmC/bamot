@@ -1,6 +1,6 @@
 """Contains data structures used throughout bamot.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np

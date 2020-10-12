@@ -61,6 +61,8 @@ if __name__ == "__main__":
             save_path_mot.mkdir(parents=True, exist_ok=True)
 
         stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
+        stereo_cam.T_left_right[0, 3] = 0.03
+        # todo: fix this
         image_stream = get_image_stream(kitti_path, scene, with_file_names=True)
         if not args.no_view:
             width, height = get_screen_size()

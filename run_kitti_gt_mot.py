@@ -58,6 +58,7 @@ def _fake_slam(
     for i, pose in enumerate(gt_poses):
         all_poses = gt_poses[: i + 1 + offset]
         slam_data.put(all_poses)
+        slam_data.task_done()
         time.sleep(20 / 1000)  # 20 ms or 50 Hz
     LOGGER.debug("Finished adding fake slam data")
 
@@ -213,7 +214,6 @@ if __name__ == "__main__":
     slam_data = queue_class()
     stop_flag = flag_class()
     next_step = flag_class()
-    next_step.set()
     img_shape = _get_image_shape(kitti_path)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
     stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
@@ -266,13 +266,19 @@ if __name__ == "__main__":
             cam_coordinates=args.cam,
         )
     LOGGER.info("No more frames - terminating processes")
-    slam_process.join()
-    LOGGER.debug("Joined fake SLAM thread")
+    LOGGER.debug("Joining MOT thread")
     mot_process.join()
     LOGGER.debug("Joined MOT thread")
     estimated_trajectories_world, estimated_trajectories_cam = returned_data.get()
     returned_data.task_done()
+    LOGGER.debug("Joining returned data queue")
     returned_data.join()
+    LOGGER.debug("Joined returned data queue")
+    LOGGER.debug("Joining fake SLAM thread")
+    slam_data.join()
+    slam_process.kill()  # TODO: why do I suddenly need this?
+    slam_process.join()
+    LOGGER.debug("Joined fake SLAM thread")
     if not args.out:
         out_path = kitti_path / "trajectories" / scene / config.FEATURE_MATCHER
         for tag in args.tags:
