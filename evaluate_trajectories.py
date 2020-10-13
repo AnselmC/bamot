@@ -314,7 +314,7 @@ if __name__ == "__main__":
                         ax_3d.yaxis.pane.set_color((1, 1, 1, 0))
                         ax_3d.zaxis.pane.set_color((1, 1, 1, 0))
                     if args.save:
-                        path = save_dir / f"{track_id}-{args.plot}.png"
+                        path = save_dir / f"{track_id}-{args.plot}.pdf"
                         fig.suptitle(f"Object w/ ID {track_id}", color="w")
                         plt.savefig(
                             path.as_posix(), transparent=False, bbox_inches="tight"
@@ -335,7 +335,7 @@ if __name__ == "__main__":
             fig_world.tight_layout()
             # fig.axes[0].axis("off")
             if args.save:
-                path = save_dir / "full_view.png"
+                path = save_dir / "full_view.pdf"
                 ax_3d_world.set_yticks([])
                 plt.savefig(path.as_posix(), transparent=False, bbox_inches="tight")
             else:

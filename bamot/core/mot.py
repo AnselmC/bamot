@@ -419,7 +419,7 @@ def run(
                 all_poses=all_poses,
             )
         except Exception as exc:
-            LOGGER.error("Unexpected error: %s", exc)
+            LOGGER.exception("Unexpected error: %s", exc)
             break
         shared_data.put(
             {
