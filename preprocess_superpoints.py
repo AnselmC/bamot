@@ -74,7 +74,8 @@ if __name__ == "__main__":
         ):
             left_output = stereo_image.left
             right_output = stereo_image.right
-            curr_img_path = save_path / str(idx).zfill(6)
+            if not args.no_save:
+                curr_img_path = save_path / str(idx).zfill(6)
             for detection in detections:
                 left_features = feature_matcher.detect_features(
                     stereo_image.left, detection.left.mask
@@ -85,9 +86,9 @@ if __name__ == "__main__":
                 )
                 right_output = draw_features(right_output, right_features)
                 track_id = detection.left.track_id
-                curr_track_path = curr_img_path / str(track_id).zfill(4)
-                curr_track_path.mkdir(exist_ok=True, parents=True)
                 if not args.no_save:
+                    curr_track_path = curr_img_path / str(track_id).zfill(4)
+                    curr_track_path.mkdir(exist_ok=True, parents=True)
                     left_path = curr_track_path / "left.pkl"
                     right_path = curr_track_path / "right.pkl"
                     with open(left_path.as_posix(), "wb") as fp:
