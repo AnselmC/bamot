@@ -23,8 +23,6 @@ fi
 if [ -z $end ]; then
 	end=19
 fi
-echo $tags
-echo $config
 
 for scene in $(seq $start $end); do
 	CONFIG_FILE=$config \
