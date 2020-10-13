@@ -1,15 +1,17 @@
 import logging
 import pickle
 from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+
+import numpy as np
+from PIL import Image, ImageDraw
 
 import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 import cv2
-import numpy as np
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
-from PIL import Image, ImageDraw
 
 if TYPE_CHECKING:
     import tensorflow as tf
@@ -143,12 +145,12 @@ def get_preprocessed_superpoint_feature_matcher(path: str):
         cam: Optional[str] = None,
     ) -> List[Feature]:
         feature_path = (
-            path
+            Path(path)
             / f"{str(img_id).zfill(6)}"
             / f"{str(track_index).zfill(4)}"
             / f"{cam}.pkl"
         )
-        with open(feature_path, "rb") as fp:
+        with open(feature_path.as_posix(), "rb") as fp:
             features = pickle.load(fp)
         return features
 
@@ -162,6 +164,7 @@ def get_preprocessed_superpoint_feature_matcher(path: str):
 def get_superpoint_feature_matcher():
     # TODO: investigate why this needs to be done
     import tensorflow as tf
+
     if tf.config.list_physical_devices("GPU"):
         global MODEL
     else:

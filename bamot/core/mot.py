@@ -7,8 +7,9 @@ import time
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -397,6 +398,7 @@ def run(
             time.sleep(0.05)
         next_step.clear()
         all_poses = slam_data.get()
+        slam_data.task_done()
         current_pose = all_poses[img_id]
         try:
             (

@@ -14,11 +14,11 @@ import warnings
 from pathlib import Path
 from typing import Iterable, List, Tuple, Union
 
+import numpy as np
+
 import colorlog
 import cv2
-import numpy as np
 import tqdm
-
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.base_types import StereoImage
@@ -58,7 +58,6 @@ def _fake_slam(
     for i, pose in enumerate(gt_poses):
         all_poses = gt_poses[: i + 1 + offset]
         slam_data.put(all_poses)
-        slam_data.task_done()
         time.sleep(20 / 1000)  # 20 ms or 50 Hz
     LOGGER.debug("Finished adding fake slam data")
 
@@ -276,7 +275,6 @@ if __name__ == "__main__":
     LOGGER.debug("Joined returned data queue")
     LOGGER.debug("Joining fake SLAM thread")
     slam_data.join()
-    slam_process.kill()  # TODO: why do I suddenly need this?
     slam_process.join()
     LOGGER.debug("Joined fake SLAM thread")
     if not args.out:
