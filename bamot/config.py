@@ -19,6 +19,7 @@ class Config(NamedTuple):
     CONSTANT_MOTION_WEIGHT: float
     SUPERPOINT_WEIGHTS_PATH: str
     SUPERPOINT_PREPROCESSED_PATH: str
+    MAD_SCALE_FACTOR: float
 
 
 MODULE_PATH = Path(os.path.dirname(__file__)).absolute()
@@ -36,6 +37,7 @@ except ModuleNotFoundError:
 CONFIG_FILE = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
 CONST_MOTION_WEIGHT_DEFAULT = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
 CLUSTER_SIZE_DEFAULT = float(os.environ.get("CLUSTER_SIZE", default=8))
+MAD_SCALE_FACTOR_DEFAULT = float(os.environ.get("MAD_SCALE_FACTOR", default=1.4))
 
 KITTI_SCENE = os.environ.get("SCENE", default="UNKNOWN")
 
@@ -72,6 +74,7 @@ CONFIG = Config(
         "superpoint_preprocessed_path",
         (preprocessed_path / "superpoint" / KITTI_SCENE.zfill(4)).as_posix(),
     ),
+    MAD_SCALE_FACTOR=USER_CONFIG.get("mad_scale_factor", MAD_SCALE_FACTOR_DEFAULT),
 )
 
 

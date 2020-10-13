@@ -331,8 +331,9 @@ def run(
         vis.poll_events()
         vis.update_renderer()
         first_update = False
-    LOGGER.debug("Finished viewer")
     vis.destroy_window()
+    cv2.destroyAllWindows()
+    LOGGER.debug("Finished viewer")
 
 
 def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam):

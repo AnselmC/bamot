@@ -7,8 +7,9 @@ import time
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -17,11 +18,11 @@ from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    StereoObjectDetection, TrackMatch,
                                    get_camera_parameters_matrix)
 from bamot.core.optimization import object_bundle_adjustment
-from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
+from bamot.util.cv import (back_project, from_homogeneous_pt,
                            get_center_of_landmarks, get_convex_hull,
-                           get_convex_hull_mask, get_feature_matcher,
-                           project_landmarks, to_homogeneous_pt, triangulate)
-from bamot.util.misc import timer
+                           get_feature_matcher, project_landmarks,
+                           to_homogeneous_pt, triangulate)
+from bamot.util.misc import get_mad, timer
 from hungarian_algorithm import algorithm as ha
 from shapely.geometry import Polygon
 
@@ -287,10 +288,9 @@ def run(
         feature_matcher = get_feature_matcher()
         # mask out object from image
         left_features = feature_matcher.detect_features(
-            stereo_image.left, detection.left.mask, img_id, track_index,"left"
+            stereo_image.left, detection.left.mask, img_id, track_index, "left"
         )
         LOGGER.debug("Detected %d features on left object", len(left_features))
-        # TODO: why does using left_obj_mask with no dilation work best here?
         right_features = feature_matcher.detect_features(
             stereo_image.right, detection.right.mask, img_id, track_index, "right"
         )
@@ -319,7 +319,9 @@ def run(
             T_world_obj = T_world_obj1
         T_world_cam = current_cam_pose
         T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-        if len(track_matches) >= 5 and track_index != -1:
+        if (
+            len(track_matches) >= 5
+        ):  # and len(track_matches) > (0.1 * len(track.landmarks)):
             T_cam_obj, successful = _localize_object(
                 left_features=left_features,
                 track_matches=track_matches,
@@ -331,7 +333,9 @@ def run(
             if not successful:
                 track_matches.clear()
             T_obj_cam = np.linalg.inv(T_cam_obj)
-        # TODO: clear track matches if less than 5?
+        else:
+            track_matches.clear()
+
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
         track.poses[img_id] = T_world_obj
         # add new landmark observations from track matches
@@ -364,18 +368,17 @@ def run(
             for landmark in track.landmarks.values():
                 points.append(landmark.pt_3d)
             points = np.array(points)
-            cluster_center = np.median(points, axis=0)
-            stddev = np.std(points, axis=0)
+            cluster_median_center = np.median(points, axis=0)
             for lid, lm in track.landmarks.items():
                 if config.CLUSTER_SIZE:
-                    if np.linalg.norm(lm.pt_3d - cluster_center) > (
+                    if np.linalg.norm(lm.pt_3d - cluster_median_center) > (
                         config.CLUSTER_SIZE / 2
                     ):
                         landmarks_to_remove.append(lid)
                 else:
-                    if np.linalg.norm(lm.pt_3d - cluster_center) > 3 * np.linalg.norm(
-                        stddev
-                    ):
+                    if np.linalg.norm(
+                        lm.pt_3d - cluster_median_center
+                    ) > config.MAD_SCALE_FACTOR * get_mad(points):
                         landmarks_to_remove.append(lid)
 
             LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
@@ -395,6 +398,7 @@ def run(
             time.sleep(0.05)
         next_step.clear()
         all_poses = slam_data.get()
+        slam_data.task_done()
         current_pose = all_poses[img_id]
         try:
             (
@@ -575,12 +579,12 @@ def _compute_estimated_trajectories(
             Tr_world_cam = all_poses[img_id]
             object_center_world = pose_world_obj @ to_homogeneous_pt(object_center)
             object_center_cam = np.linalg.inv(Tr_world_cam) @ object_center_world
-            trajectory_world[img_id] = tuple(
+            trajectory_world[int(img_id)] = tuple(
                 from_homogeneous_pt(object_center_world).tolist()
             )
-            trajectory_cam[img_id] = tuple(
+            trajectory_cam[int(img_id)] = tuple(
                 from_homogeneous_pt(object_center_cam).tolist()
             )
-        trajectories_world[track_id] = trajectory_world
-        trajectories_cam[track_id] = trajectory_cam
+        trajectories_world[int(track_id)] = trajectory_world
+        trajectories_cam[int(track_id)] = trajectory_cam
     return trajectories_world, trajectories_cam

@@ -50,6 +50,8 @@ def object_bundle_adjustment(
                 info = config.CONSTANT_MOTION_WEIGHT * np.identity(6)
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
+                robust_kernel = g2o.RobustKernelHuber()
+                const_motion_edge.set_robust_kernel(robust_kernel)
                 optimizer.add_edge(const_motion_edge)
                 prev_prev_cam = prev_cam
                 prev_cam = pose_vertex

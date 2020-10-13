@@ -12,7 +12,7 @@ from bamot.config import CONFIG as config
 from bamot.core.base_types import StereoImage
 from bamot.core.preprocessing import preprocess_frame
 from bamot.util.kitti import (get_cameras_from_kitti,
-                              get_gt_obj_segmentations_from_kitti,
+                              get_gt_obj_detections_from_kitti,
                               get_image_stream)
 from bamot.util.viewer import get_screen_size
 
@@ -61,6 +61,8 @@ if __name__ == "__main__":
             save_path_mot.mkdir(parents=True, exist_ok=True)
 
         stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
+        stereo_cam.T_left_right[0, 3] = 0.03
+        # todo: fix this
         image_stream = get_image_stream(kitti_path, scene, with_file_names=True)
         if not args.no_view:
             width, height = get_screen_size()
@@ -70,9 +72,7 @@ if __name__ == "__main__":
             enumerate(image_stream), total=len(image_stream), position=1,
         ):
             left_fname, right_fname = filenames
-            object_detections = get_gt_obj_segmentations_from_kitti(
-                kitti_path, scene, idx
-            )
+            object_detections = get_gt_obj_detections_from_kitti(kitti_path, scene, idx)
             masked_stereo_image_slam, stereo_object_detections = preprocess_frame(
                 stereo_image, stereo_cam, object_detections=object_detections,
             )

@@ -31,7 +31,7 @@ LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
 
 
 def get_detection_stream(
-    obj_detections_path: Path, offset: int
+    obj_detections_path: Path, offset: int, object_ids: Optional[List[int]] = None
 ) -> Iterable[List[StereoObjectDetection]]:
     detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
     if not detection_files:
@@ -40,6 +40,8 @@ def get_detection_stream(
     for f in detection_files[offset:]:
         with open(f, "rb") as fp:
             detections = pickle.load(fp)
+        if object_ids:
+            detections = [d for d in detections if d.left.track_id in object_ids]
         yield detections
     LOGGER.debug("Finished yielding object detections")
 
@@ -234,11 +236,10 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     T23[0, 3] = right_bx - left_bx
     T02 = np.identity(4)
     T02[0, 3] = left_bx
-    # T23[0, 3] = 0.03
     return StereoCamera(left_cam, right_cam, T23), T02
 
 
-def get_gt_obj_segmentations_from_kitti(
+def get_gt_obj_detections_from_kitti(
     kitti_path: Path, scene: str, img_id: int
 ) -> List[ObjectDetection]:
     instance_file = _get_instance_file(kitti_path, scene, str(img_id).zfill(6))
@@ -248,16 +249,19 @@ def get_gt_obj_segmentations_from_kitti(
     for obj_id in obj_ids:
         if obj_id in [0, 10000]:
             continue
-        track_id = obj_id % 1000
+        track_id = int(obj_id % 1000)
         obj_mask = img == obj_id
         convex_hull = cv2.convexHull(np.argwhere(obj_mask), returnPoints=True).reshape(
             -1, 2
         )
+        class_id = int(obj_id // 1000)
+        obj_class = "car" if class_id == 1 else "pedestrian"
         convex_hull = np.flip(convex_hull)
         obj_det = ObjectDetection(
             mask=obj_mask,
             convex_hull=list(map(tuple, convex_hull.tolist())),
             track_id=track_id,
+            cls=obj_class,
         )
         if len(obj_det.convex_hull) < 2:
             continue
