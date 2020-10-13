@@ -26,6 +26,6 @@ fi
 
 for scene in $(seq $start $end)
 do
-    CONFIG_FILE=$config python run_kitti_gt_mot.py -s $scene -v INFO -c --no-viewer --tags $tags
+    CONFIG_FILE=$config python run_kitti_gt_mot.py -s $scene -v INFO -c --no-viewer --tags $tags -mp
 done
 
