@@ -25,7 +25,7 @@ if [ -z $end ]; then
 fi
 
 for scene in $(seq $start $end); do
-	CONFIG_FILE=$config
-	SCENE=$scene
+	CONFIG_FILE=$config \
+	SCENE=$scene \
 	python run_kitti_gt_mot.py -s $scene -v INFO -c --no-viewer --tags $tags
 done
