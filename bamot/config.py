@@ -29,69 +29,68 @@ class Config:
 
 
 # ENV VARIABLES
-CONFIG_FILE = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
-CONST_MOTION_WEIGHT_DEFAULT = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
-CLUSTER_SIZE_DEFAULT = float(os.environ.get("CLUSTER_SIZE", default=8))
-USE_MEDIAN_CLUSTER = bool(os.environ.get("USE_MEDIAN_CLUSTER", default=False))
-MAD_SCALE_FACTOR_DEFAULT = float(os.environ.get("MAD_SCALE_FACTOR", default=1.4))
-KITTI_SCENE = os.environ.get("SCENE", default=None)
+__config_file = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
+__const_motion_weight_default = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
+__cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
+__mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=1.4))
+__kitti_scene = os.environ.get("SCENE", default=None)
 
-if CONFIG_FILE.exists():
-    with open(CONFIG_FILE.as_posix(), "r") as fp:
-        USER_CONFIG = yaml.load(fp, Loader=yaml.FullLoader)
+if __config_file.exists():
+    with open(__config_file.as_posix(), "r") as fp:
+        __user_config = yaml.load(fp, Loader=yaml.FullLoader)
 else:
-    USER_CONFIG: Dict[str, Any] = {}
+    __user_config: Dict[str, Any] = {}
 
-_kitti_path = Path(
-    USER_CONFIG.get("kitti_path", "./data/KITTI/tracking/training")
+__kitti_path = Path(
+    __user_config.get("kitti_path", "./data/KITTI/tracking/training")
 ).absolute()
 
-_preprocessed_path = _kitti_path / "preprocessed"
+__preprocessed_path = __kitti_path / "preprocessed"
 
 CONFIG = Config(
-    USING_CONFIG_FILE=CONFIG_FILE.exists(),
-    USING_MEDIAN_CLUSTER=USER_CONFIG.get("median_cluster", USE_MEDIAN_CLUSTER),
-    USING_CONSTANT_MOTION=USER_CONFIG.get("constant_motion", False),
-    KITTI_PATH=_kitti_path.as_posix(),
-    DETECTIONS_PATH=USER_CONFIG.get(
-        "detections_path", (_kitti_path / "preprocessed" / "mot").as_posix()
+    USING_CONFIG_FILE=__config_file.exists(),
+    USING_MEDIAN_CLUSTER=__user_config.get("median_cluster", False),
+    USING_CONSTANT_MOTION=__user_config.get("constant_motion", False),
+    KITTI_PATH=__kitti_path.as_posix(),
+    DETECTIONS_PATH=__user_config.get(
+        "detections_path", (__kitti_path / "preprocessed" / "mot").as_posix()
     ),
-    MAX_DIST=USER_CONFIG.get("max_dist", 150),
-    FEATURE_MATCHER=USER_CONFIG.get("feature_matcher", "orb"),
-    NUM_FEATURES=USER_CONFIG.get("num_features", 8000),
+    MAX_DIST=__user_config.get("max_dist", 150),
+    FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),
+    NUM_FEATURES=__user_config.get("num_features", 8000),
 )
 
 if CONFIG.USING_MEDIAN_CLUSTER:
-    CONFIG.MAD_SCALE_FACTOR = USER_CONFIG.get(
-        "mad_scale_factor", MAD_SCALE_FACTOR_DEFAULT
+    CONFIG.MAD_SCALE_FACTOR = __user_config.get(
+        "mad_scale_factor", __mad_scale_factor_default
     )
 else:
-    _default_size = USER_CONFIG.get("cluster_size", CLUSTER_SIZE_DEFAULT)
-    CONFIG.CLUSTER_SIZE_CAR = USER_CONFIG.get("cluster_size_car", _default_size)
-    CONFIG.CLUSTER_SIZE_PED = USER_CONFIG.get("cluster_size_ped", _default_size)
+    _default_size = __user_config.get("cluster_size", __cluster_size_default)
+    CONFIG.CLUSTER_SIZE_CAR = __user_config.get("cluster_size_car", _default_size)
+    CONFIG.CLUSTER_SIZE_PED = __user_config.get("cluster_size_ped", _default_size)
 
 if CONFIG.USING_CONSTANT_MOTION:
-    _default_weight = USER_CONFIG.get(
-        "const_motion_weight", CONST_MOTION_WEIGHT_DEFAULT
+    _default_weight = __user_config.get(
+        "const_motion_weight", __const_motion_weight_default
     )
-    CONFIG.CONSTANT_MOTION_WEIGHT_CAR = USER_CONFIG.get(
+    CONFIG.CONSTANT_MOTION_WEIGHT_CAR = __user_config.get(
         "const_motion_car", _default_weight
     )
-    CONFIG.CONSTANT_MOTION_WEIGHT_PED = USER_CONFIG.get(
+    CONFIG.CONSTANT_MOTION_WEIGHT_PED = __user_config.get(
         "const_motion_ped", _default_weight
     )
 
-if USER_CONFIG.get("min_landmarks"):
-    CONFIG.MIN_LANDMARKS = USER_CONFIG.get("min_landmarks")
+if __user_config.get("min_landmarks"):
+    CONFIG.MIN_LANDMARKS = __user_config.get("min_landmarks")
 
 if CONFIG.FEATURE_MATCHER == "superpoint":
-    CONFIG.SUPERPOINT_WEIGHTS_PATH = USER_CONFIG.get(
+    CONFIG.SUPERPOINT_WEIGHTS_PATH = __user_config.get(
         "superpoint_weights",
         (MODULE_PATH / "thirdparty" / "data" / "sp_v6").as_posix(),
     )
-    CONFIG.SUPERPOINT_PREPROCESSED_PATH = USER_CONFIG.get(
+    CONFIG.SUPERPOINT_PREPROCESSED_PATH = __user_config.get(
         "superpoint_preprocessed_path",
-        (_preprocessed_path / "superpoint" / KITTI_SCENE.zfill(4)).as_posix(),
+        (__preprocessed_path / "superpoint" / __kitti_scene.zfill(4)).as_posix(),
     )
 
 
