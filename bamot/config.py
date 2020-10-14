@@ -88,6 +88,7 @@ if CONFIG.FEATURE_MATCHER == "superpoint":
         "superpoint_weights",
         (MODULE_PATH / "thirdparty" / "data" / "sp_v6").as_posix(),
     )
+elif CONFIG.FEATURE_MATCHER == "superpoint_preprocessed":
     CONFIG.SUPERPOINT_PREPROCESSED_PATH = __user_config.get(
         "superpoint_preprocessed_path",
         (__preprocessed_path / "superpoint" / __kitti_scene.zfill(4)).as_posix(),
