@@ -2,10 +2,10 @@ import argparse
 import pickle
 from pathlib import Path
 
-import cv2
 import numpy as np
-import tqdm
 
+import cv2
+import tqdm
 from bamot.config import CONFIG as config
 from bamot.util.cv import draw_features, get_superpoint_feature_matcher
 from bamot.util.kitti import (get_cameras_from_kitti, get_detection_stream,
@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         help="the scene to preprocess, default is 0",
-        choices=list(map(str, range(0, 20))) + ["all"],
+        choices=list(map(str, range(0, 21))) + ["all"],
         nargs="*",
         default=[0],
     )
