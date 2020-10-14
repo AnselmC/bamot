@@ -14,11 +14,11 @@ import warnings
 from pathlib import Path
 from typing import Iterable, List, Tuple, Union
 
-import numpy as np
-
 import colorlog
 import cv2
+import numpy as np
 import tqdm
+
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.base_types import StereoImage
@@ -184,6 +184,20 @@ if __name__ == "__main__":
         help="Show objects in camera coordinates in viewer (instead of world)",
         action="store_true",
     )
+    parser.add_argument(
+        "-no-gt",
+        "--viewer-disable-gt",
+        dest="viewer_disable_gt",
+        action="store_true",
+        help="Disables display of GT bounding boxes in viewer (and trajectories)",
+    )
+    parser.add_argument(
+        "-no-trajs",
+        "--viewer-disable-trajs",
+        dest="viewer_disable_trajs",
+        action="store_true",
+        help="Disables display of trajectories in viewer (both estimated and GT)",
+    )
 
     args = parser.parse_args()
     scene = str(args.scene).zfill(4)
@@ -262,6 +276,8 @@ if __name__ == "__main__":
             label_data=label_data,
             save_path=Path(args.record) if args.record else None,
             gt_poses=gt_poses,
+            show_trajs=not args.viewer_disable_trajs,
+            show_gt=not args.viewer_disable_gt,
             cam_coordinates=args.cam,
         )
     LOGGER.info("No more frames - terminating processes")

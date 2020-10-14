@@ -86,7 +86,9 @@ def _update_geometries(
     object_tracks: Dict[int, ObjectTrack],
     label_data: LabelData,
     current_img_id: int,
-    gt_poses: Optional[List[np.ndarray]] = None,
+    show_trajs: bool,
+    show_gt: bool,
+    gt_poses: List[np.ndarray],
     first_update: bool = False,
 ) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
@@ -175,10 +177,13 @@ def _update_geometries(
             )
         if track.active:
             track_geometries.pt_cloud.paint_uniform_color(color)
-            track_geometries.trajectory.paint_uniform_color(color)
-            track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
+            if show_trajs:
+                track_geometries.trajectory.paint_uniform_color(color)
+                if show_gt:
+                    track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
             track_geometries.bbox.paint_uniform_color(color)
-            track_geometries.gt_bbox.paint_uniform_color(lighter_color)
+            if show_gt:
+                track_geometries.gt_bbox.paint_uniform_color(lighter_color)
         else:
             LOGGER.debug("Track is inactive")
             track_geometries.pt_cloud.paint_uniform_color([0.0, 0.0, 0.0])
@@ -253,6 +258,8 @@ def run(
     gt_poses: Optional[List[np.ndarray]] = None,
     save_path: Optional[Path] = None,
     cam_coordinates: bool = False,
+    show_trajs: bool = True,
+    show_gt: bool = True,
 ):
     vis = o3d.visualization.Visualizer()
     width, height = get_screen_size()
@@ -290,6 +297,8 @@ def run(
                 visualizer=vis,
                 object_tracks=new_data["object_tracks"],
                 label_data=label_data,
+                show_gt=show_gt,
+                show_trajs=show_trajs,
                 gt_poses=gt_poses,
                 current_img_id=new_data["img_id"],
                 first_update=first_update,
