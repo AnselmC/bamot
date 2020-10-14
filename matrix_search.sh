@@ -3,12 +3,12 @@ if ! git diff-index --quiet HEAD; then
 	echo "Git tree is dirty"
 	exit
 fi
-while getopts ":c:" arg; do
+while getopts ":t:c:" arg; do
 	case $arg in
+	t) tags=$OPTARG ;;
 	c) config=$OPTARG ;;
 	esac
 done
-
 
 for const_motion_weight in {6..14..4}; do
 	for cluster_size in {0..10..4}; do
@@ -18,13 +18,17 @@ for const_motion_weight in {6..14..4}; do
 				CONST_MOTION_WEIGHT=$const_motion_weight \
 				CLUSTER_SIZE=$cluster_size \
 				bash \
-				run_all_scenes.sh -c $config -t cmw_$const_motion_weight-mad$mad_scale_factor
+				run_all_scenes.sh \
+				-c $config \
+				-t $tags
 			done
 		else
 			CONST_MOTION_WEIGHT=$const_motion_weight \
 			CLUSTER_SIZE=$cluster_size \
 			bash \
-			run_all_scenes.sh -c $config_file -t cmw_$const_motion_weight-cs$cluster_size
+			run_all_scenes.sh \
+			-c $config \
+			-t $tags
 		fi
 	done
 done

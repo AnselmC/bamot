@@ -185,9 +185,6 @@ def _create_report(df, dst_dir, save):
         print("Created!")
     report["per-scene"] = per_scene_report
     if save:
-        import pdb
-
-        pdb.set_trace()
         print("Saving report")
         with open(dst_dir / "report.yaml", "w") as fp:
             yaml.dump(report, fp, sort_keys=False)
@@ -240,6 +237,6 @@ if __name__ == "__main__":
     _create_report(df, dst_dir, args.save)
     _plt_hist(df, dst_dir, args.save)
     _plt_hist_no_outliers(df, dst_dir, args.save)
-    _plt_error_by_dist(df, dst_dir, args.save)
+    # _plt_error_by_dist(df, dst_dir, args.save)
     # histogram of errors w/o outliers
     # errors vs distance

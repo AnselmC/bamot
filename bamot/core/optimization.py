@@ -1,8 +1,9 @@
 import logging
 from typing import Dict
 
-import g2o
 import numpy as np
+
+import g2o
 from bamot.config import CONFIG as config
 from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -37,7 +38,12 @@ def object_bundle_adjustment(
         pose_vertex.set_id(pose_id)
         pose_vertex.set_estimate(sba_cam)
         pose_vertex.set_fixed(pose_id == 0)
-        if config.CONSTANT_MOTION:
+        if config.USING_CONSTANT_MOTION:
+            weight = (
+                config.CONSTANT_MOTION_WEIGHT_CAR
+                if object_track.cls == "car"
+                else config.CONSTANT_MOTION_WEIGHT_PED
+            )
             if prev_cam is None:
                 prev_cam = pose_vertex
             elif prev_prev_cam is None:
@@ -47,7 +53,7 @@ def object_bundle_adjustment(
                 const_motion_edge.set_vertex(0, prev_prev_cam)
                 const_motion_edge.set_vertex(1, prev_cam)
                 const_motion_edge.set_vertex(2, pose_vertex)
-                info = config.CONSTANT_MOTION_WEIGHT * np.identity(6)
+                info = weight * np.identity(6)
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
                 robust_kernel = g2o.RobustKernelHuber()

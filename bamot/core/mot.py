@@ -167,8 +167,7 @@ def _add_new_landmarks_and_observations(
             pt_3d_left_cam = triangulate(
                 vec_left, vec_right, R_left_right, t_left_right
             )
-        except np.linalg.LinAlgError as e:
-            # LOGGER.error("Encountered error during triangulation: %s", e)
+        except np.linalg.LinAlgError:
             bad_matches.append((left_feature_idx, right_feature_idx))
             continue
         if pt_3d_left_cam[-1] < 0.5 or np.linalg.norm(pt_3d_left_cam) > config.MAX_DIST:
@@ -370,9 +369,14 @@ def run(
             points = np.array(points)
             cluster_median_center = np.median(points, axis=0)
             for lid, lm in track.landmarks.items():
-                if config.CLUSTER_SIZE:
+                if not config.USING_MEDIAN_CLUSTER:
+                    cluster_size = (
+                        config.CLUSTER_SIZE_CAR
+                        if track.cls == "car"
+                        else config.CLUSTER_SIZE_PED
+                    )
                     if np.linalg.norm(lm.pt_3d - cluster_median_center) > (
-                        config.CLUSTER_SIZE / 2
+                        cluster_size / 2
                     ):
                         landmarks_to_remove.append(lid)
                 else:
@@ -470,12 +474,15 @@ def step(
             if object_tracks.get(match.track_index) is None:
                 LOGGER.debug("Added track with index %d", match.track_index)
                 object_tracks[match.track_index] = ObjectTrack(
-                    landmarks={}, poses={img_id: current_cam_pose},
+                    landmarks={},
+                    poses={img_id: current_cam_pose},
+                    cls=new_detections[match.detection_index].left.cls,
                 )
     # per match, match features
     active_tracks = []
     matched_detections = []
     LOGGER.debug("%d matches with object tracks", len(matches))
+    # TODO: currently disabled bc slower than single threaded and single process
     with pathos.threading.ThreadPool(nodes=len(matches) if False else 1) as executor:
         futures_to_track_index = {}
         for match in matches:
