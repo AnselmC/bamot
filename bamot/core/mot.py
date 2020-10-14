@@ -7,9 +7,8 @@ import time
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import numpy as np
-
 import cv2
+import numpy as np
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -432,6 +431,8 @@ def run(
                 "all_left_features": all_left_features,
                 "all_right_features": all_right_features,
                 "all_stereo_matches": all_stereo_matches,
+                "img_id": img_id,
+                "current_cam_pose": current_pose,
             }
         )
     stop_flag.set()

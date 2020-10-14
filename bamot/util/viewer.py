@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
-from bamot.util.cv import draw_features, from_homogeneous_pt, to_homogeneous_pt
+from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 from bamot.util.kitti import LabelData, LabelDataRow
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
@@ -85,11 +85,11 @@ def _update_geometries(
     visualizer: o3d.visualization.Visualizer,
     object_tracks: Dict[int, ObjectTrack],
     label_data: LabelData,
+    current_img_id: int,
     gt_poses: Optional[List[np.ndarray]] = None,
     first_update: bool = False,
 ) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
-    max_img_id = 0
     for ido, track in object_tracks.items():
         track_geometries = all_track_geometries.get(
             ido,
@@ -113,8 +113,6 @@ def _update_geometries(
         lighter_color = np.clip(lighter_color, 0, 1)
         track_size = 0
         for i, (img_id, pose_world_obj) in enumerate(track.poses.items()):
-
-            max_img_id = max(img_id, max_img_id)
             center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
             for lm in track.landmarks.values():
                 pt_world = from_homogeneous_pt(
@@ -215,16 +213,31 @@ def _update_geometries(
     ego_path_lines = []
     for img_id, pose in enumerate(gt_poses):
         ego_pts.append(pose[:3, 3])
-        if img_id + 1 > max_img_id:
+        if img_id > current_img_id:
+            ctr = visualizer.get_view_control()
+            cam_parameters = ctr.convert_to_pinhole_camera_parameters()
+            init_traf = np.array(
+                [
+                    [1.0000000, 0.0000000, 0.0000000, 0.0],
+                    [0.0000000, 1.0000000, 0.0000000, 6.0],
+                    [0.0000000, 0.0000000, 1.0000000, 10.0],
+                    [0, 0, 0, 1],
+                ]
+            )
+            cam_parameters.extrinsic = init_traf @ np.linalg.inv(pose)
+            ctr.convert_from_pinhole_camera_parameters(cam_parameters)
+            ctr.set_zoom(2)
             break
         ego_path_lines.append([img_id, img_id + 1])
     if len(ego_path_lines) > 0:
         ego_geometries.trajectory.points = o3d.utility.Vector3dVector(ego_pts)
         ego_geometries.trajectory.lines = o3d.utility.Vector2iVector(ego_path_lines)
         ego_geometries.trajectory.paint_uniform_color(np.array([1.0, 1.0, 1.0]))
-        if max_img_id > 0:
-            ego_geometries.curr_pose.transform(np.linalg.inv(gt_poses[max_img_id - 1]))
-        ego_geometries.curr_pose.transform(gt_poses[max_img_id])
+        if current_img_id > 0:
+            ego_geometries.curr_pose.transform(
+                np.linalg.inv(gt_poses[current_img_id - 1])
+            )
+        ego_geometries.curr_pose.transform(gt_poses[current_img_id])
         ego_geometries.curr_pose.paint_uniform_color(np.array([1.0, 1.0, 1.0]))
         visualizer.update_geometry(ego_geometries.trajectory)
         visualizer.update_geometry(ego_geometries.curr_pose)
@@ -258,15 +271,6 @@ def run(
             cylinder_radius=0.25, cylinder_height=2, cone_radius=1.0, cone_height=1
         ),
     )
-    init_traf = np.array(
-        [
-            [0.0000000, 0.0000000, 1.0000000, 0.0],
-            [0.0000000, 1.0000000, 0.0000000, -(0.53 + 0.5)],
-            [-1.0000000, 0.0000000, 0.0000000, 0.0],
-            [0, 0, 0, 1],
-        ]
-    )
-    ego_geometries.curr_pose.transform(init_traf)
     vis.add_geometry(ego_geometries.trajectory)
     vis.add_geometry(ego_geometries.curr_pose)
     first_update = True
@@ -281,21 +285,19 @@ def run(
         if new_data is not None:
             LOGGER.debug("Got new data")
             (all_track_geometries, ego_geometries) = _update_geometries(
-                all_track_geometries,
-                ego_geometries,
-                vis,
-                new_data["object_tracks"],
-                label_data,
-                gt_poses,
+                all_track_geometries=all_track_geometries,
+                ego_geometries=ego_geometries,
+                visualizer=vis,
+                object_tracks=new_data["object_tracks"],
+                label_data=label_data,
+                gt_poses=gt_poses,
+                current_img_id=new_data["img_id"],
                 first_update=first_update,
             )
             stereo_image = new_data["stereo_image"]
             all_left_features = new_data["all_left_features"]
             all_right_features = new_data["all_right_features"]
             all_stereo_matches = new_data["all_stereo_matches"]
-            # left_img = _draw_features(stereo_image.left, left_features)
-            # right_img = _draw_features(stereo_image.right, right_features)
-            # full_img = np.hstack([left_img, right_img])
             for left_features, right_features, stereo_matches in zip(
                 all_left_features, all_right_features, all_stereo_matches
             ):
