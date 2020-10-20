@@ -33,6 +33,8 @@ __config_file = Path(".").parent / os.environ.get("CONFIG_FILE", default="config
 __const_motion_weight_default = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
 __cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=1.4))
+__using_mad = bool(os.environ.get("USING_MAD", default=False))
+__using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 
 if __config_file.exists():
@@ -49,8 +51,8 @@ __preprocessed_path = __kitti_path / "preprocessed"
 
 CONFIG = Config(
     USING_CONFIG_FILE=__config_file.exists(),
-    USING_MEDIAN_CLUSTER=__user_config.get("median_cluster", False),
-    USING_CONSTANT_MOTION=__user_config.get("constant_motion", False),
+    USING_MEDIAN_CLUSTER=__user_config.get("median_cluster", __using_mad),
+    USING_CONSTANT_MOTION=__user_config.get("constant_motion", __using_const_motion),
     KITTI_PATH=__kitti_path.as_posix(),
     DETECTIONS_PATH=__user_config.get(
         "detections_path", (__kitti_path / "preprocessed" / "mot").as_posix()
