@@ -132,44 +132,49 @@ if __name__ == "__main__":
             err_per_image = {}
             valid_frames = []
             prev_pt = None
-            for img_id, est_pt_cam in est_traj_cam_dict.items():
-                row_data = track_dict.get(img_id)
-                if row_data is None:  # could be due to occlusion
-                    continue
+            for img_id, row_data in track_dict.items():
                 gt_pt_cam = row_data.cam_pos
                 gt_pt_cam = np.array(gt_pt_cam).reshape(3, 1)
-                est_pt_cam = np.array(est_pt_cam).reshape(3, 1)
-                error_cam = np.linalg.norm(gt_pt_cam - est_pt_cam)
-                err_x_cam, err_y_cam, err_z_cam = (
-                    np.abs(gt_pt_cam - est_pt_cam).reshape(3,).tolist()
-                )
-
+                est_pt_cam = est_traj_cam_dict.get(img_id)
                 gt_pt_world = row_data.world_pos
                 gt_pt_world = np.array(gt_pt_world).reshape(3, 1)
-                est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
-                error_world = np.linalg.norm(gt_pt_world - est_pt_world)
-                err_x_world, err_y_world, err_z_world = (
-                    np.abs(gt_pt_world - est_pt_world).reshape(3,).tolist()
-                )
-
                 dist = np.linalg.norm(np.array(gt_pt_cam))
-                error = error_cam
-                err_x = err_x_cam
-                err_y = err_y_cam
-                err_z = err_z_cam
-                if args.distances:
-                    min_dist, max_dist = map(int, args.distances)
-                    if min_dist <= dist <= max_dist:
-                        valid_frames.append(img_id)
-                if args.error:
-                    max_error = float(args.error)
-                    if error < max_error:
-                        if img_id not in valid_frames:
+                if est_pt_cam is None:
+                    tracked = False
+                    error = "NA"
+                    err_x = "NA"
+                    err_y = "NA"
+                    err_z = "NA"
+                else:
+                    tracked = True
+                    est_pt_cam = np.array(est_pt_cam).reshape(3, 1)
+                    error_cam = np.linalg.norm(gt_pt_cam - est_pt_cam)
+                    err_x_cam, err_y_cam, err_z_cam = (
+                        np.abs(gt_pt_cam - est_pt_cam).reshape(3,).tolist()
+                    )
+
+                    est_pt_world = np.array(est_traj_dict[img_id]).reshape(3, 1)
+                    error_world = np.linalg.norm(gt_pt_world - est_pt_world)
+                    err_x_world, err_y_world, err_z_world = (
+                        np.abs(gt_pt_world - est_pt_world).reshape(3,).tolist()
+                    )
+                    error = error_cam
+                    err_x = err_x_cam
+                    err_y = err_y_cam
+                    err_z = err_z_cam
+                    if args.distances:
+                        min_dist, max_dist = map(int, args.distances)
+                        if min_dist <= dist <= max_dist:
                             valid_frames.append(img_id)
-                    else:
-                        if img_id in valid_frames:
-                            valid_frames.remove(img_id)
-                err_per_image[img_id] = ((err_x, err_y, err_z, error), dist)
+                    if args.error:
+                        max_error = float(args.error)
+                        if error < max_error:
+                            if img_id not in valid_frames:
+                                valid_frames.append(img_id)
+                        else:
+                            if img_id in valid_frames:
+                                valid_frames.remove(img_id)
+                err_per_image[img_id] = ((err_x, err_y, err_z, error, tracked), dist)
             if not args.distances and not args.error:
                 valid_frames = list(est_traj_dict.keys())
             err_per_obj[track_id] = err_per_image
@@ -275,27 +280,28 @@ if __name__ == "__main__":
                         else:
                             ax_2d = fig.add_subplot(1, 1, 1)
                         err_dist = list(err_per_image.values())
+                        err, dist = zip(*[(x[0], x[1]) for x in err_dist if x[0][0] != "NA"])
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][0], err_dist)),
-                            list(map(lambda x: x[1], err_dist)),
+                            [e[0] for e in err],
+                            dist,
                             alpha=0.5,
                             label="L1-error x (left, right)",
                         )
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][1], err_dist)),
-                            list(map(lambda x: x[1], err_dist)),
+                            [e[1] for e in err],
+                            dist,
                             alpha=0.5,
                             label="L1-error y (elevation)",
                         )
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][2], err_dist)),
-                            list(map(lambda x: x[1], err_dist)),
+                            [e[2] for e in err],
+                            dist,
                             alpha=0.5,
                             label="L1-error z (depth)",
                         )
                         ax_2d.scatter(
-                            list(map(lambda x: x[0][3], err_dist)),
-                            list(map(lambda x: x[1], err_dist)),
+                            [e[3] for e in err],
+                            dist,
                             label="L1-error total",
                         )
                         # ax_2d.set_xscale("log")
@@ -352,6 +358,7 @@ if __name__ == "__main__":
                 "distance",
                 "occlusion_lvl",
                 "truncation_lvl",
+                "tracked",
                 "error",
                 "error_x",
                 "error_y",
@@ -363,11 +370,11 @@ if __name__ == "__main__":
                 cls = list(label_data[track_id].values())[0].object_class
                 for (
                     img_id,
-                    ((err_x_cam, err_y_cam, err_z_cam, error), dist),
+                    ((err_x_cam, err_y_cam, err_z_cam, error, tracked), dist),
                 ) in err_per_image.items():
                     occ_lvl = label_data[track_id][img_id].occ_lvl
                     trunc_lvl = label_data[track_id][img_id].trunc_lvl
                     fp.write(
-                        f"{track_id},{img_id},{cls},{dist:.4f},{occ_lvl},{trunc_lvl},{error:.4f},{err_x_cam:.4f},{err_y_cam:.4f},{err_z_cam:.4f}\n"
+                        f"{track_id},{img_id},{cls},{dist:.4f},{occ_lvl},{trunc_lvl},{tracked},{error},{err_x_cam},{err_y_cam},{err_z_cam}\n"
                     )
         print(f"Saved results to {eval_file.as_posix()}")

@@ -33,7 +33,7 @@ __config_file = Path(".").parent / os.environ.get("CONFIG_FILE", default="config
 __const_motion_weight_default = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
 __cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=1.4))
-__kitti_scene = os.environ.get("SCENE", default=None)
+__kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 
 if __config_file.exists():
     with open(__config_file.as_posix(), "r") as fp:

@@ -111,53 +111,103 @@ def _summarize_df(df):
     dist_summary["mid"] = _get_metrics(df_mid)
     dist_summary["far"] = _get_metrics(df_far)
     summary["distance"] = dist_summary
-    summary["obj-lvl"] = _summarize_obj_lvl(df)
+    summary["per-obj"] = _summarize_per_obj(df)
     return summary
 
 
-def _summarize_obj_lvl(df):
-    obj_df = df.groupby(["scene", "object_id"])
-    num_objs = len(obj_df)
-    mean_errors = obj_df.error.mean()
-    median_errors = obj_df.error.median()
+def _summarize_best_worst(df, group, summarize_item):
+    df_groupedby = df.groupby(group)
+    mean_errors = df_groupedby.error.mean()
+    median_errors = df_groupedby.error.median()
+    summary = {}
+    best = {}
+    best_mean = []
+    for item in mean_errors.nsmallest(n=10).items():
+        best_mean.append(summarize_item(df, item))
+    best_median = []
+    for item in median_errors.nsmallest(n=10).items():
+        best_median.append(summarize_item(df, item))
+
+    worst = {}
+    worst_mean = []
+    for item in mean_errors.nlargest(n=10).items():
+        worst_mean.append(summarize_item(df, item))
+    worst_median = []
+    for item in median_errors.nlargest(n=10).items():
+        worst_median.append(summarize_item(df, item))
+
+    best["median"] = best_median
+    best["mean"] = best_mean
+    worst["median"] = worst_median
+    worst["mean"] = worst_mean
+    summary["worst"] = worst
+    summary["best"] = best
+    return summary
+
+
+def _summarize_per_obj(df):
+    df_groupedby_obj = df.groupby(["scene", "object_id", "obj_class"])
+    num_objs = len(df_groupedby_obj)
+    mean_errors = df_groupedby_obj.error.mean()
+    median_errors = df_groupedby_obj.error.median()
     obj_summary = {}
-    obj_summary["mean-error-lt-5"] = float(100 * (mean_errors < 5).sum() / num_objs)
-    obj_summary["mean-error-lt-3"] = float(100 * (mean_errors < 3).sum() / num_objs)
-    obj_summary["mean-error-lt-1"] = float(100 * (mean_errors < 1).sum() / num_objs)
-    obj_summary["median-error-lt-5"] = float(100 * (median_errors < 5).sum() / num_objs)
-    obj_summary["median-error-lt-3"] = float(100 * (median_errors < 3).sum() / num_objs)
-    obj_summary["median-error-lt-1"] = float(100 * (median_errors < 1).sum() / num_objs)
-    best_objs = {}
-    best_objs_mean = []
-    for obj in mean_errors.nsmallest(n=10).items():
-        best_objs_mean.append(
-            {"scene": obj[0][0], "object_id": obj[0][1], "error": obj[1]}
-        )
-    best_objs_median = []
-    for obj in median_errors.nsmallest(n=10).items():
-        best_objs_median.append(
-            {"scene": obj[0][0], "object_id": obj[0][1], "error": obj[1]}
-        )
-
-    worst_objs = {}
-    worst_objs_mean = []
-    for obj in mean_errors.nlargest(n=10).items():
-        worst_objs_mean.append(
-            {"scene": obj[0][0], "object_id": obj[0][1], "error": obj[1]}
-        )
-    worst_objs_median = []
-    for obj in median_errors.nlargest(n=10).items():
-        worst_objs_median.append(
-            {"scene": obj[0][0], "object_id": obj[0][1], "error": obj[1]}
-        )
-
-    best_objs["mean"] = best_objs_mean
-    best_objs["median"] = best_objs_median
-    worst_objs["mean"] = worst_objs_mean
-    worst_objs["median"] = worst_objs_median
-    obj_summary["best"] = best_objs
-    obj_summary["worst"] = worst_objs
+    obj_summary["mean-error-lt-5-pct"] = float(100 * (mean_errors < 5).sum() / num_objs)
+    obj_summary["mean-error-lt-3-pct"] = float(100 * (mean_errors < 3).sum() / num_objs)
+    obj_summary["mean-error-lt-1-pct"] = float(100 * (mean_errors < 1).sum() / num_objs)
+    obj_summary["median-error-lt-5-pct"] = float(
+        100 * (median_errors < 5).sum() / num_objs
+    )
+    obj_summary["median-error-lt-3-pct"] = float(
+        100 * (median_errors < 3).sum() / num_objs
+    )
+    obj_summary["median-error-lt-1-pct"] = float(
+        100 * (median_errors < 1).sum() / num_objs
+    )
+    best_worst = _summarize_best_worst(
+        df, group=["scene", "object_id", "obj_class"], summarize_item=_get_obj_summary
+    )
+    obj_summary.update(best_worst)
     return obj_summary
+
+
+def _get_scene_summary(df, scene_row):
+    scene, error = scene_row
+    df_scene = df[df.scene == scene]
+    num_frames_total = len(df_scene)
+    num_objects = len(df_scene.object_id.unique())
+    max_error = float(df_scene.error.max())
+    min_error = float(df_scene.error.min())
+    return {
+        "scene": scene,
+        "error": error,
+        "num_frames": num_frames_total,
+        "num_objects": num_objects,
+        "max_error": max_error,
+        "min_error": min_error,
+    }
+
+
+def _get_obj_summary(df, obj):
+    scene, obj_id, obj_class = obj[0]
+    error = obj[1]
+    df_obj = df.loc[(df.scene == scene) & (df.object_id == obj_id)]
+    num_frames_total = len(df_obj)
+    tracked_ratio = float(df_obj.tracked.sum() / num_frames_total)
+    df_fully_visible = df_obj.loc[(df.truncation_lvl == 0) & (df.occlusion_lvl == 0)]
+    fully_visible_ratio = len(df_fully_visible) / num_frames_total
+    min_dist_from_cam = float(df_obj.distance.min())
+    max_dist_from_cam = float(df_obj.distance.max())
+    return {
+        "scene": scene,
+        "object_id": obj_id,
+        "class": obj_class,
+        "error": error,
+        "num_frames": num_frames_total,
+        "tracked_ratio": tracked_ratio,
+        "fully_visible_ratio": fully_visible_ratio,
+        "min_dist": min_dist_from_cam,
+        "max_dist": max_dist_from_cam,
+    }
 
 
 def _get_metrics(df):
@@ -165,6 +215,10 @@ def _get_metrics(df):
     metrics["mean"] = float(df.error.mean())
     metrics["median"] = float(df.error.median())
     metrics["stddev"] = float(df.error.std())
+    if not len(df):
+        metrics["tracked_ratio"] = "NA"
+    else:
+        metrics["tracked_ratio"] = float(df.tracked.sum() / len(df))
     return metrics
 
 
@@ -178,12 +232,16 @@ def _create_report(df, dst_dir, save):
     report["summary"] = _summarize_df(df)
     print("Created!")
     per_scene_report = {}
+    report["per-scene"] = _summarize_best_worst(
+        df, group=["scene"], summarize_item=_get_scene_summary
+    )
     for scene in sorted(df.scene.unique()):
         print(f"Creating summary for scene {scene}")
         scene_df = df[df.scene == scene]
         per_scene_report[scene] = _summarize_df(scene_df)
         print("Created!")
-    report["per-scene"] = per_scene_report
+    report["per-scene"].update(per_scene_report)
+
     if save:
         print("Saving report")
         with open(dst_dir / "report.yaml", "w") as fp:
