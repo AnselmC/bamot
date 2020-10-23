@@ -219,11 +219,14 @@ def _get_object_associations(
     return track_matches
 
 
-def _get_median_descriptor(observations: List[Observation], norm: int) -> np.ndarray:
-    distances = np.zeros((len(observations), len(observations)))
-    for i, obs in enumerate(observations):
-        for j in range(i, len(observations)):
-            other_obs = observations[j]
+def _get_median_descriptor(
+    observations: List[Observation], norm: int, num_obs: int = 10
+) -> np.ndarray:
+    subset = observations[-num_obs:]
+    distances = np.zeros((len(subset), len(subset)))
+    for i, obs in enumerate(subset):
+        for j in range(i, len(subset)):
+            other_obs = subset[j]
             # calculate distance between i and j
             dist = np.linalg.norm(obs.descriptor - other_obs.descriptor, ord=norm)
             # do for all combinations
@@ -231,13 +234,13 @@ def _get_median_descriptor(observations: List[Observation], norm: int) -> np.nda
             distances[j, i] = dist
     best_median = None
     best_idx = 0
-    for i, obs in enumerate(observations):
+    for i, obs in enumerate(subset):
         dist_per_descriptor = distances[i]
         median = np.median(dist_per_descriptor)
         if not best_median or median < best_median:
             best_median = median
             best_idx = i
-    return observations[best_idx].descriptor
+    return subset[best_idx].descriptor
 
 
 def _get_features_from_landmarks(
