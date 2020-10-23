@@ -18,21 +18,25 @@ class Config:
     MAX_DIST: float
     FEATURE_MATCHER: str
     NUM_FEATURES: str
+    CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
     CLUSTER_SIZE_CAR: Optional[float] = None
     CLUSTER_SIZE_PED: Optional[float] = None
-    CONSTANT_MOTION_WEIGHT_CAR: Optional[float] = None
-    CONSTANT_MOTION_WEIGHT_PED: Optional[float] = None
+    CONSTANT_MOTION_WEIGHTS_CAR: Optional[float] = None
+    CONSTANT_MOTION_WEIGHTS_PED: Optional[float] = None
     SUPERPOINT_WEIGHTS_PATH: Optional[str] = None
     SUPERPOINT_PREPROCESSED_PATH: Optional[str] = None
 
 
 # ENV VARIABLES
 __config_file = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
-__const_motion_weight_default = float(os.environ.get("CONST_MOTION_WEIGHT", default=6))
+__const_motion_weights_default = [
+    float(os.environ.get("CONST_MOTION_WEIGHT_ROT", default=6)),
+    float(os.environ.get("CONST_MOTION_WEIGHT_TRANS", default=1)),
+]
 __cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
-__mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=1.4))
+__mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
 __using_mad = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
@@ -62,6 +66,9 @@ CONFIG = Config(
     NUM_FEATURES=__user_config.get("num_features", 8000),
 )
 
+if CONFIG.USING_CONFIG_FILE:
+    CONFIG.CONFIG_FILE = __config_file.as_posix()
+
 if CONFIG.USING_MEDIAN_CLUSTER:
     CONFIG.MAD_SCALE_FACTOR = __user_config.get(
         "mad_scale_factor", __mad_scale_factor_default
@@ -73,13 +80,13 @@ else:
 
 if CONFIG.USING_CONSTANT_MOTION:
     _default_weight = __user_config.get(
-        "const_motion_weight", __const_motion_weight_default
+        "const_motion_weights", __const_motion_weights_default
     )
-    CONFIG.CONSTANT_MOTION_WEIGHT_CAR = __user_config.get(
-        "const_motion_car", _default_weight
+    CONFIG.CONSTANT_MOTION_WEIGHTS_CAR = __user_config.get(
+        "const_motion_weights_car", _default_weight
     )
-    CONFIG.CONSTANT_MOTION_WEIGHT_PED = __user_config.get(
-        "const_motion_ped", _default_weight
+    CONFIG.CONSTANT_MOTION_WEIGHTS_PED = __user_config.get(
+        "const_motion_weights_ped", _default_weight
     )
 
 if __user_config.get("min_landmarks"):
