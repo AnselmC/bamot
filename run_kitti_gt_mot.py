@@ -100,6 +100,11 @@ def _get_image_stream(
     stop_flag.set()
 
 
+def _validate_args(args):
+    if args.indeces and args.negative_indeces:
+        raise ValueError("Can't provide `-id` and `-nid` at the same time")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("BAMOT with GT KITTI data")
     parser.add_argument(
@@ -116,6 +121,7 @@ if __name__ == "__main__":
         "--scene",
         dest="scene",
         help="scene to run (default is 0)",
+        choices=range(0, 21),
         type=int,
         default=0,
     )
@@ -167,7 +173,14 @@ if __name__ == "__main__":
         "-id",
         "--indeces",
         dest="indeces",
-        help="Use this to only track specific object ids",
+        help="Use this to only track specific object ids (can't be used in conjunction w/ `-nid`)",
+        nargs="+",
+    )
+    parser.add_argument(
+        "-nid",
+        "--neg-indeces",
+        dest="neg_indeces",
+        help="Use this to exclude tracks w/ specific object ids (can't be used in conjunction w/ `-id`)",
         nargs="+",
     )
     parser.add_argument(
@@ -200,6 +213,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    _validate_args(args)
     scene = str(args.scene).zfill(4)
     kitti_path = Path(config.KITTI_PATH)
     obj_detections_path = Path(config.DETECTIONS_PATH) / scene

@@ -151,9 +151,15 @@ def _summarize_per_obj(df):
     mean_errors = df_groupedby_obj.error.mean()
     median_errors = df_groupedby_obj.error.median()
     obj_summary = {}
+    obj_summary["mean-error-lt-10-pct"] = float(
+        100 * (mean_errors < 10).sum() / num_objs
+    )
     obj_summary["mean-error-lt-5-pct"] = float(100 * (mean_errors < 5).sum() / num_objs)
     obj_summary["mean-error-lt-3-pct"] = float(100 * (mean_errors < 3).sum() / num_objs)
     obj_summary["mean-error-lt-1-pct"] = float(100 * (mean_errors < 1).sum() / num_objs)
+    obj_summary["median-error-lt-10-pct"] = float(
+        100 * (median_errors < 10).sum() / num_objs
+    )
     obj_summary["median-error-lt-5-pct"] = float(
         100 * (median_errors < 5).sum() / num_objs
     )
@@ -192,7 +198,10 @@ def _get_obj_summary(df, obj):
     error = obj[1]
     df_obj = df.loc[(df.scene == scene) & (df.object_id == obj_id)]
     num_frames_total = len(df_obj)
-    tracked_ratio = float(df_obj.tracked.sum() / num_frames_total)
+    try:
+        tracked_ratio = float(df_obj.tracked.sum() / num_frames_total)
+    except AttributeError:
+        tracked_ratio = "NA"
     df_fully_visible = df_obj.loc[(df.truncation_lvl == 0) & (df.occlusion_lvl == 0)]
     fully_visible_ratio = len(df_fully_visible) / num_frames_total
     min_dist_from_cam = float(df_obj.distance.min())
@@ -215,10 +224,13 @@ def _get_metrics(df):
     metrics["mean"] = float(df.error.mean())
     metrics["median"] = float(df.error.median())
     metrics["stddev"] = float(df.error.std())
-    if not len(df):
+    if df.empty:
         metrics["tracked_ratio"] = "NA"
     else:
-        metrics["tracked_ratio"] = float(df.tracked.sum() / len(df))
+        try:
+            metrics["tracked_ratio"] = float(df.tracked.sum() / len(df))
+        except AttributeError:
+            metrics["tracked_ratio"] = "NA"
     return metrics
 
 

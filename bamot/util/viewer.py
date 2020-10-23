@@ -231,7 +231,6 @@ def _update_geometries(
             )
             cam_parameters.extrinsic = init_traf @ np.linalg.inv(pose)
             ctr.convert_from_pinhole_camera_parameters(cam_parameters)
-            ctr.set_zoom(2)
             break
         ego_path_lines.append([img_id, img_id + 1])
     if len(ego_path_lines) > 0:
@@ -261,12 +260,15 @@ def run(
     show_trajs: bool = True,
     show_gt: bool = True,
 ):
+    if save_path:
+        if not save_path.exists():
+            save_path.mkdir(parents=True)
     vis = o3d.visualization.Visualizer()
     width, height = get_screen_size()
     vis.create_window("MOT", top=0, left=1440)
     view_control = vis.get_view_control()
-    view_control.set_constant_z_far(100)
-    view_control.set_constant_z_near(-100)
+    view_control.set_constant_z_far(150)
+    view_control.set_constant_z_near(-10)
     opts = vis.get_render_option()
     opts.background_color = np.array([0.0, 0.0, 0.0,])
     cv2_window_name = "Stereo Image"

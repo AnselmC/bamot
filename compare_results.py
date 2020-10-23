@@ -1,7 +1,31 @@
 import argparse
 from pathlib import Path
+from pprint import pprint
 
 import yaml
+
+
+def _get_nested(d, keys):
+    for key in keys:
+        d = d[key]
+    return d
+
+
+def _get_n_best(reports, keys, n):
+    medianss = {
+        fname: _get_nested(summary, keys)["median"]
+        for fname, summary in reports.items()
+    }
+    best_medianss = [(k, v) for k, v in sorted(medianss.items(), key=lambda x: x[1])][
+        :n
+    ]
+    meanss = {
+        fname: _get_nested(summary, keys)["mean"] for fname, summary in reports.items()
+    }
+    best_meanss = [(k, v) for k, v in sorted(meanss.items(), key=lambda x: x[1])][:n]
+
+    return best_medianss, best_meanss
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
@@ -10,59 +34,57 @@ if __name__ == "__main__":
         help="The evaluation result directories to compare (need to have a `full_eval` directory which contains a `result.yaml` file)",
         nargs="*",
     )
+    parser.add_argument(
+        "-n", help="Return n best results (defaults to 1)", default=1, type=int
+    )
     args = parser.parse_args()
-    if len(args.results) < 2:
+
+    reports = {}
+    for r in args.results:
+        fname = Path(r) / "full_eval" / "report.yaml"
+        if not fname.exists():
+            print(f"{fname} does not exist...")
+            continue
+        with open(fname.as_posix(), "r") as fp:
+            rep = yaml.load(fp, Loader=yaml.FullLoader)
+        reports[r.split("/")[-1]] = rep["summary"]
+
+    if len(reports) < 2:
         print("Need at least two directories/files to compare")
         exit()
 
-    for r in args.results:
-        fname = Path(r) / "full_eval" / "report.yaml"
-        reports = {}
-        if not fname.exists():
-            print(f"{fname} does not exist...")
-            exit()
-            with open(fname.as_posix(), "r") as fp:
-                rep = yaml.load(fp, Loader=yaml.FullLoader)
-            reports[fname] = rep["summary"]
-
     # get fname
     # filter by
-    medians = {fname: summary["total"]["median"] for fname, summary in reports.items()}
-    best_median = [(k, v) for k, v in sorted(medians.items(), key=lambda x: x[1])][0]
-    print(f"BEST MEDIAN: {best_median}")
-    means = {fname: summary["total"]["means"] for fname, summary in reports.items()}
-    best_mean = [(k, v) for k, v in sorted(means.items(), key=lambda x: x[1])][0]
-    print(f"BEST MEAN: {best_mean}")
+    for fname, summary in reports.items():
+        print(fname)
+        print(f'Total: {summary["total"]["median"]:.2f}')
+        print(f'Cars: {summary["obj-type"]["car"]["median"]:.2f}')
+        print(f'Peds: {summary["obj-type"]["pedestrian"]["median"]:.2f}')
+    n = args.n
+    best_medians, best_means = _get_n_best(reports, ["total"], n)
+    print(f"BEST MEDIANS: {best_medians}")
+    print(f"BEST MEANS: {best_means}")
 
-    medians_car = {
-        fname: summary["obj-type"]["car"]["median"]
-        for fname, summary in reports.items()
-    }
-    best_median_car = [
-        (k, v) for k, v in sorted(medians_car.items(), key=lambda x: x[1])
-    ][0]
-    print(f"BEST MEDIAN CAR: {best_median_car}")
-    means_car = {
-        fname: summary["obj-type"]["car"]["means"] for fname, summary in reports.items()
-    }
-    best_mean_car = [(k, v) for k, v in sorted(means_car.items(), key=lambda x: x[1])][
-        0
-    ]
-    print(f"BEST MEAN CAR: {best_mean_car}")
+    best_medians_car, best_means_car = _get_n_best(reports, ["obj-type", "car"], n)
+    print(f"BEST MEDIANS CAR: {best_medians_car}")
+    print(f"BEST MEANS CAR: {best_means_car}")
 
-    medians_pedestrian = {
-        fname: summary["obj-type"]["pedestrian"]["median"]
-        for fname, summary in reports.items()
-    }
-    best_median_pedestrian = [
-        (k, v) for k, v in sorted(medians_pedestrian.items(), key=lambda x: x[1])
-    ][0]
-    print(f"BEST MEDIAN PEDESTRIAN: {best_median_pedestrian}")
-    means_pedestrian = {
-        fname: summary["obj-type"]["pedestrian"]["means"]
-        for fname, summary in reports.items()
-    }
-    best_mean_pedestrian = [
-        (k, v) for k, v in sorted(means_pedestrian.items(), key=lambda x: x[1])
-    ][0]
-    print(f"BEST MEAN PEDESTRIAN: {best_mean_pedestrian}")
+    best_medians_ped, best_means_ped = _get_n_best(
+        reports, ["obj-type", "pedestrian"], n
+    )
+    print(f"BEST MEDIANS PEDESTRIAN: {best_medians_ped}")
+    print(f"BEST MEANS PEDESTRIAN: {best_means_ped}")
+
+    best_medians_close, best_means_close = _get_n_best(
+        reports, ["distance", "close"], n
+    )
+    print(f"BEST MEDIANS CLOSE: {best_medians_close}")
+    print(f"BEST MEANS CLOSE: {best_means_close}")
+
+    best_medians_mid, best_means_mid = _get_n_best(reports, ["distance", "mid"], n)
+    print(f"BEST MEDIANS MID: {best_medians_mid}")
+    print(f"BEST MEANS MID: {best_means_mid}")
+
+    best_medians_far, best_means_far = _get_n_best(reports, ["distance", "far"], n)
+    print(f"BEST MEDIANS FAR: {best_medians_far}")
+    print(f"BEST MEANS FAR: {best_means_far}")
