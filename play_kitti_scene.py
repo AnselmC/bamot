@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from bamot.config import CONFIG as config
-from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
                               get_image_stream, get_label_data_from_kitti)
 
@@ -38,6 +37,10 @@ if __name__ == "__main__":
         help="the scene to plot",
         choices=list(map(str, range(0, 20))),
     )
+    parser.add_argument(
+        "--save", dest="save", help="Where to save left image w/ painted bounding boxes"
+    )
+
     parser.add_argument("--ids", type=int, nargs="+", help="Only show specific objects")
     args = parser.parse_args()
     scene = args.scene.zfill(4)
@@ -86,7 +89,11 @@ if __name__ == "__main__":
     max_y = max(max(gt_poses_y), max(all_y))
     plt.xlim(min_x, max_x)
     plt.ylim(min_y, max_y)
-    for i, (left_img, right_img) in enumerate(get_image_stream(kitti_path, scene)):
+    if args.save:
+        save_path = Path(args.save)
+        if not save_path.exists():
+            save_path.mkdir(parents=True)
+    for i, stereo_img in enumerate(get_image_stream(kitti_path, scene)):
         boxes = bounding_boxes_by_img_id.get(i, [])
         if boxes:
             for box in boxes:
@@ -95,8 +102,11 @@ if __name__ == "__main__":
                 end = (right, bottom)
                 color = (255, 0, 0)
                 thickness = 2
-                left_img = cv2.rectangle(left_img, start, end, color, thickness)
-        cv2.imshow("Image", np.vstack([left_img, right_img]))
+                left_img = cv2.rectangle(stereo_img.left, start, end, color, thickness)
+        if args.save:
+            fname = save_path / (str(i).zfill(6) + ".png")
+            cv2.imwrite(fname.as_posix(), stereo_img.left)
+        cv2.imshow("Image", np.vstack([stereo_img.left, stereo_img.right]))
         cv2.waitKey(1)
         for line in ax.lines:
             line.remove()

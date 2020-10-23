@@ -1,9 +1,8 @@
 import logging
 from typing import Dict
 
-import numpy as np
-
 import g2o
+import numpy as np
 from bamot.config import CONFIG as config
 from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -16,6 +15,7 @@ def object_bundle_adjustment(
     all_poses: Dict[ImageId, np.ndarray],
     stereo_cam: StereoCamera,
     max_iterations: int = 10,
+    sliding_window_size: int = 10,
 ) -> ObjectTrack:
     # setup optimizer
     optimizer = g2o.SparseOptimizer()
@@ -23,10 +23,12 @@ def object_bundle_adjustment(
     algorithm = g2o.OptimizationAlgorithmLevenberg(solver)
     optimizer.set_algorithm(algorithm)
     added_poses: Dict[ImageId, int] = {}
-    pose_id = 0  # even numbes
+    pose_id = 0  # even numbers
     prev_cam, prev_prev_cam = None, None
     const_motion_edges = []
-    for img_id, T_world_obj in object_track.poses.items():
+    frames = list(object_track.poses.keys())
+    for img_id in frames[-sliding_window_size:]:
+        T_world_obj = object_track.poses[img_id]
         T_world_cam = all_poses[img_id]
         params = stereo_cam.left
         T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
@@ -83,6 +85,8 @@ def object_bundle_adjustment(
         num_landmarks += 1
         # optimize over all observations
         for obs in landmark.observations:
+            if obs.img_id not in added_poses.keys():
+                continue
             # add edge between landmark and cam
             # feature coordinates of observation are x_i_t
             measurement = obs.pt_2d
