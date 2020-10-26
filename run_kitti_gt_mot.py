@@ -341,8 +341,7 @@ if __name__ == "__main__":
             encoding="utf-8",
             check=True,
         ).stdout.strip()
-        json.dump(state, fp)
-        fp.write(json.dumps(state, indent=4))
+        json.dump(state, fp, indent=4)
 
     # Cleanly shutdown
     while not shared_data.empty():
