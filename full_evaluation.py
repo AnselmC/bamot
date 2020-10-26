@@ -92,6 +92,17 @@ def _plt_error_by_dist(df, dst_dir, save):
     print("Done")
 
 
+def _summarize_df_by_dist(df):
+    dist_summary = {}
+    df_close = df.loc[df.distance < 5]
+    df_mid = df.loc[(df.distance >= 5) & (df.distance < 30)]
+    df_far = df.loc[df.distance >= 30]
+    dist_summary["close"] = _get_metrics(df_close)
+    dist_summary["mid"] = _get_metrics(df_mid)
+    dist_summary["far"] = _get_metrics(df_far)
+    return dist_summary
+
+
 def _summarize_df(df):
     summary = {}
     summary["total"] = _get_metrics(df)
@@ -103,14 +114,7 @@ def _summarize_df(df):
     obj_summary["car"] = _get_metrics(df_car)
     obj_summary["pedestrian"] = _get_metrics(df_ped)
     summary["obj-type"] = obj_summary
-    dist_summary = {}
-    df_close = df.loc[df.distance < 5]
-    df_mid = df.loc[(df.distance >= 5) & (df.distance < 30)]
-    df_far = df.loc[df.distance >= 30]
-    dist_summary["close"] = _get_metrics(df_close)
-    dist_summary["mid"] = _get_metrics(df_mid)
-    dist_summary["far"] = _get_metrics(df_far)
-    summary["distance"] = dist_summary
+    summary["distance"] = _summarize_df_by_dist(df)
     summary["per-obj"] = _summarize_per_obj(df)
     return summary
 
@@ -151,6 +155,10 @@ def _summarize_per_obj(df):
     mean_errors = df_groupedby_obj.error.mean()
     median_errors = df_groupedby_obj.error.median()
     obj_summary = {}
+    obj_summary["mean-of-mean"] = float(mean_errors.mean())
+    obj_summary["median-of-mean"] = float(mean_errors.median())
+    obj_summary["mean-of-median"] = float(median_errors.mean())
+    obj_summary["median-of-median"] = float(median_errors.median())
     obj_summary["mean-error-lt-10-pct"] = float(
         100 * (mean_errors < 10).sum() / num_objs
     )
