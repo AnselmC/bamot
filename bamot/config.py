@@ -18,6 +18,8 @@ class Config:
     MAX_DIST: float
     FEATURE_MATCHER: str
     NUM_FEATURES: str
+    SLIDING_WINDOW_BA: int
+    SLIDING_WINDOW_DESCRIPTORS: int
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
@@ -64,6 +66,8 @@ CONFIG = Config(
     MAX_DIST=__user_config.get("max_dist", 150),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),
     NUM_FEATURES=__user_config.get("num_features", 8000),
+    SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", 10),
+    SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
 )
 
 if CONFIG.USING_CONFIG_FILE:

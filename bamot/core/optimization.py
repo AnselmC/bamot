@@ -15,7 +15,6 @@ def object_bundle_adjustment(
     all_poses: Dict[ImageId, np.ndarray],
     stereo_cam: StereoCamera,
     max_iterations: int = 10,
-    sliding_window_size: int = 10,
 ) -> ObjectTrack:
     # setup optimizer
     optimizer = g2o.SparseOptimizer()
@@ -27,7 +26,7 @@ def object_bundle_adjustment(
     prev_cam, prev_prev_cam = None, None
     const_motion_edges = []
     frames = list(object_track.poses.keys())
-    for img_id in frames[-sliding_window_size:]:
+    for img_id in frames[-config.SLIDING_WINDOW_BA :]:
         T_world_obj = object_track.poses[img_id]
         T_world_cam = all_poses[img_id]
         params = stereo_cam.left

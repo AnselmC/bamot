@@ -219,10 +219,8 @@ def _get_object_associations(
     return track_matches
 
 
-def _get_median_descriptor(
-    observations: List[Observation], norm: int, num_obs: int = 10
-) -> np.ndarray:
-    subset = observations[-num_obs:]
+def _get_median_descriptor(observations: List[Observation], norm: int,) -> np.ndarray:
+    subset = observations[-config.SLIDING_WINDOW_DESCRIPTORS :]
     distances = np.zeros((len(subset), len(subset)))
     for i, obs in enumerate(subset):
         for j in range(i, len(subset)):
