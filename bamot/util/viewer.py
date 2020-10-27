@@ -1,10 +1,12 @@
 import logging
 import queue
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 import cv2
+import g2o
 import numpy as np
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
@@ -16,6 +18,7 @@ RNG = np.random.default_rng()
 Color = np.ndarray
 # Create some random colors
 COLORS: List[Color] = RNG.random((42, 3))
+BLACK = [0.0, 0.0, 0.0]
 
 
 class TrackGeometries(NamedTuple):
@@ -177,13 +180,20 @@ def _update_geometries(
             )
         if track.active:
             track_geometries.pt_cloud.paint_uniform_color(color)
-            if show_trajs:
+            if show_trajs.val:
                 track_geometries.trajectory.paint_uniform_color(color)
-                if show_gt:
+                if show_gt.val:
                     track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
+                else:
+                    track_geometries.gt_trajectory.paint_uniform_color(BLACK)
+            else:
+                track_geometries.trajectory.paint_uniform_color(BLACK)
+                track_geometries.gt_trajectory.paint_uniform_color(BLACK)
             track_geometries.bbox.paint_uniform_color(color)
-            if show_gt:
+            if show_gt.val:
                 track_geometries.gt_bbox.paint_uniform_color(lighter_color)
+            else:
+                track_geometries.gt_bbox.paint_uniform_color(BLACK)
         else:
             LOGGER.debug("Track is inactive")
             track_geometries.pt_cloud.paint_uniform_color([0.0, 0.0, 0.0])
@@ -249,6 +259,17 @@ def _update_geometries(
     return all_track_geometries, ego_geometries
 
 
+@dataclass
+class Boolean:
+    val: bool
+
+
+def _toggle(boolean: Boolean, geometry_has_changed):
+    boolean.val = not boolean.val
+    geometry_has_changed.val = True
+    return True
+
+
 def run(
     shared_data: queue.Queue,
     stop_flag: Event,
@@ -263,7 +284,12 @@ def run(
     if save_path:
         if not save_path.exists():
             save_path.mkdir(parents=True)
-    vis = o3d.visualization.Visualizer()
+    vis = o3d.visualization.VisualizerWithKeyCallback()
+    show_gt = Boolean(show_gt)
+    show_trajs = Boolean(show_trajs)
+    geometry_has_changed = Boolean(False)
+    vis.register_key_callback(84, lambda vis: _toggle(show_trajs, geometry_has_changed))
+    vis.register_key_callback(71, lambda vis: _toggle(show_gt, geometry_has_changed))
     width, height = get_screen_size()
     vis.create_window("MOT", top=0, left=1440)
     view_control = vis.get_view_control()
@@ -285,55 +311,62 @@ def run(
     first_update = True
     counter = 0
     recording = False
+    object_tracks = {}
+    current_img_id = 0
     while not stop_flag.is_set():
         try:
             new_data = shared_data.get_nowait()
             shared_data.task_done()
         except queue.Empty:
             new_data = None
-        if new_data is not None:
+        if new_data is not None or geometry_has_changed.val:
+            geometry_has_changed.val = False
+            if new_data is not None:
+                object_tracks = new_data["object_tracks"]
+                current_img_id = new_data["img_id"]
             LOGGER.debug("Got new data")
             (all_track_geometries, ego_geometries) = _update_geometries(
                 all_track_geometries=all_track_geometries,
                 ego_geometries=ego_geometries,
                 visualizer=vis,
-                object_tracks=new_data["object_tracks"],
+                object_tracks=object_tracks,
                 label_data=label_data,
                 show_gt=show_gt,
                 show_trajs=show_trajs,
                 gt_poses=gt_poses,
-                current_img_id=new_data["img_id"],
+                current_img_id=current_img_id,
                 first_update=first_update,
             )
-            stereo_image = new_data["stereo_image"]
-            all_left_features = new_data["all_left_features"]
-            all_right_features = new_data["all_right_features"]
-            all_stereo_matches = new_data["all_stereo_matches"]
-            for left_features, right_features, stereo_matches in zip(
-                all_left_features, all_right_features, all_stereo_matches
-            ):
-                stereo_image = _draw_matches(
-                    stereo_image.left,
-                    left_features,
-                    stereo_image.right,
-                    right_features,
-                    stereo_matches,
-                )
-            if first_update:
-                img_size = stereo_image.left.shape
-                img_ratio = img_size[1] / img_size[0]
-                img_width = int(0.75 * width)
-                img_height = int(img_width / img_ratio)
-                cv2.resizeWindow("Stereo Image", (img_width, img_height))
+            if new_data is not None:
+                stereo_image = new_data["stereo_image"]
+                all_left_features = new_data["all_left_features"]
+                all_right_features = new_data["all_right_features"]
+                all_stereo_matches = new_data["all_stereo_matches"]
+                for left_features, right_features, stereo_matches in zip(
+                    all_left_features, all_right_features, all_stereo_matches
+                ):
+                    stereo_image = _draw_matches(
+                        stereo_image.left,
+                        left_features,
+                        stereo_image.right,
+                        right_features,
+                        stereo_matches,
+                    )
+                if first_update:
+                    img_size = stereo_image.left.shape
+                    img_ratio = img_size[1] / img_size[0]
+                    img_width = int(0.75 * width)
+                    img_height = int(img_width / img_ratio)
+                    cv2.resizeWindow("Stereo Image", (img_width, img_height))
 
-            full_img = np.hstack([stereo_image.left, stereo_image.right])
-            cv2.imshow(cv2_window_name, full_img)
-            if save_path is not None and recording:
-                LOGGER.debug("Saving image: %s", counter)
-                vis.capture_screen_image(
-                    (save_path / f"{counter:06}.png").as_posix(), False
-                )
-                counter += 1
+                full_img = np.hstack([stereo_image.left, stereo_image.right])
+                cv2.imshow(cv2_window_name, full_img)
+                if save_path is not None and recording:
+                    LOGGER.debug("Saving image: %s", counter)
+                    vis.capture_screen_image(
+                        (save_path / f"{counter:06}.png").as_posix(), False
+                    )
+                    counter += 1
 
         keypress = cv2.waitKey(1)
         if keypress == ord("n"):
