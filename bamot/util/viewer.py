@@ -384,21 +384,18 @@ def run(
 
 def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam):
     world_pos = row.world_pos
-    l, w, h = row.dim_3d
+    # whl
+    h, w, l = row.dim_3d
     rot_cam = row.rot_3d
-    x_corners = [h / 2, h / 2, h / 2, h / 2, -h / 2, -h / 2, -h / 2, -h / 2]
-    y_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2]
-    z_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2]
+    x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2]
+    y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
+    z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2]
 
-    pts = []
-    # w, h, l
-    for x, y, z in zip(x_corners, y_corners, z_corners):
-        pt_object = np.array([x, y, z]).reshape(3, 1)
-        pt_cam = rot_cam @ pt_object
-        pt_world = world_pos + T_world_cam[:3, :3] @ pt_cam
-        pts.append(pt_world)
+    corners = np.array([x_corners, y_corners, z_corners])
 
-    pts = o3d.utility.Vector3dVector(pts)
+    corners = (T_world_cam[:3, :3] @ rot_cam @ corners) + world_pos
+
+    pts = o3d.utility.Vector3dVector(corners.T)
     lines = o3d.utility.Vector2iVector(
         [
             [0, 1],
