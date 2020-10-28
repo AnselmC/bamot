@@ -35,6 +35,7 @@ class ObjectDetection:
     mask: np.ndarray
     convex_hull: List[Tuple[int, int]]
     cls: str
+    fully_visible: bool = True
     track_id: Optional[TrackId] = None
     features: Optional[List[Feature]] = None
 
@@ -96,6 +97,7 @@ class ObjectTrack:
     landmarks: Dict[int, Landmark]  # need to be referenced in constant time by id
     poses: Dict[ImageId, np.ndarray]  # changing poses over time w.r.t. world
     cls: str
+    fully_visible: bool = True
     active: bool = True
 
 

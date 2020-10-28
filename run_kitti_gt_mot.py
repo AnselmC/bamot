@@ -251,6 +251,7 @@ if __name__ == "__main__":
     detection_stream = get_detection_stream(
         obj_detections_path,
         offset=args.offset,
+        label_data=label_data,
         object_ids=[int(idx) for idx in args.indeces] if args.indeces else None,
     )
 

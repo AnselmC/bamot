@@ -31,17 +31,28 @@ LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
 
 
 def get_detection_stream(
-    obj_detections_path: Path, offset: int, object_ids: Optional[List[int]] = None
+    obj_detections_path: Path,
+    offset: int,
+    label_data,
+    object_ids: Optional[List[int]] = None,
 ) -> Iterable[List[StereoObjectDetection]]:
     detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
     if not detection_files:
         raise ValueError(f"No detection files found at {obj_detections_path}")
     LOGGER.debug("Found %d detection files", len(detection_files))
-    for f in detection_files[offset:]:
+    for i, f in enumerate(detection_files[offset:]):
         with open(f, "rb") as fp:
             detections = pickle.load(fp)
         if object_ids:
             detections = [d for d in detections if d.left.track_id in object_ids]
+
+        for d in detections:
+            try:
+                row_data = label_data[d.left.track_id][i + offset]
+                d.fully_visible = row_data.occ_lvl <= 1 and row_data.trunc_lvl <= 1
+            except KeyError as exc:
+                # TODO: why is this happening?
+                pass
         yield detections
     LOGGER.debug("Finished yielding object detections")
 

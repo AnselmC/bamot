@@ -4,14 +4,13 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
-import numpy as np
-from PIL import Image, ImageDraw
-
 import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 import cv2
+import numpy as np
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
+from PIL import Image, ImageDraw
 
 if TYPE_CHECKING:
     import tensorflow as tf

@@ -318,9 +318,7 @@ def run(
             T_world_obj = T_world_obj1
         T_world_cam = current_cam_pose
         T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-        if (
-            len(track_matches) >= 5
-        ):  # and len(track_matches) > (0.1 * len(track.landmarks)):
+        if len(track_matches) >= 5:  # 10 and track.fully_visible:
             T_cam_obj, successful = _localize_object(
                 left_features=left_features,
                 track_matches=track_matches,
@@ -490,7 +488,7 @@ def step(
         for match in matches:
             detection = new_detections[match.detection_index]
             track = object_tracks[match.track_index]
-            track = object_tracks[match.track_index]
+            track.fully_visible = new_detections[match.detection_index]
             active_tracks.append(match.track_index)
             matched_detections.append(match.detection_index)
             futures_to_track_index[
