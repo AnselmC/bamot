@@ -27,6 +27,24 @@ def _get_n_best(reports, keys, n):
     return best_medianss, best_meanss
 
 
+def get_metrics(summary):
+    print("-" * 30)
+    print("Median (total)")
+    print(f'Total: {summary["total"]["median"]:.2f}')
+    print(f'Cars: {summary["obj-type"]["car"]["median"]:.2f}')
+    print(f'Peds: {summary["obj-type"]["pedestrian"]["median"]:.2f}')
+    print("Median (obj means)")
+    print(f"Total: {summary['per-obj']['all']['median-of-mean']:.2f}")
+    print(f"Cars: {summary['obj-type']['car']['all']['median-of-mean']:.2f}")
+    print(
+        f"Pedestrian: {summary['obj-type']['pedestrian']['all']['median-of-mean']:.2f}"
+    )
+    print("Outlier percentage")
+    print(f"Total: {summary['per-obj']['outlier-pct']:.2f}")
+    print(f"Cars: {summary['obj-type']['car']['outlier-pct']:.2f}")
+    print(f"Pedestrian: {summary['obj-type']['pedestrian']['outlier-pct']:.2f}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
@@ -49,17 +67,16 @@ if __name__ == "__main__":
             rep = yaml.load(fp, Loader=yaml.FullLoader)
         reports[r.split("/")[-1]] = rep["summary"]
 
-    if len(reports) < 2:
+   if len(reports) < 2:
         print("Need at least two directories/files to compare")
         exit()
 
     # get fname
     # filter by
     for fname, summary in reports.items():
+        print("+" * 30)
         print(fname)
-        print(f'Total: {summary["total"]["median"]:.2f}')
-        print(f'Cars: {summary["obj-type"]["car"]["median"]:.2f}')
-        print(f'Peds: {summary["obj-type"]["pedestrian"]["median"]:.2f}')
+        print(get_metrics(summary))
     n = args.n
     best_medians, best_means = _get_n_best(reports, ["total"], n)
     print(f"BEST MEDIANS: {best_medians}")

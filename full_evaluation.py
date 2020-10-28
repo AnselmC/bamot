@@ -112,10 +112,12 @@ def _summarize_df(df):
     df_ped = df.loc[df.obj_class == "Pedestrian"]
     df_car = df.loc[df.obj_class == "Car"]
     obj_summary["car"] = _get_metrics(df_car)
+    obj_summary["car"].update(_summarize_per_obj(df_car))
     obj_summary["pedestrian"] = _get_metrics(df_ped)
+    obj_summary["pedestrian"].update(_summarize_per_obj(df_ped))
     summary["obj-type"] = obj_summary
     summary["distance"] = _summarize_df_by_dist(df)
-    summary["per-obj"] = _summarize_per_obj(df)
+    summary["per-obj"] = _summarize_per_obj(df, summarize_best_worst=True)
     return summary
 
 
@@ -126,18 +128,18 @@ def _summarize_best_worst(df, group, summarize_item):
     summary = {}
     best = {}
     best_mean = []
-    for item in mean_errors.nsmallest(n=10).items():
+    for item in mean_errors.nsmallest(n=3).items():
         best_mean.append(summarize_item(df, item))
     best_median = []
-    for item in median_errors.nsmallest(n=10).items():
+    for item in median_errors.nsmallest(n=3).items():
         best_median.append(summarize_item(df, item))
 
     worst = {}
     worst_mean = []
-    for item in mean_errors.nlargest(n=10).items():
+    for item in mean_errors.nlargest(n=3).items():
         worst_mean.append(summarize_item(df, item))
     worst_median = []
-    for item in median_errors.nlargest(n=10).items():
+    for item in median_errors.nlargest(n=3).items():
         worst_median.append(summarize_item(df, item))
 
     best["median"] = best_median
@@ -149,38 +151,71 @@ def _summarize_best_worst(df, group, summarize_item):
     return summary
 
 
-def _summarize_per_obj(df):
+def _summarize_per_obj(df, summarize_best_worst=False):
+    obj_summary = {}
     df_groupedby_obj = df.groupby(["scene", "object_id", "obj_class"])
+    obj_summary["all"] = _summarize_groupedby_obj(
+        df_groupedby_obj, summarize_best_worst=summarize_best_worst
+    )
+    df_groupedby_obj_close = df.loc[
+        df_groupedby_obj.distance.transform("mean") < 5
+    ].groupby(["scene", "object_id", "obj_class"])
+    obj_summary["close"] = _summarize_groupedby_obj(df_groupedby_obj_close)
+    df_groupedby_obj_mid = df.loc[
+        df_groupedby_obj.distance.transform("mean") < 30
+    ].groupby(["scene", "object_id", "obj_class"])
+    obj_summary["mid"] = _summarize_groupedby_obj(df_groupedby_obj_mid)
+    df_groupedby_obj_far = df.loc[
+        df_groupedby_obj.distance.transform("mean") > 30
+    ].groupby(["scene", "object_id", "obj_class"])
+    obj_summary["far"] = _summarize_groupedby_obj(df_groupedby_obj_far)
+    # outliers: close: num_objects * median error gt 1
+    #           mid: num_objects * median error gt 5
+    #           far: num_objects * median error gt 10
+    # divided by num objects from all
+    num_outliers_close = (
+        obj_summary["close"]["num-objs"] - obj_summary["close"]["mean-error-lt-1"]
+    )
+    num_outliers_mid = (
+        obj_summary["mid"]["num-objs"] - obj_summary["mid"]["mean-error-lt-5"]
+    )
+    num_outliers_far = (
+        obj_summary["far"]["num-objs"] - obj_summary["far"]["mean-error-lt-10"]
+    )
+    num_outliers = num_outliers_close + num_outliers_mid + num_outliers_far
+    num_objs = obj_summary["all"]["num-objs"]
+    if num_objs:
+        obj_summary["outlier-pct"] = num_outliers / num_objs
+    else:
+        obj_summary["outlier-pct"] = "NA"
+    return obj_summary
+
+
+def _summarize_groupedby_obj(df_groupedby_obj, summarize_best_worst=False):
     num_objs = len(df_groupedby_obj)
     mean_errors = df_groupedby_obj.error.mean()
     median_errors = df_groupedby_obj.error.median()
     obj_summary = {}
+    obj_summary["num-objs"] = num_objs
     obj_summary["mean-of-mean"] = float(mean_errors.mean())
     obj_summary["median-of-mean"] = float(mean_errors.median())
     obj_summary["mean-of-median"] = float(median_errors.mean())
     obj_summary["median-of-median"] = float(median_errors.median())
-    obj_summary["mean-error-lt-10-pct"] = float(
-        100 * (mean_errors < 10).sum() / num_objs
-    )
-    obj_summary["mean-error-lt-5-pct"] = float(100 * (mean_errors < 5).sum() / num_objs)
-    obj_summary["mean-error-lt-3-pct"] = float(100 * (mean_errors < 3).sum() / num_objs)
-    obj_summary["mean-error-lt-1-pct"] = float(100 * (mean_errors < 1).sum() / num_objs)
-    obj_summary["median-error-lt-10-pct"] = float(
-        100 * (median_errors < 10).sum() / num_objs
-    )
-    obj_summary["median-error-lt-5-pct"] = float(
-        100 * (median_errors < 5).sum() / num_objs
-    )
-    obj_summary["median-error-lt-3-pct"] = float(
-        100 * (median_errors < 3).sum() / num_objs
-    )
-    obj_summary["median-error-lt-1-pct"] = float(
-        100 * (median_errors < 1).sum() / num_objs
-    )
-    best_worst = _summarize_best_worst(
-        df, group=["scene", "object_id", "obj_class"], summarize_item=_get_obj_summary
-    )
-    obj_summary.update(best_worst)
+    obj_summary["mean-error-lt-10"] = float((mean_errors < 10).sum())
+    obj_summary["mean-error-lt-5"] = float((mean_errors < 5).sum())
+    obj_summary["mean-error-lt-3"] = float((mean_errors < 3).sum())
+    obj_summary["mean-error-lt-1"] = float((mean_errors < 1).sum())
+    obj_summary["median-error-lt-10"] = float((median_errors < 10).sum())
+    obj_summary["median-error-lt-5"] = float((median_errors < 5).sum())
+    obj_summary["median-error-lt-3"] = float((median_errors < 3).sum())
+    obj_summary["median-error-lt-1"] = float((median_errors < 1).sum())
+    if summarize_best_worst:
+        best_worst = _summarize_best_worst(
+            df,
+            group=["scene", "object_id", "obj_class"],
+            summarize_item=_get_obj_summary,
+        )
+        obj_summary.update(best_worst)
     return obj_summary
 
 
