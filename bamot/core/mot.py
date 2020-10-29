@@ -396,6 +396,8 @@ def run(
         return track, left_features, right_features, stereo_matches
 
     for (img_id, stereo_image), new_detections in zip(images, detections):
+        if stop_flag.is_set():
+            break
         while not continuous and not next_step.is_set():
             time.sleep(0.05)
         next_step.clear()
