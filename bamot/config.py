@@ -42,6 +42,7 @@ __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.
 __using_mad = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
+__sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
 
 if __config_file.exists():
     with open(__config_file.as_posix(), "r") as fp:
@@ -66,7 +67,7 @@ CONFIG = Config(
     MAX_DIST=__user_config.get("max_dist", 150),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),
     NUM_FEATURES=__user_config.get("num_features", 8000),
-    SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", 10),
+    SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
 )
 
