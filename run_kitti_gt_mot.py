@@ -291,6 +291,7 @@ if __name__ == "__main__":
             label_data=label_data,
             save_path=Path(args.record) if args.record else None,
             gt_poses=gt_poses,
+            recording=args.record,
             show_trajs=not args.viewer_disable_trajs,
             show_gt=not args.viewer_disable_gt,
             cam_coordinates=args.cam,

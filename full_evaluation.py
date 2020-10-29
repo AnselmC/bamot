@@ -174,20 +174,20 @@ def _summarize_per_obj(df, summarize_best_worst=False):
     #           far: num_objects * median error gt 10
     # divided by num objects from all
     num_outliers_close = (
-        obj_summary["close"]["num-objs"] - obj_summary["close"]["mean-error-lt-1"]
+        obj_summary["close"]["num-objs"] - obj_summary["close"]["median-error-lt-1"]
     )
     num_outliers_mid = (
-        obj_summary["mid"]["num-objs"] - obj_summary["mid"]["mean-error-lt-5"]
+        obj_summary["mid"]["num-objs"] - obj_summary["mid"]["median-error-lt-5"]
     )
     num_outliers_far = (
-        obj_summary["far"]["num-objs"] - obj_summary["far"]["mean-error-lt-10"]
+        obj_summary["far"]["num-objs"] - obj_summary["far"]["median-error-lt-10"]
     )
     num_outliers = num_outliers_close + num_outliers_mid + num_outliers_far
     num_objs = obj_summary["all"]["num-objs"]
     if num_objs:
-        obj_summary["outlier-pct"] = num_outliers / num_objs
+        obj_summary["outlier-ratio"] = num_outliers / num_objs
     else:
-        obj_summary["outlier-pct"] = "NA"
+        obj_summary["outlier-ratio"] = "NA"
     return obj_summary
 
 

@@ -280,6 +280,7 @@ def run(
     cam_coordinates: bool = False,
     show_trajs: bool = True,
     show_gt: bool = True,
+    recording: bool = False,
 ):
     if save_path:
         if not save_path.exists():
@@ -310,7 +311,6 @@ def run(
     vis.add_geometry(ego_geometries.curr_pose)
     first_update = True
     counter = 0
-    recording = False
     object_tracks = {}
     current_img_id = 0
     while not stop_flag.is_set():

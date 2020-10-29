@@ -39,10 +39,10 @@ def get_metrics(summary):
     print(
         f"Pedestrian: {summary['obj-type']['pedestrian']['all']['median-of-mean']:.2f}"
     )
-    print("Outlier percentage")
-    print(f"Total: {summary['per-obj']['outlier-pct']:.2f}")
-    print(f"Cars: {summary['obj-type']['car']['outlier-pct']:.2f}")
-    print(f"Pedestrian: {summary['obj-type']['pedestrian']['outlier-pct']:.2f}")
+    print("Outlier ratio")
+    print(f"Total: {summary['per-obj']['outlier-ratio']:.2f}")
+    print(f"Cars: {summary['obj-type']['car']['outlier-ratio']:.2f}")
+    print(f"Pedestrian: {summary['obj-type']['pedestrian']['outlier-ratio']:.2f}")
 
 
 if __name__ == "__main__":
@@ -67,7 +67,7 @@ if __name__ == "__main__":
             rep = yaml.load(fp, Loader=yaml.FullLoader)
         reports[r.split("/")[-1]] = rep["summary"]
 
-   if len(reports) < 2:
+    if len(reports) < 2:
         print("Need at least two directories/files to compare")
         exit()
 
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     for fname, summary in reports.items():
         print("+" * 30)
         print(fname)
-        print(get_metrics(summary))
+        get_metrics(summary)
     n = args.n
     best_medians, best_means = _get_n_best(reports, ["total"], n)
     print(f"BEST MEDIANS: {best_medians}")
