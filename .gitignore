@@ -215,3 +215,4 @@ data
 .DS_Store
 .coverage
 /*.yaml
+*.avi
