@@ -1,19 +1,54 @@
 import argparse
+import datetime
+import json
+import logging
 import multiprocessing as mp
 import queue
+import subprocess
 import threading
 from pathlib import Path
 
+import colorlog
 from bamot.config import CONFIG as config
+from bamot.config import get_config_dict
 from bamot.core.disparity import run
 from bamot.util.kitti import (get_cameras_from_kitti, get_detection_stream,
                               get_gt_poses_from_kitti, get_image_shape,
                               get_label_data_from_kitti)
+from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 from run_kitti_gt_mot import _get_image_stream
 
+LOG_LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "ERROR": logging.ERROR}
+LOGGER = colorlog.getLogger()
+HANDLER = TqdmLoggingHandler()
+HANDLER.setFormatter(
+    colorlog.ColoredFormatter(
+        "%(asctime)s | %(log_color)s%(name)s:%(levelname)s%(reset)s: %(message)s",
+        datefmt="%H:%M:%S",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "white",
+            "SUCCESS:": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "red,bg_white",
+        },
+    )
+)
+LOGGER.handlers = [HANDLER]
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("BAMOT with GT KITTI data")
+    parser = argparse.ArgumentParser("DISPARITY with GT KITTI data")
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        dest="verbosity",
+        help="verbosity of output (default is INFO, surpresses most logs)",
+        type=str,
+        choices=["DEBUG", "INFO", "ERROR"],
+        default="INFO",
+    )
     parser.add_argument(
         "-s",
         "--scene",
@@ -79,7 +114,23 @@ if __name__ == "__main__":
         dest="continuous",
         help="Whether to run process continuously (default is next step via 'n' keypress).",
     )
+    parser.add_argument(
+        "-t",
+        "--tags",
+        type=str,
+        nargs="+",
+        help="One or several tags for the given run (default=`YEAR_MONTH_DAY-HOUR_MINUTE`)",
+        default=[datetime.datetime.strftime(datetime.datetime.now(), "%Y_%m_%d-%H_%M")],
+    )
+    parser.add_argument(
+        "--out",
+        dest="out",
+        type=str,
+        help="""Where to save GT and estimated object trajectories
+        (default: `<kitti>/trajectories/<scene>/<features>/<tags>[0]/<tags>[1]/.../<tags>[N]`)""",
+    )
     args = parser.parse_args()
+    LOGGER.setLevel(LOG_LEVELS[args.verbosity])
     scene = str(args.scene).zfill(4)
     if args.multiprocessing:
         queue_class = mp.JoinableQueue
@@ -118,7 +169,7 @@ if __name__ == "__main__":
             "stop_flag": stop_flag,
             "next_step": next_step,
             "returned_data": returned_data,
-            "continuous": args.continuous,
+            "continuous": args.continuous or args.no_viewer,
         },
         name="DISPARITY",
     )
@@ -142,3 +193,46 @@ if __name__ == "__main__":
             show_gt=not args.viewer_disable_gt,
             cam_coordinates=args.cam,
         )
+    disp_process.join()
+    estimated_trajectories_world, estimated_trajectories_cam = returned_data.get()
+    returned_data.task_done()
+    returned_data.join()
+    if not args.out:
+        out_path = kitti_path / "trajectories" / scene / config.FEATURE_MATCHER
+        for tag in args.tags:
+            out_path /= tag
+    else:
+        out_path = Path(args.out)
+
+    # Save trajectories
+    out_path.mkdir(exist_ok=True, parents=True)
+    out_est_world = out_path / "est_trajectories_world.json"
+    out_est_cam = out_path / "est_trajectories_cam.json"
+    # estimated
+    with open(out_est_world, "w") as fp:
+        json.dump(estimated_trajectories_world, fp, indent=4, sort_keys=True)
+    with open(out_est_cam, "w") as fp:
+        json.dump(estimated_trajectories_cam, fp, indent=4, sort_keys=True)
+    LOGGER.info(
+        "Saved estimated object track trajectories to %s", out_path,
+    )
+
+    # Save config + git hash
+    state_file = out_path / "state.json"
+    with open(state_file, "w") as fp:
+        state = {}
+        state["CONFIG"] = get_config_dict()
+        state["HASH"] = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.strip()
+        json.dump(state, fp, indent=4)
+
+    # Cleanly shutdown
+    while not shared_data.empty():
+        shared_data.get()
+        shared_data.task_done()
+    shared_data.join()
+    LOGGER.info("FINISHED RUNNING KITTI GT DISPARITY")

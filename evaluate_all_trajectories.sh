@@ -9,5 +9,5 @@ done
 
 for scene in $(seq -f "%02g" $start $end)
 do
-    python evaluate_trajectories.py data/KITTI/tracking/training/trajectories/00$scene/$feature/$tags -s data/evaluation/$feature/ -p -e 15
+    python evaluate_trajectories.py data/KITTI/tracking/training/trajectories/00$scene/$feature/$tags -s data/evaluation/$feature/ -e 15
 done
