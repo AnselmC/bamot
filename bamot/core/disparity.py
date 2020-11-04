@@ -5,7 +5,8 @@ import time
 import numpy as np
 
 import cv2
-from bamot.core.base_types import Landmark, ObjectTrack, TrackMatch
+from bamot.core.base_types import (Landmark, ObjectTrack, StereoImage,
+                                   TrackMatch)
 from bamot.core.mot import _compute_estimated_trajectories
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 
@@ -25,8 +26,9 @@ def get_Q_matrix(stereo_cam):
     cx = stereo_cam.left.cx
     cx2 = stereo_cam.right.cx
     cy = stereo_cam.left.cy
-    Tx = 10 * stereo_cam.T_left_right[0, 3]  # TODO: why factor of 10?
-    f = stereo_cam.left.fx
+    Tx = -stereo_cam.T_left_right[0, 3]
+    f = stereo_cam.left.fx  # should this be sqrt(2) * f?
+
     return np.array(
         [
             [1, 0, 0, -cx],
@@ -38,7 +40,10 @@ def get_Q_matrix(stereo_cam):
 
 
 def get_entire_point_cloud(disp, Q):
-    points_3d = cv2.reprojectImageTo3D(disp, Q)
+    # need to divide by 16 and cast to float as per:
+    # https://docs.opencv.org/master/d9/d0c/group__calib3d.html#ga1bc1152bd57d63bc524204f21fde6e02
+    # also, returned points are in left camera coordinates
+    points_3d = cv2.reprojectImageTo3D((disp / 16).astype(np.float32), Q)
     return points_3d
 
 
@@ -62,12 +67,24 @@ def display_disparity(disp):
     cv2.waitKey(0)
 
 
-def create_landmarks_from_pointcloud(point_cloud, T_obj_cam):
+def create_disparity_stereo_img(stereo_img, disp):
+    gray_left, _ = map(
+        lambda x: cv2.cvtColor(x, cv2.COLOR_BGR2GRAY),
+        [stereo_img.left, stereo_img.right],
+    )
+    disp = normalize_img(disp)
+    return StereoImage(left=gray_left, right=disp)
+
+
+# def create_landmarks_from_pointcloud(point_cloud, T_obj_cam):
+def create_landmarks_from_pointcloud(point_cloud_obj):
     landmarks = {}
     # T_obj_world is always T_world_cam + cluster_center_mean
-    for i, pt_3d in enumerate(point_cloud):
-        x, y, z = from_homogeneous_pt(T_obj_cam @ to_homogeneous_pt(pt_3d))
-        landmarks[i] = Landmark(np.array([x, y, z]).reshape(3, 1), [])
+    for i, pt_3d in enumerate(point_cloud_obj):
+        # x, y, z = from_homogeneous_pt(T_obj_cam @ to_homogeneous_pt(pt_3d))
+        # x, y, z = -pt_3d
+        # landmarks[i] = Landmark(np.array([-y, z, -x]).reshape(3, 1), [])
+        landmarks[i] = Landmark(pt_3d.reshape(3, 1), [])
     return landmarks
 
 
@@ -82,7 +99,7 @@ def run(
     next_step,
     continuous,
 ):
-    disp_computer = cv2.StereoBM_create(numDisparities=48)
+    disp_computer = cv2.StereoBM_create(numDisparities=48, blockSize=23)
     Q = get_Q_matrix(stereo_cam)
     object_tracks = {}
     for (img_id, stereo_img), new_detections in zip(images, detections):
@@ -102,7 +119,9 @@ def run(
                 map(lambda x: x.left.track_id, new_detections)
             )
         ]
+        active_tracks = []
         for match in matches:
+            active_tracks.append(match.track_index)
             if object_tracks.get(match.track_index) is None:
                 LOGGER.debug("Added track with index %d", match.track_index)
                 object_tracks[match.track_index] = ObjectTrack(
@@ -110,27 +129,48 @@ def run(
                     poses={img_id: current_pose},
                     cls=new_detections[match.detection_index].left.cls,
                 )
-            detection = new_detections[match.detection_index]
-            full_mask = valid_mask & detection.left.mask & valid_dist
-            point_cld_obj = point_cld[full_mask]
             track = object_tracks[match.track_index]
-            cluster_center = np.mean(point_cld_obj, axis=0)
+            detection = new_detections[match.detection_index]
+            # mask out point cloud
+            full_mask = valid_mask & detection.left.mask & valid_dist
+            # point cloud is in left camera coordinates
+            point_cld_cam = point_cld[full_mask]
+            # move object coordinate system to center/mean of cluster
             T_world_cam = current_pose
-            t_cam_obj = cluster_center
-            t_world_obj = from_homogeneous_pt(
-                T_world_cam @ to_homogeneous_pt(t_cam_obj)
-            )
-            T_world_obj = np.identity(4)
-            T_world_obj[:3, 3] = t_world_obj.reshape(3)
-            # T_world_obj = np.linalg.inv(current_pose)
+            T_world_obj = current_pose.copy()
+            t_world_cam = T_world_cam[:3, 3].reshape(3, 1).copy()
+            cluster_center = np.mean(point_cld_cam, axis=0)
+            t_cam_obj = -cluster_center.reshape(3, 1)
+            T_cam_obj = np.identity(4)
+            T_cam_obj[:3, 3] = t_cam_obj.reshape(3)
+            T_world_obj[:3, 3] = (t_world_cam + t_cam_obj).reshape(3)
+            # transform point_cld_cam to obj coordinates
+            # create homogeneous point_cloud
+            # point_cld_cam_hom = np.ones((point_cld_cam.shape[0], 4))
+            # point_cld_cam_hom[:, :3] = point_cld_cam.copy()
+            # T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
+            # point_cld_obj_hom = T_obj_cam @ point_cld_cam_hom.T
+            # point_cld_obj = (point_cld_obj_hom[:, :3].T / point_cld_obj_hom[:3, 3]).T
+            # point_cld_obj = point_cld_cam - cluster_center
+            # point_cld_obj = point_cld_cam - cluster_center
+            # create transformation from obj to world
+            # T_world_cam = current_pose
+            # t_world_obj = T_world_cam[:3, 3] - cluster_center
+            # T_world_obj = np.identity(4)
+            # T_world_obj[:3, 3] = t_world_obj.reshape(3)
+            # add pose to track
             track.poses[img_id] = T_world_obj
-            T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-            track.landmarks = create_landmarks_from_pointcloud(point_cld_obj, T_obj_cam)
+            track.poses[img_id] = T_world_cam
+            track.landmarks = create_landmarks_from_pointcloud(point_cld_cam)
 
+        old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
+        for track_id in old_tracks:
+            if object_tracks[track_id].active:
+                object_tracks[track_id].active = False
         shared_data.put(
             {
                 "object_tracks": copy.deepcopy(object_tracks),
-                "stereo_image": stereo_img,
+                "stereo_image": create_disparity_stereo_img(stereo_img, disp),
                 "img_id": img_id,
                 "current_cam_pose": current_pose,
             }

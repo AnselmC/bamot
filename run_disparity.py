@@ -113,7 +113,7 @@ if __name__ == "__main__":
             "images": image_stream,
             "detections": detection_stream,
             "stereo_cam": stereo_cam,
-            "all_poses": gt_poses[args.offset :],
+            "all_poses": gt_poses,
             "shared_data": shared_data,
             "stop_flag": stop_flag,
             "next_step": next_step,
