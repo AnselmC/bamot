@@ -4,9 +4,10 @@ import pickle
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
-import cv2
 import numpy as np
 import pandas as pd
+
+import cv2
 from bamot.core.base_types import (CameraParameters, ImageId, ObjectDetection,
                                    StereoCamera, StereoImage,
                                    StereoObjectDetection, TrackId)
@@ -57,8 +58,15 @@ def get_detection_stream(
     LOGGER.debug("Finished yielding object detections")
 
 
+def get_image_shape(kitti_path: str, scene: str) -> Tuple[int, int]:
+    left_img_path = Path(kitti_path) / "image_02" / scene
+    left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
+    img_shape = cv2.imread(left_imgs[0], cv2.IMREAD_COLOR).astype(np.uint8).shape
+    return img_shape
+
+
 def get_image_stream(
-    kitti_path: Path, scene: str, with_file_names: bool = False
+    kitti_path: Path, scene: str, offset: int = 0, with_file_names: bool = False,
 ) -> Iterable[StereoImage]:
     class Stream:
         def __init__(self, generator, length):
@@ -73,8 +81,8 @@ def get_image_stream(
 
     left_img_path = kitti_path / "image_02" / scene
     right_img_path = kitti_path / "image_03" / scene
-    left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
-    right_imgs = sorted(glob.glob(right_img_path.as_posix() + "/*.png"))
+    left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))[offset:]
+    right_imgs = sorted(glob.glob(right_img_path.as_posix() + "/*.png"))[offset:]
 
     def _generator(with_file_names: bool):
         for left, right in zip(left_imgs, right_imgs):

@@ -7,8 +7,9 @@ import time
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -103,13 +104,12 @@ def _add_new_landmarks_and_observations(
     T_obj_cam: np.ndarray,
     img_id: int,
 ) -> Dict[int, Landmark]:
-    # add new observations to existing landmarks
-    # explicitly add stereo features --> look at visnav
     already_added_features = []
     stereo_match_dict = {}
     for left_feature_idx, right_feature_idx in stereo_matches:
         stereo_match_dict[left_feature_idx] = right_feature_idx
 
+    # add new observations to existing landmarks
     for features_idx, landmark_idx in track_matches:
         feature = left_features[features_idx]
         pt_obj = landmarks[landmark_mapping[landmark_idx]].pt_3d

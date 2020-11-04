@@ -14,17 +14,17 @@ import warnings
 from pathlib import Path
 from typing import Iterable, List, Tuple, Union
 
+import numpy as np
+
 import colorlog
 import cv2
-import numpy as np
 import tqdm
-
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.base_types import StereoImage
 from bamot.core.mot import run
 from bamot.util.kitti import (get_cameras_from_kitti, get_detection_stream,
-                              get_gt_poses_from_kitti,
+                              get_gt_poses_from_kitti, get_image_shape,
                               get_label_data_from_kitti)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
@@ -60,13 +60,6 @@ def _fake_slam(
         slam_data.put(all_poses)
         time.sleep(20 / 1000)  # 20 ms or 50 Hz
     LOGGER.debug("Finished adding fake slam data")
-
-
-def _get_image_shape(kitti_path: str) -> Tuple[int, int]:
-    left_img_path = Path(kitti_path) / "image_02" / scene
-    left_imgs = sorted(glob.glob(left_img_path.as_posix() + "/*.png"))
-    img_shape = cv2.imread(left_imgs[0], cv2.IMREAD_COLOR).astype(np.uint8).shape
-    return img_shape
 
 
 def _get_image_stream(
@@ -241,7 +234,7 @@ if __name__ == "__main__":
     slam_data = queue_class()
     stop_flag = flag_class()
     next_step = flag_class()
-    img_shape = _get_image_shape(kitti_path)
+    img_shape = get_image_shape(kitti_path, scene)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
     stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)

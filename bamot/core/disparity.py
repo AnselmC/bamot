@@ -8,7 +8,6 @@ import cv2
 from bamot.core.base_types import (Landmark, ObjectTrack, StereoImage,
                                    TrackMatch)
 from bamot.core.mot import _compute_estimated_trajectories
-from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 
 LOGGER = logging.getLogger("CORE:DISPARITY")
 
@@ -76,15 +75,12 @@ def create_disparity_stereo_img(stereo_img, disp):
     return StereoImage(left=gray_left, right=disp)
 
 
-# def create_landmarks_from_pointcloud(point_cloud, T_obj_cam):
-def create_landmarks_from_pointcloud(point_cloud_obj):
+def create_landmarks_from_pointcloud(point_cloud_cam, t):
     landmarks = {}
-    # T_obj_world is always T_world_cam + cluster_center_mean
-    for i, pt_3d in enumerate(point_cloud_obj):
-        # x, y, z = from_homogeneous_pt(T_obj_cam @ to_homogeneous_pt(pt_3d))
-        # x, y, z = -pt_3d
-        # landmarks[i] = Landmark(np.array([-y, z, -x]).reshape(3, 1), [])
-        landmarks[i] = Landmark(pt_3d.reshape(3, 1), [])
+    for i, pt_3d in enumerate(point_cloud_cam):
+        pt_3d_obj = pt_3d.reshape(3, 1) - t.reshape(3, 1)
+        if np.linalg.norm(pt_3d_obj) < 4:
+            landmarks[i] = Landmark(pt_3d_obj, [])
     return landmarks
 
 
@@ -135,33 +131,15 @@ def run(
             full_mask = valid_mask & detection.left.mask & valid_dist
             # point cloud is in left camera coordinates
             point_cld_cam = point_cld[full_mask]
-            # move object coordinate system to center/mean of cluster
+            # move object coordinate system to center/median of cluster
             T_world_cam = current_pose
-            T_world_obj = current_pose.copy()
-            t_world_cam = T_world_cam[:3, 3].reshape(3, 1).copy()
-            cluster_center = np.mean(point_cld_cam, axis=0)
-            t_cam_obj = -cluster_center.reshape(3, 1)
             T_cam_obj = np.identity(4)
+            cluster_center = np.median(point_cld_cam, axis=0)
+            t_cam_obj = cluster_center.reshape(3, 1)
             T_cam_obj[:3, 3] = t_cam_obj.reshape(3)
-            T_world_obj[:3, 3] = (t_world_cam + t_cam_obj).reshape(3)
-            # transform point_cld_cam to obj coordinates
-            # create homogeneous point_cloud
-            # point_cld_cam_hom = np.ones((point_cld_cam.shape[0], 4))
-            # point_cld_cam_hom[:, :3] = point_cld_cam.copy()
-            # T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-            # point_cld_obj_hom = T_obj_cam @ point_cld_cam_hom.T
-            # point_cld_obj = (point_cld_obj_hom[:, :3].T / point_cld_obj_hom[:3, 3]).T
-            # point_cld_obj = point_cld_cam - cluster_center
-            # point_cld_obj = point_cld_cam - cluster_center
-            # create transformation from obj to world
-            # T_world_cam = current_pose
-            # t_world_obj = T_world_cam[:3, 3] - cluster_center
-            # T_world_obj = np.identity(4)
-            # T_world_obj[:3, 3] = t_world_obj.reshape(3)
-            # add pose to track
+            T_world_obj = T_world_cam @ T_cam_obj
             track.poses[img_id] = T_world_obj
-            track.poses[img_id] = T_world_cam
-            track.landmarks = create_landmarks_from_pointcloud(point_cld_cam)
+            track.landmarks = create_landmarks_from_pointcloud(point_cld_cam, t_cam_obj)
 
         old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
         for track_id in old_tracks:

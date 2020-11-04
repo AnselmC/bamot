@@ -5,9 +5,9 @@ from pathlib import Path
 from threading import Event
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-import cv2
-import g2o
 import numpy as np
+
+import cv2
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -124,30 +124,33 @@ def _update_geometries(
                     pose_world_obj @ to_homogeneous_pt(lm.pt_3d)
                 )
                 center += pt_world
-                if i == len(track.poses) - 1:
+                if i == len(track.poses) - 1 and np.isfinite(pt_world).all():
                     points.append(pt_world)
             if i == len(track.poses) - 1 and len(points) > 3:
                 tmp_pt_cloud = o3d.geometry.PointCloud()
                 tmp_pt_cloud.points = o3d.utility.Vector3dVector(points)
-                bbox = tmp_pt_cloud.get_oriented_bounding_box()
-                bbox.color = color
-                track_geometries.bbox.points = bbox.get_box_points()
-                track_geometries.bbox.lines = o3d.utility.Vector2iVector(
-                    [
-                        [0, 1],
-                        [0, 2],
-                        [0, 3],
-                        [1, 6],
-                        [1, 7],
-                        [2, 5],
-                        [2, 7],
-                        [3, 5],
-                        [3, 6],
-                        [4, 5],
-                        [4, 6],
-                        [4, 7],
-                    ]
-                )
+                try:
+                    bbox = tmp_pt_cloud.get_oriented_bounding_box()
+                    track_geometries.bbox.points = bbox.get_box_points()
+                    track_geometries.bbox.lines = o3d.utility.Vector2iVector(
+                        [
+                            [0, 1],
+                            [0, 2],
+                            [0, 3],
+                            [1, 6],
+                            [1, 7],
+                            [2, 5],
+                            [2, 7],
+                            [3, 5],
+                            [3, 6],
+                            [4, 5],
+                            [4, 6],
+                            [4, 7],
+                        ]
+                    )
+                except RuntimeError:
+                    # happens when points are too close to each other
+                    pass
             if track.landmarks:
                 center /= len(track.landmarks)
             path_points.append(center.reshape(3,).tolist())
@@ -339,9 +342,9 @@ def run(
             )
             if new_data is not None:
                 stereo_image = new_data["stereo_image"]
-                all_left_features = new_data["all_left_features"]
-                all_right_features = new_data["all_right_features"]
-                all_stereo_matches = new_data["all_stereo_matches"]
+                all_left_features = new_data.get("all_left_features", [])
+                all_right_features = new_data.get("all_right_features", [])
+                all_stereo_matches = new_data.get("all_stereo_matches", [])
                 for left_features, right_features, stereo_matches in zip(
                     all_left_features, all_right_features, all_stereo_matches
                 ):
