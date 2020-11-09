@@ -94,7 +94,7 @@ def _get_image_stream(
 
 
 def _validate_args(args):
-    if args.indeces and args.negative_indeces:
+    if args.indeces and args.neg_indeces:
         raise ValueError("Can't provide `-id` and `-nid` at the same time")
 
 
@@ -262,7 +262,7 @@ if __name__ == "__main__":
             "stop_flag": stop_flag,
             "next_step": next_step,
             "returned_data": returned_data,
-            "continuous": args.continuous,
+            "continuous": args.continuous or args.no_viewer,
         },
         name="BAMOT",
     )
@@ -338,9 +338,5 @@ if __name__ == "__main__":
         ).stdout.strip()
         json.dump(state, fp, indent=4)
 
-    # Cleanly shutdown
-    while not shared_data.empty():
-        shared_data.get()
-        shared_data.task_done()
     shared_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT MOT")

@@ -20,6 +20,7 @@ class Config:
     NUM_FEATURES: str
     SLIDING_WINDOW_BA: int
     SLIDING_WINDOW_DESCRIPTORS: int
+    MAX_BAD_FRAMES: int
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
@@ -69,6 +70,7 @@ CONFIG = Config(
     NUM_FEATURES=__user_config.get("num_features", 8000),
     SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
+    MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3)
 )
 
 if CONFIG.USING_CONFIG_FILE:

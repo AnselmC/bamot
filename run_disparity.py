@@ -127,7 +127,14 @@ if __name__ == "__main__":
         dest="out",
         type=str,
         help="""Where to save GT and estimated object trajectories
-        (default: `<kitti>/trajectories/<scene>/<features>/<tags>[0]/<tags>[1]/.../<tags>[N]`)""",
+        (default: `<kitti>/trajectories/<scene>/disparity/<tags>[0]/<tags>[1]/.../<tags>[N]`)""",
+    )
+    parser.add_argument(
+        "-id",
+        "--indeces",
+        dest="indeces",
+        help="Use this to only track specific object ids (can't be used in conjunction w/ `-nid`)",
+        nargs="+",
     )
     args = parser.parse_args()
     LOGGER.setLevel(LOG_LEVELS[args.verbosity])
@@ -156,7 +163,10 @@ if __name__ == "__main__":
     )
     obj_detections_path = Path(config.DETECTIONS_PATH) / scene
     detection_stream = get_detection_stream(
-        obj_detections_path, offset=args.offset, label_data=label_data, object_ids=None,
+        obj_detections_path,
+        offset=args.offset,
+        label_data=label_data,
+        object_ids=[int(idx) for idx in args.indeces] if args.indeces else None,
     )
     disp_process = process_class(
         target=run,
@@ -198,7 +208,7 @@ if __name__ == "__main__":
     returned_data.task_done()
     returned_data.join()
     if not args.out:
-        out_path = kitti_path / "trajectories" / scene / config.FEATURE_MATCHER
+        out_path = kitti_path / "trajectories" / scene / "disparity"
         for tag in args.tags:
             out_path /= tag
     else:
@@ -230,9 +240,5 @@ if __name__ == "__main__":
         ).stdout.strip()
         json.dump(state, fp, indent=4)
 
-    # Cleanly shutdown
-    while not shared_data.empty():
-        shared_data.get()
-        shared_data.task_done()
     shared_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT DISPARITY")

@@ -4,12 +4,12 @@ import copy
 import logging
 import queue
 import time
+import uuid
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import numpy as np
-
 import cv2
+import numpy as np
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -29,6 +29,13 @@ from shapely.geometry import Polygon
 LOGGER = logging.getLogger("CORE:MOT")
 
 
+def _valid_motion(Tr_rel, Tr_rel_prev):
+    dist = np.linalg.norm(Tr_rel[:3, 3])
+    dist_prev = np.linalg.norm(Tr_rel_prev[:3, 3])
+    change = np.abs(dist - dist_prev) / dist_prev
+    return dist < 4
+
+
 def _localize_object(
     left_features: List[Feature],
     track_matches: List[Match],
@@ -36,13 +43,14 @@ def _localize_object(
     landmarks: Dict[int, Landmark],
     T_cam_obj: np.ndarray,
     camera_params: CameraParameters,
+    logger: logging.Logger,
     num_iterations: int = 2000,
     reprojection_error: float = 1.0,
 ) -> Tuple[np.ndarray, bool]:
     pts_3d = []
     pts_2d = []
 
-    LOGGER.debug(
+    logger.debug(
         "Localizing object based on %d point correspondences", len(track_matches)
     )
     # build pt arrays
@@ -70,8 +78,8 @@ def _localize_object(
         reprojectionError=reprojection_error,
     )
     if successful:
-        LOGGER.debug("Optimization successful! Found %d inliers", len(inliers))
-        LOGGER.debug("Running optimization with inliers...")
+        logger.debug("optimization successful! Found %d inliers", len(inliers))
+        logger.debug("running optimization with inliers...")
         successful, rvec, tvec = cv2.solvePnP(
             objectPoints=np.array([mp for i, mp in enumerate(pts_3d) if i in inliers]),
             imagePoints=np.array([ip for i, ip in enumerate(pts_2d) if i in inliers]),
@@ -89,7 +97,7 @@ def _localize_object(
             optimized_pose[:3, 3] = tvec
             LOGGER.debug("Optimized pose from \n%s\nto\n%s", T_cam_obj, optimized_pose)
             return optimized_pose, True
-    LOGGER.debug("Optimization failed...")
+    logger.debug("optimization failed...")
     return T_cam_obj, False
 
 
@@ -101,8 +109,9 @@ def _add_new_landmarks_and_observations(
     left_features: List[Feature],
     right_features: List[Feature],
     stereo_cam: StereoCamera,
-    T_obj_cam: np.ndarray,
+    T_cam_obj: np.ndarray,
     img_id: int,
+    logger: logging.Logger,
 ) -> Dict[int, Landmark]:
     already_added_features = []
     stereo_match_dict = {}
@@ -113,9 +122,7 @@ def _add_new_landmarks_and_observations(
     for features_idx, landmark_idx in track_matches:
         feature = left_features[features_idx]
         pt_obj = landmarks[landmark_mapping[landmark_idx]].pt_3d
-        pt_cam = from_homogeneous_pt(
-            np.linalg.inv(T_obj_cam) @ to_homogeneous_pt(pt_obj)
-        )
+        pt_cam = from_homogeneous_pt(T_cam_obj @ to_homogeneous_pt(pt_obj))
         z = pt_cam[2]
         if (
             z < 0.5 or np.linalg.norm(pt_cam) > config.MAX_DIST
@@ -138,13 +145,13 @@ def _add_new_landmarks_and_observations(
         )
         already_added_features.append(features_idx)
         landmarks[landmark_mapping[landmark_idx]].observations.append(obs)
-    LOGGER.debug("Added %d observations", len(already_added_features))
+    logger.debug("Added %d observations", len(already_added_features))
 
     # add new landmarks
-    landmark_id = max(landmarks.keys(), default=-1) + 1
     created_landmarks = 0
     bad_matches = []
     for left_feature_idx, right_feature_idx in stereo_matches:
+        landmark_id = uuid.uuid1().int
         # check whether landmark exists already
         if left_feature_idx in already_added_features:
             continue
@@ -174,7 +181,7 @@ def _add_new_landmarks_and_observations(
             bad_matches.append((left_feature_idx, right_feature_idx))
             continue
         pt_3d_obj = from_homogeneous_pt(
-            T_obj_cam @ to_homogeneous_pt(pt_3d_left_cam)
+            np.linalg.inv(T_cam_obj) @ to_homogeneous_pt(pt_3d_left_cam)
         ).reshape(3, 1)
         # create new landmark
         obs = Observation(
@@ -182,12 +189,11 @@ def _add_new_landmarks_and_observations(
         )
         landmark = Landmark(pt_3d_obj, [obs])
         landmarks[landmark_id] = landmark
-        landmark_id += 1
         created_landmarks += 1
 
     for match in bad_matches:
         stereo_matches.remove(match)
-    LOGGER.debug("Created %d landmarks", created_landmarks)
+    logger.debug("Created %d landmarks", created_landmarks)
     return landmarks
 
 
@@ -276,7 +282,7 @@ def run(
         track,
         detection,
         all_poses,
-        track_index,
+        track_id,
         stereo_cam,
         img_id,
         img_shape,
@@ -284,25 +290,27 @@ def run(
         current_cam_pose,
     ):
         track.active = True
+        track_logger = logging.getLogger(f"CORE:MOT:{track_id}")
+        track_logger.debug("Image: %d", img_id)
         feature_matcher = get_feature_matcher()
         # mask out object from image
         left_features = feature_matcher.detect_features(
-            stereo_image.left, detection.left.mask, img_id, track_index, "left"
+            stereo_image.left, detection.left.mask, img_id, track_id, "left"
         )
-        LOGGER.debug("Detected %d features on left object", len(left_features))
+        track_logger.debug("Detected %d features on left object", len(left_features))
         right_features = feature_matcher.detect_features(
-            stereo_image.right, detection.right.mask, img_id, track_index, "right"
+            stereo_image.right, detection.right.mask, img_id, track_id, "right"
         )
-        LOGGER.debug("Detected %d features on right object", len(right_features))
+        track_logger.debug("Detected %d features on right object", len(right_features))
         detection.left.features = left_features
         detection.right.features = right_features
         # match stereo features
         stereo_matches = feature_matcher.match_features(left_features, right_features)
-        LOGGER.debug("%d stereo matches", len(stereo_matches))
+        track_logger.debug("%d stereo matches", len(stereo_matches))
         # match left features with track features
         features, lm_mapping = _get_features_from_landmarks(track.landmarks)
         track_matches = feature_matcher.match_features(left_features, features)
-        LOGGER.debug("%d track matches", len(track_matches))
+        track_logger.debug("%d track matches", len(track_matches))
         # localize object
         T_world_obj1 = track.poses[list(track.poses.keys())[-1]]  # sorted by default
         # add motion if at least two poses are present
@@ -312,28 +320,58 @@ def run(
             except KeyError as e:
                 print(track.poses.keys())
                 raise e
-            T_obj0_obj1 = np.linalg.inv(T_world_obj0) @ T_world_obj1
-            T_world_obj = T_world_obj1 @ T_obj0_obj1  # constant motion assumption
+            T_rel_prev = np.linalg.inv(T_world_obj0) @ T_world_obj1
+            track_logger.debug("Adding const motion")
+            T_world_obj = T_world_obj1 @ T_rel_prev  # constant motion assumption
         else:
+            track_logger.debug("Not adding const motion")
+            T_rel_prev = None
             T_world_obj = T_world_obj1
         T_world_cam = current_cam_pose
-        T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
-        if len(track_matches) >= 5:  # 10 and track.fully_visible:
-            T_cam_obj, successful = _localize_object(
+        T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
+        enough_track_matches = len(track_matches) >= 5
+        enough_stereo_matches = len(stereo_matches) > min(len(track_matches), 5)
+        successful = True
+        valid_motion = True
+        if enough_track_matches:
+            T_cam_obj_pnp, successful = _localize_object(
                 left_features=left_features,
                 track_matches=track_matches,
                 landmark_mapping=lm_mapping,
                 landmarks=copy.deepcopy(track.landmarks),
-                T_cam_obj=np.linalg.inv(T_obj_cam),
+                T_cam_obj=T_cam_obj,
                 camera_params=stereo_cam.left,
+                logger=track_logger,
             )
-            if not successful:
-                track_matches.clear()
-            T_obj_cam = np.linalg.inv(T_cam_obj)
-        else:
-            track_matches.clear()
 
-        T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
+            if successful:
+                if T_rel_prev is not None:
+                    T_world_obj2 = T_world_cam @ T_cam_obj_pnp
+                    T_rel = np.linalg.inv(T_world_obj1) @ T_world_obj2
+                    valid_motion = _valid_motion(T_rel, T_rel_prev)
+                    if valid_motion:
+                        T_cam_obj = T_cam_obj_pnp
+
+        if not (enough_track_matches and successful and valid_motion):
+            if track_matches:
+                track_logger.debug("Clearing track matches")
+                track_matches.clear()
+            track_logger.debug("Enough matches: %s", enough_track_matches)
+            if enough_track_matches:
+                track_logger.debug("PnP successful: %s", successful)
+                if successful:
+                    track_logger.debug("Valid motion: %s", valid_motion)
+            if (
+                track.badly_tracked_frames > config.MAX_BAD_FRAMES
+                and enough_stereo_matches
+            ):
+                track_logger.debug("Clearing landmark")
+                track.landmarks.clear()
+                track.badly_tracked_frames = 0
+            else:
+                track.badly_tracked_frames += 1
+
+        T_world_obj = T_world_cam @ T_cam_obj
         track.poses[img_id] = T_world_obj
         # add new landmark observations from track matches
         # add new landmarks from stereo matches
@@ -346,20 +384,21 @@ def run(
             right_features=right_features,
             stereo_cam=stereo_cam,
             img_id=img_id,
-            T_obj_cam=T_obj_cam,
+            T_cam_obj=T_cam_obj,
+            logger=track_logger,
         )
         # BA optimizes landmark positions w.r.t. object and object position over time
         # -> SLAM optimizes motion of camera
         # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
         if len(track.poses) > 3 and len(track.landmarks) > 0:
-            LOGGER.debug("Running BA for object %d", track_index)
+            track_logger.debug("Running BA")
             track = object_bundle_adjustment(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
                 stereo_cam=stereo_cam,
             )
         # remove outlier landmarks
-        if track_index != -1 and track.landmarks:
+        if track_id != -1 and track.landmarks:
             landmarks_to_remove = []
             points = []
             for landmark in track.landmarks.values():
@@ -383,7 +422,9 @@ def run(
                     ) > config.MAD_SCALE_FACTOR * get_mad(points):
                         landmarks_to_remove.append(lid)
 
-            LOGGER.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
+            track_logger.debug(
+                "Removing %d outlier landmarks", len(landmarks_to_remove)
+            )
             for lid in landmarks_to_remove:
                 track.landmarks.pop(lid)
             # settings min_landmarks to 0 disables robust initialization
@@ -437,7 +478,6 @@ def run(
             }
         )
     stop_flag.set()
-    shared_data.put({})  # final data to eliminate race condition
     returned_data.put(_compute_estimated_trajectories(object_tracks, all_poses))
 
 
@@ -499,7 +539,7 @@ def step(
                     track=track,
                     detection=detection,
                     all_poses=all_poses,
-                    track_index=match.track_index,
+                    track_id=match.track_index,
                     stereo_cam=stereo_cam,
                     img_id=img_id,
                     img_shape=img_shape,

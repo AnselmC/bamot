@@ -10,6 +10,15 @@ from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 LOGGER = logging.getLogger("CORE:OPTIMIZATION")
 
 
+def get_obs_count(img_id, track):
+    num_obs = 0
+    for lm in track.landmarks.values():
+        for obs in lm.observations:
+            if obs.img_id == img_id:
+                num_obs += 1
+    return num_obs
+
+
 def object_bundle_adjustment(
     object_track: ObjectTrack,
     all_poses: Dict[ImageId, np.ndarray],
@@ -26,7 +35,14 @@ def object_bundle_adjustment(
     prev_cam, prev_prev_cam = None, None
     const_motion_edges = []
     frames = list(object_track.poses.keys())
+
     for img_id in frames[-config.SLIDING_WINDOW_BA :]:
+        num_obs = get_obs_count(img_id, object_track)
+        if num_obs < 5:
+            # no associated landmarks, skip pose
+            # reset prev and prev_prev_cam
+            prev_cam, prev_prev_cam = None, None
+            continue
         T_world_obj = object_track.poses[img_id]
         T_world_cam = all_poses[img_id]
         params = stereo_cam.left
@@ -45,17 +61,22 @@ def object_bundle_adjustment(
                 if object_track.cls == "car"
                 else config.CONSTANT_MOTION_WEIGHTS_PED
             )
-            if prev_cam is None:
-                prev_cam = pose_vertex
-            elif prev_prev_cam is None:
+            if prev_prev_cam is None:
                 prev_prev_cam = pose_vertex
+            elif prev_cam is None:
+                prev_cam = pose_vertex
             else:
                 const_motion_edge = g2o.EdgeSBALinearMotion()
                 const_motion_edge.set_vertex(0, prev_prev_cam)
                 const_motion_edge.set_vertex(1, prev_cam)
                 const_motion_edge.set_vertex(2, pose_vertex)
                 info = np.diag(
-                    np.hstack([np.repeat(rot_weight, 3), np.repeat(trans_weight, 3)])
+                    np.hstack(
+                        [
+                            np.repeat(num_obs * rot_weight, 3),
+                            np.repeat(num_obs * trans_weight, 3),
+                        ]
+                    )
                 )
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
@@ -111,6 +132,9 @@ def object_bundle_adjustment(
             robust_kernel.set_delta(delta)
             edge.set_robust_kernel(robust_kernel)
             optimizer.add_edge(edge)
+    if not mono_edges and not stereo_edges and not const_motion_edges:
+        LOGGER.debug("Nothing to optimize...")
+        return object_track
     # optimize
     LOGGER.debug(
         "Starting optimization w/ %d landmarks, %d poses, and %d observations",

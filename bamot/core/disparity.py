@@ -154,5 +154,4 @@ def run(
             }
         )
     stop_flag.set()
-    shared_data.put({})  # final data to eliminate race condition
     returned_data.put(_compute_estimated_trajectories(object_tracks, all_poses))

@@ -5,9 +5,8 @@ from pathlib import Path
 from threading import Event
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-import numpy as np
-
 import cv2
+import numpy as np
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -95,7 +94,11 @@ def _update_geometries(
     first_update: bool = False,
 ) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
+    inactive_tracks = []
     for ido, track in object_tracks.items():
+        if not track.active:
+            inactive_tracks.append(ido)
+            continue
         track_geometries = all_track_geometries.get(
             ido,
             TrackGeometries(
@@ -227,6 +230,16 @@ def _update_geometries(
             visualizer.update_geometry(track_geometries.gt_trajectory)
             visualizer.update_geometry(track_geometries.bbox)
             visualizer.update_geometry(track_geometries.gt_bbox)
+
+    for ido in inactive_tracks:
+        track_geometry = all_track_geometries.get(ido)
+        if track_geometry is not None:
+            visualizer.remove_geometry(track_geometry.pt_cloud)
+            visualizer.remove_geometry(track_geometry.bbox)
+            visualizer.remove_geometry(track_geometry.trajectory)
+            visualizer.remove_geometry(track_geometry.gt_bbox)
+            visualizer.remove_geometry(track_geometry.gt_trajectory)
+            del all_track_geometries[ido]
     ego_pts = []
     ego_path_lines = []
     for img_id, pose in enumerate(gt_poses):
@@ -316,7 +329,7 @@ def run(
     counter = 0
     object_tracks = {}
     current_img_id = 0
-    while not stop_flag.is_set():
+    while not stop_flag.is_set() or not shared_data.empty():
         try:
             new_data = shared_data.get_nowait()
             shared_data.task_done()
