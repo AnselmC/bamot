@@ -14,11 +14,11 @@ import warnings
 from pathlib import Path
 from typing import Iterable, List, Tuple, Union
 
-import numpy as np
-
 import colorlog
 import cv2
+import numpy as np
 import tqdm
+
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.base_types import StereoImage
@@ -338,5 +338,8 @@ if __name__ == "__main__":
         ).stdout.strip()
         json.dump(state, fp, indent=4)
 
+    while not shared_data.empty():
+        shared_data.get()
+        shared_data.task_done()
     shared_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT MOT")

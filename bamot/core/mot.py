@@ -478,6 +478,7 @@ def run(
             }
         )
     stop_flag.set()
+    shared_data.put({})
     returned_data.put(_compute_estimated_trajectories(object_tracks, all_poses))
 
 
