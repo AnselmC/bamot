@@ -19,12 +19,9 @@ from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    get_camera_parameters_matrix)
 from bamot.core.optimization import object_bundle_adjustment
 from bamot.util.cv import (back_project, from_homogeneous_pt,
-                           get_center_of_landmarks, get_convex_hull,
-                           get_feature_matcher, project_landmarks,
+                           get_center_of_landmarks, get_feature_matcher,
                            to_homogeneous_pt, triangulate)
 from bamot.util.misc import get_mad, timer
-from hungarian_algorithm import algorithm as ha
-from shapely.geometry import Polygon
 
 LOGGER = logging.getLogger("CORE:MOT")
 
@@ -195,34 +192,6 @@ def _add_new_landmarks_and_observations(
         stereo_matches.remove(match)
     logger.debug("Created %d landmarks", created_landmarks)
     return landmarks
-
-
-def _get_object_associations(
-    detections: List[StereoObjectDetection], object_tracks: Dict[int, ObjectTrack]
-) -> List[TrackMatch]:
-    graph: Dict[int, Dict[int, float]] = {}
-    # TODO: fix
-    for i, detection in enumerate(detections):
-        # compute IoU for left seg
-        poly_detection = Polygon(detection.left.convex_hull)
-        graph[i] = {}
-        for j, track in object_tracks.items():
-            projected_landmarks = project_landmarks(track.landmarks)
-            poly_track = Polygon(get_convex_hull(projected_landmarks))
-            iou = (poly_detection.intersection(poly_track)) / (
-                poly_detection.union(poly_track)
-            )
-            graph[i][j] = iou
-
-    # get matches from hulgarian algo
-    matches = ha.find_matching(graph, matching_type="max", return_type="list")
-    track_matches = []
-    for match in matches:
-        detection_idx = match[0][0]
-        track_idx = match[0][1]
-        track_match = TrackMatch(track_index=track_idx, detection_index=detection_idx)
-        track_matches.append(track_match)
-    return track_matches
 
 
 def _get_median_descriptor(observations: List[Observation], norm: int,) -> np.ndarray:
@@ -503,7 +472,7 @@ def step(
     LOGGER.debug("Current ego pose:\n%s", current_cam_pose)
     if new_detections and all(map(lambda x: x.left.track_id is None, new_detections)):
         # no track ids yet
-        matches = _get_object_associations(new_detections, object_tracks)
+        raise NotImplementedError("This still needs to be implemented...")
     else:
         # track ids already exist
         matches = [
@@ -561,7 +530,6 @@ def step(
             all_right_features.append(right_features)
             all_stereo_matches.append(stereo_matches)
 
-    # TODO: remove old code
     # Set old tracks inactive
     old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
     num_deactivated = 0
@@ -570,47 +538,6 @@ def step(
             object_tracks[track_id].active = False
             num_deactivated += 1
     LOGGER.debug("Deactivated %d tracks", num_deactivated)
-    # add new tracks
-    # new_tracks = set(range(len(new_detections))).difference(set(matched_detections))
-    # LOGGER.debug("Adding %d new tracks", len(new_tracks))
-    # for detection_id in new_tracks:
-    #    detection = new_detections[detection_id]
-    #    track_id = max(object_tracks.keys()) + 1
-    #    # mask out object from image
-    #    left_obj_mask = get_convex_hull_mask(
-    #        detection.left.convex_hull, img_shape=img_shape
-    #    )
-    #    right_obj_mask = get_convex_hull_mask(
-    #        detection.right.convex_hull, img_shape=img_shape
-    #    )
-    #    left_obj = mask_img(left_obj_mask, stereo_image.left, dilate=True)
-    #    right_obj = mask_img(right_obj_mask, stereo_image.right, dilate=True)
-
-    #    # detect features per new detection
-    #    left_features = matcher.detect_features(left_obj, left_obj_mask)
-    #    right_features = matcher.detect_features(right_obj, right_obj_mask)
-    #    detection.left.features = left_features
-    #    detection.right.features = right_features
-    #    # match stereo features
-    #    stereo_matches = matcher.match_features(left_features, right_features)
-    #    # match left features with track features
-    #    # initial pose is camera pose
-    #    current_pose = current_cam_pose
-    #    poses = {img_id: current_pose}
-    #    # initial landmarks are triangulated stereo matches
-    #    landmarks = _add_new_landmarks_and_observations(
-    #        landmarks={},
-    #        track_matches=[],
-    #        stereo_matches=stereo_matches,
-    #        left_features=left_features,
-    #        right_features=right_features,
-    #        stereo_cam=stereo_cam,
-    #        T_obj_cam=np.identity(4),
-    #        img_id=img_id,
-    #    )
-    #    obj_track = ObjectTrack(landmarks=landmarks, poses=poses,)
-    #    object_tracks[track_id] = obj_track
-
     LOGGER.debug("Finished step %d", img_id)
     LOGGER.debug("=" * 90)
     return object_tracks, all_left_features, all_right_features, all_stereo_matches
