@@ -33,7 +33,6 @@ class Feature:
 @dataclass
 class ObjectDetection:
     mask: np.ndarray
-    convex_hull: List[Tuple[int, int]]
     cls: str
     fully_visible: bool = True
     track_id: Optional[TrackId] = None

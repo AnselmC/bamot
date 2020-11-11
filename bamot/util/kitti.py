@@ -4,10 +4,10 @@ import pickle
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
+import cv2
 import numpy as np
 import pandas as pd
-
-import cv2
+import pycocotools.mask as rletools
 from bamot.core.base_types import (CameraParameters, ImageId, ObjectDetection,
                                    StereoCamera, StereoImage,
                                    StereoObjectDetection, TrackId)
@@ -258,6 +258,52 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     return StereoCamera(left_cam, right_cam, T23), T02
 
 
+def get_estimated_obj_detections(
+    kitti_path: Path, scene: str
+) -> Dict[int, List[ObjectDetection]]:
+    # adapted from https://github.com/VisualComputingInstitute/mots_tools/blob/master/mots_common/io.py
+    objects_per_frame = {}
+    combined_mask_per_frame = {}  # To check that no frame contains overlapping masks
+    path = _get_estimated_detection_file(kitti_path, scene)
+    with open(path.as_posix(), "r") as f:
+        for line in f:
+            line = line.strip()
+            fields = line.split(" ")
+
+            frame = int(fields[0])
+            class_id = int(fields[6])
+
+            if frame not in objects_per_frame:
+                objects_per_frame[frame] = []
+
+            if class_id not in [1, 2]:
+                continue
+            cls = "car" if class_id == 1 else "pedestrian"
+            w, h = map(int, fields[7:9])
+            mask = {"size": [w, h], "counts": fields[9].encode(encoding="UTF-8")}
+
+            if frame not in combined_mask_per_frame:
+                combined_mask_per_frame[frame] = mask
+            elif (
+                rletools.area(
+                    rletools.merge(
+                        [combined_mask_per_frame[frame], mask], intersect=True
+                    )
+                )
+                > 0.0
+            ):
+                pass
+                # raise ValueError(f"Objects with overlapping masks in frame {frame}")
+            else:
+                combined_mask_per_frame[frame] = rletools.merge(
+                    [combined_mask_per_frame[frame], mask], intersect=False
+                )
+            objects_per_frame[frame].append(
+                ObjectDetection(rletools.decode(mask).astype(bool), cls)
+            )
+    return objects_per_frame
+
+
 def get_gt_obj_detections_from_kitti(
     kitti_path: Path, scene: str, img_id: int
 ) -> List[ObjectDetection]:
@@ -270,26 +316,21 @@ def get_gt_obj_detections_from_kitti(
             continue
         track_id = int(obj_id % 1000)
         obj_mask = img == obj_id
-        convex_hull = cv2.convexHull(np.argwhere(obj_mask), returnPoints=True).reshape(
-            -1, 2
-        )
+
         class_id = int(obj_id // 1000)
         obj_class = "car" if class_id == 1 else "pedestrian"
-        convex_hull = np.flip(convex_hull)
-        obj_det = ObjectDetection(
-            mask=obj_mask,
-            convex_hull=list(map(tuple, convex_hull.tolist())),
-            track_id=track_id,
-            cls=obj_class,
-        )
-        if len(obj_det.convex_hull) < 2:
-            continue
+
+        obj_det = ObjectDetection(mask=obj_mask, track_id=track_id, cls=obj_class,)
         obj_detections.append(obj_det)
     return obj_detections
 
 
 def _get_oxts_file(kitti_path: Path, scene: str) -> Path:
     return kitti_path / "oxts" / (scene + ".txt")
+
+
+def _get_estimated_detection_file(kitti_path: Path, scene: str) -> Path:
+    return kitti_path / "detections" / "5" / (scene + ".txt")
 
 
 def _get_calib_cam_to_cam_file(kitti_path: Path) -> Path:

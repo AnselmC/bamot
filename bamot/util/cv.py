@@ -29,6 +29,10 @@ if config.FEATURE_MATCHER != "orb":
 LOGGER = logging.getLogger("UTIL:CV")
 
 
+def get_convex_hull_from_mask(obj_mask):
+    return list(map(tuple, get_convex_hull(np.argwhere(obj_mask))))
+
+
 def project(params: CameraParameters, pt_3d: np.ndarray):
     x, y, z = map(float, pt_3d)
     return np.array(
@@ -81,9 +85,11 @@ def back_project(params: CameraParameters, pt_2d: np.ndarray):
 
 
 def get_convex_hull(points_2d: np.ndarray):
-    return cv2.convexHull(
-        points_2d.reshape(-1, 2).astype(int), returnPoints=True
-    ).reshape(-1, 2)
+    return np.flip(
+        cv2.convexHull(points_2d.reshape(-1, 2).astype(int), returnPoints=True).reshape(
+            -1, 2
+        )
+    )
 
 
 def get_convex_hull_mask(
