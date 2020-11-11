@@ -37,6 +37,11 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--no-right",
+        help="disable using precomputed right obj masks (transfer left masks to right)",
+        action="store_true",
+    )
+    parser.add_argument(
         "--no-view",
         help="flag to disable viewing the preprocessed data while it's being generated (quit execution by hitting `q`)",
         action="store_true",
@@ -75,7 +80,12 @@ if __name__ == "__main__":
             cv2.namedWindow("Preprocessed", cv2.WINDOW_NORMAL)
             cv2.resizeWindow("Preprocessed", (width // 2, height // 2))
 
-        all_right_object_detections = get_estimated_obj_detections(kitti_path, scene)
+        if not args.no_right:
+            all_right_object_detections = get_estimated_obj_detections(
+                kitti_path, scene
+            )
+        else:
+            all_right_object_detections = {}
         for idx, (stereo_image, filenames) in tqdm.tqdm(
             enumerate(image_stream), total=len(image_stream), position=1,
         ):

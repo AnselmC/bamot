@@ -320,6 +320,8 @@ def get_gt_obj_detections_from_kitti(
         class_id = int(obj_id // 1000)
         obj_class = "car" if class_id == 1 else "pedestrian"
 
+        if obj_mask.sum() <= 2:
+            continue
         obj_det = ObjectDetection(mask=obj_mask, track_id=track_id, cls=obj_class,)
         obj_detections.append(obj_det)
     return obj_detections

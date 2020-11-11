@@ -1,6 +1,6 @@
 """Contains preprocessing functionality, namely converting raw data to inputs for SLAM and MOT
 """
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
@@ -8,7 +8,7 @@ from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
 from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
                            get_convex_hull_from_mask, get_convex_hull_mask,
                            project, to_homogeneous_pt)
-from hungarian_algorithm import algorithm as ha
+from scipy.optimize import linear_sum_assignment
 from shapely.geometry import Polygon
 
 
@@ -43,64 +43,43 @@ def match_detections(left_object_detections, right_object_detections):
     num_right = len(right_object_detections)
     if num_left >= num_right:
         num_first = num_left
+        num_second = num_right
         left_first = True
         first_obj_detections = left_object_detections
         second_obj_detections = right_object_detections
     else:
         num_first = num_right
+        num_second = num_left
         left_first = False
         first_obj_detections = right_object_detections
         second_obj_detections = left_object_detections
 
-    graph = {}
+    cost_matrix = np.zeros((num_first, num_second))
     for i, first_obj in enumerate(first_obj_detections):
         first_obj_area = Polygon(get_convex_hull_from_mask(first_obj.mask))
-        graph[i] = {}
         for j, second_obj in enumerate(second_obj_detections):
             second_obj_area = Polygon(get_convex_hull_from_mask(second_obj.mask))
             iou = (
                 first_obj_area.intersection(second_obj_area).area
                 / first_obj_area.union(second_obj_area).area
             )
-            graph[i][j + num_first] = iou
+            cost_matrix[i][j] = iou
 
-    unmatched = []
-    sums = [sum(items.values()) for items in graph.values()]
-    print(graph)
-    print(sums)
-    if num_left != num_right:
-        size_diff = np.abs(num_left - num_right)
-        smallest_sum_indices = np.argpartition(sums, size_diff)[:size_diff]
-        for idx in smallest_sum_indices:
-            graph.pop(idx)
-    # for idx, items in graph.items():
-    #    bad = True
-    #    for weight in items.values():
-    #        if weight > 0.2:
-    #            bad = False
-    #            break
-    #    if bad:
-    #        unmatched.append(idx)
-    # for idx in unmatched:
-    #    graph.pop(idx)
-    # for items in graph.values():
-    #    items.pop(idx)
+    first_indices, second_indices = linear_sum_assignment(cost_matrix, maximize=True)
 
-    print(graph)
-    matches = ha.find_matching(graph, matching_type="max", return_type="list")
     good_matches = []
-    if matches:
-        for indices, weight in matches:
-            if left_first:
-                left_idx = indices[0]
-                right_idx = indices[1] - num_first
-            else:
-                right_idx = indices[0]
-                left_idx = indices[1] - num_first
-            if weight > 0.1:
-                good_matches.append((left_idx, right_idx))
-    else:
-        print(graph)
+    for row_idx, col_idx in zip(first_indices, second_indices):
+        iou = cost_matrix[row_idx, col_idx].sum()
+        if iou == 0:
+            continue
+
+        if left_first:
+            left_idx = row_idx
+            right_idx = col_idx
+        else:
+            right_idx = row_idx
+            left_idx = col_idx
+        good_matches.append((left_idx, right_idx))
 
     return good_matches
 
@@ -109,7 +88,7 @@ def preprocess_frame(
     stereo_image: StereoImage,
     stereo_camera: StereoCamera,
     left_object_detections: List[ObjectDetection],
-    right_object_detections: List[ObjectDetection],
+    right_object_detections: Optional[List[ObjectDetection]] = None,
 ) -> Tuple[StereoImage, List[StereoObjectDetection]]:
     """Masks out object detections from a stereo image and returns the masked image.
 
@@ -128,9 +107,12 @@ def preprocess_frame(
     left_mask, right_mask = (np.ones(img_shape, dtype=np.uint8) for _ in range(2))
 
     stereo_object_detections = []
-    matched_detections = match_detections(
-        left_object_detections, right_object_detections
-    )
+    if left_object_detections and right_object_detections:
+        matched_detections = match_detections(
+            left_object_detections, right_object_detections
+        )
+    else:
+        matched_detections = []
 
     matched_left = set()
     if matched_detections:

@@ -85,11 +85,13 @@ def back_project(params: CameraParameters, pt_2d: np.ndarray):
 
 
 def get_convex_hull(points_2d: np.ndarray):
-    return np.flip(
-        cv2.convexHull(points_2d.reshape(-1, 2).astype(int), returnPoints=True).reshape(
-            -1, 2
+    if len(points_2d):
+        return np.flip(
+            cv2.convexHull(
+                points_2d.reshape(-1, 2).astype(int), returnPoints=True
+            ).reshape(-1, 2)
         )
-    )
+    return points_2d
 
 
 def get_convex_hull_mask(
