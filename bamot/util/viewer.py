@@ -29,9 +29,20 @@ class TrackGeometries(NamedTuple):
     color: Color
 
 
-class EgoGeometries(NamedTuple):
+@dataclass
+class EgoGeometries:
     trajectory: o3d.geometry.LineSet
     curr_pose: o3d.geometry.TriangleMesh
+    curr_img: int
+
+
+def _create_camera_lineset():
+    lineset = o3d.geometry.LineSet()
+    points = [[0, 0, 2], [2, 1, 3], [2, -1, 3], [-2, 1, 3], [-2, -1, 3]]
+    lines = [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2], [1, 3], [2, 4], [3, 4]]
+    lineset.points = o3d.utility.Vector3dVector(points)
+    lineset.lines = o3d.utility.Vector2iVector(lines)
+    return lineset
 
 
 def _draw_matches(
@@ -251,7 +262,7 @@ def _update_geometries(
                 [
                     [1.0000000, 0.0000000, 0.0000000, 0.0],
                     [0.0000000, 1.0000000, 0.0000000, 6.0],
-                    [0.0000000, 0.0000000, 1.0000000, 10.0],
+                    [0.0000000, 0.0000000, 1.0000000, 15.0],
                     [0, 0, 0, 1],
                 ]
             )
@@ -263,14 +274,16 @@ def _update_geometries(
         ego_geometries.trajectory.points = o3d.utility.Vector3dVector(ego_pts)
         ego_geometries.trajectory.lines = o3d.utility.Vector2iVector(ego_path_lines)
         ego_geometries.trajectory.paint_uniform_color(np.array([1.0, 1.0, 1.0]))
-        if current_img_id > 0:
-            ego_geometries.curr_pose.transform(
-                np.linalg.inv(gt_poses[current_img_id - 1])
-            )
-        ego_geometries.curr_pose.transform(gt_poses[current_img_id])
-        ego_geometries.curr_pose.paint_uniform_color(np.array([1.0, 1.0, 1.0]))
-        visualizer.update_geometry(ego_geometries.trajectory)
-        visualizer.update_geometry(ego_geometries.curr_pose)
+        if ego_geometries.curr_img < current_img_id:
+            ego_geometries.curr_img = current_img_id
+            if current_img_id > 0:
+                ego_geometries.curr_pose.transform(
+                    np.linalg.inv(gt_poses[current_img_id - 1])
+                )
+            ego_geometries.curr_pose.transform(gt_poses[current_img_id])
+            ego_geometries.curr_pose.paint_uniform_color(np.array([1.0, 1.0, 1.0]))
+            visualizer.update_geometry(ego_geometries.trajectory)
+            visualizer.update_geometry(ego_geometries.curr_pose)
 
     return all_track_geometries, ego_geometries
 
@@ -319,9 +332,8 @@ def run(
     all_track_geometries: Dict[int, TrackGeometries] = {}
     ego_geometries = EgoGeometries(
         trajectory=o3d.geometry.LineSet(),
-        curr_pose=o3d.geometry.TriangleMesh.create_arrow(
-            cylinder_radius=0.25, cylinder_height=2, cone_radius=1.0, cone_height=1
-        ),
+        curr_pose=_create_camera_lineset(),
+        curr_img=-1,
     )
     vis.add_geometry(ego_geometries.trajectory)
     vis.add_geometry(ego_geometries.curr_pose)
