@@ -56,9 +56,17 @@ def match_detections(left_object_detections, right_object_detections):
 
     cost_matrix = np.zeros((num_first, num_second))
     for i, first_obj in enumerate(first_obj_detections):
-        first_obj_area = Polygon(get_convex_hull_from_mask(first_obj.mask))
+        first_convex_hull = get_convex_hull_from_mask(first_obj.mask)
+        if len(first_convex_hull) >= 3:
+            first_obj_area = Polygon(get_convex_hull_from_mask(first_obj.mask))
+        else:
+            first_obj_area = Polygon()
         for j, second_obj in enumerate(second_obj_detections):
-            second_obj_area = Polygon(get_convex_hull_from_mask(second_obj.mask))
+            second_convex_hull = get_convex_hull_from_mask(second_obj.mask)
+            if len(second_convex_hull) >= 3:
+                second_obj_area = Polygon(get_convex_hull_from_mask(second_obj.mask))
+            else:
+                second_obj_area = Polygon()
             iou = (
                 first_obj_area.intersection(second_obj_area).area
                 / first_obj_area.union(second_obj_area).area
