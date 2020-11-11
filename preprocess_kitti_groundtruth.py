@@ -4,14 +4,15 @@ import argparse
 import pickle
 from pathlib import Path
 
-import numpy as np
-
 import cv2
+import numpy as np
 import tqdm
+
 from bamot.config import CONFIG as config
 from bamot.core.base_types import StereoImage
 from bamot.core.preprocessing import preprocess_frame
 from bamot.util.kitti import (get_cameras_from_kitti,
+                              get_estimated_obj_detections,
                               get_gt_obj_detections_from_kitti,
                               get_image_stream)
 from bamot.util.viewer import get_screen_size
@@ -40,6 +41,12 @@ if __name__ == "__main__":
         help="flag to disable viewing the preprocessed data while it's being generated (quit execution by hitting `q`)",
         action="store_true",
     )
+    parser.add_argument(
+        "-n",
+        "--no-continue",
+        action="store_true",
+        help="Disable continuous stream (press `n` for next frame)",
+    )
 
     args = parser.parse_args()
     scenes = args.s if "all" not in args.s else range(0, 20)
@@ -62,19 +69,26 @@ if __name__ == "__main__":
 
         stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
         stereo_cam.T_left_right[0, 3] = 0.03
-        # todo: fix this
         image_stream = get_image_stream(kitti_path, scene, with_file_names=True)
         if not args.no_view:
             width, height = get_screen_size()
             cv2.namedWindow("Preprocessed", cv2.WINDOW_NORMAL)
             cv2.resizeWindow("Preprocessed", (width // 2, height // 2))
+
+        all_right_object_detections = get_estimated_obj_detections(kitti_path, scene)
         for idx, (stereo_image, filenames) in tqdm.tqdm(
             enumerate(image_stream), total=len(image_stream), position=1,
         ):
+            right_object_detections = all_right_object_detections.get(idx)
             left_fname, right_fname = filenames
-            object_detections = get_gt_obj_detections_from_kitti(kitti_path, scene, idx)
+            left_object_detections = get_gt_obj_detections_from_kitti(
+                kitti_path, scene, idx
+            )
             masked_stereo_image_slam, stereo_object_detections = preprocess_frame(
-                stereo_image, stereo_cam, object_detections=object_detections,
+                stereo_image,
+                stereo_cam,
+                left_object_detections=left_object_detections,
+                right_object_detections=right_object_detections,
             )
             left_mot_mask = masked_stereo_image_slam.left == 0
             right_mot_mask = masked_stereo_image_slam.right == 0
@@ -110,7 +124,11 @@ if __name__ == "__main__":
             result = np.vstack([result_slam, result_mot])
             if not args.no_view:
                 cv2.imshow("Preprocessed", result)
-                if cv2.waitKey(1) == ord("q"):
+                pressed_key = cv2.waitKey(1)
+                if args.no_continue:
+                    while pressed_key not in [ord("q"), ord("n")]:
+                        pressed_key = cv2.waitKey(1)
+                if pressed_key == ord("q"):
                     cv2.destroyAllWindows()
                     break
             if not args.no_save:
