@@ -1,8 +1,9 @@
 import logging
 from typing import Dict
 
-import g2o
 import numpy as np
+
+import g2o
 from bamot.config import CONFIG as config
 from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -35,6 +36,16 @@ def object_bundle_adjustment(
     prev_cam, prev_prev_cam = None, None
     const_motion_edges = []
     frames = list(object_track.poses.keys())
+
+    # calculate avg "speed"
+    translations = []
+    for i in range(len(frames[-2 * config.SLIDING_WINDOW_BA :]) - 1):
+        img_id_0 = frames[i]
+        img_id_1 = frames[i + 1]
+        pose0 = object_track.poses[img_id_0]
+        pose1 = object_track.poses[img_id_1]
+        translations.append(np.linalg.norm((np.linalg.inv(pose0) @ pose1)[:3, 3]))
+    median_translation = np.median(translations)
 
     for img_id in frames[-config.SLIDING_WINDOW_BA :]:
         num_obs = get_obs_count(img_id, object_track)
@@ -74,7 +85,7 @@ def object_bundle_adjustment(
                     np.hstack(
                         [
                             np.repeat(num_obs * rot_weight, 3),
-                            np.repeat(num_obs * trans_weight, 3),
+                            np.repeat(num_obs / median_translation * trans_weight, 3),
                         ]
                     )
                 )
