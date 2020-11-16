@@ -8,8 +8,9 @@ import uuid
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -26,11 +27,21 @@ from bamot.util.misc import get_mad, timer
 LOGGER = logging.getLogger("CORE:MOT")
 
 
-def _valid_motion(Tr_rel, Tr_rel_prev):
-    dist = np.linalg.norm(Tr_rel[:3, 3])
-    dist_prev = np.linalg.norm(Tr_rel_prev[:3, 3])
-    change = np.abs(dist - dist_prev) / dist_prev
-    return dist < 4
+def get_median_translation(object_track):
+    translations = []
+    frames = list(object_track.poses.keys())
+    for i in range(len(frames[-2 * config.SLIDING_WINDOW_BA :]) - 1):
+        img_id_0 = frames[i]
+        img_id_1 = frames[i + 1]
+        pose0 = object_track.poses[img_id_0]
+        pose1 = object_track.poses[img_id_1]
+        translations.append(np.linalg.norm((np.linalg.inv(pose0) @ pose1)[:3, 3]))
+    return np.median(translations)
+
+
+def _valid_motion(Tr_rel, median_translation):
+    curr_translation = np.linalg.norm(Tr_rel[:3, 3])
+    return curr_translation < 3 * median_translation
 
 
 def _localize_object(
@@ -299,16 +310,17 @@ def run(
         T_world_cam = current_cam_pose
         T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
         enough_track_matches = len(track_matches) >= 5
-        enough_stereo_matches = len(stereo_matches) > min(len(track_matches), 5)
+        enough_stereo_matches = len(stereo_matches) > min(len(track_matches), 10)
         successful = True
         valid_motion = True
+        median_translation = get_median_translation(track)
         if enough_track_matches:
             T_cam_obj_pnp, successful = _localize_object(
                 left_features=left_features,
                 track_matches=track_matches,
                 landmark_mapping=lm_mapping,
                 landmarks=copy.deepcopy(track.landmarks),
-                T_cam_obj=T_cam_obj,
+                T_cam_obj=T_cam_obj.copy(),
                 camera_params=stereo_cam.left,
                 logger=track_logger,
             )
@@ -317,10 +329,11 @@ def run(
                 if T_rel_prev is not None:
                     T_world_obj2 = T_world_cam @ T_cam_obj_pnp
                     T_rel = np.linalg.inv(T_world_obj1) @ T_world_obj2
-                    valid_motion = _valid_motion(T_rel, T_rel_prev)
+                    valid_motion = _valid_motion(T_rel, median_translation)
                     if valid_motion:
                         T_cam_obj = T_cam_obj_pnp
-
+                    else:
+                        assert not np.array_equal(T_cam_obj, T_cam_obj_pnp)
         if not (enough_track_matches and successful and valid_motion):
             if track_matches:
                 track_logger.debug("Clearing track matches")
@@ -339,6 +352,8 @@ def run(
                 track.badly_tracked_frames = 0
             else:
                 track.badly_tracked_frames += 1
+                if track.landmarks and config.CLEAR_STEREO_MATCHES:
+                    stereo_matches.clear()
 
         T_world_obj = T_world_cam @ T_cam_obj
         track.poses[img_id] = T_world_obj
@@ -365,6 +380,7 @@ def run(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
                 stereo_cam=stereo_cam,
+                median_translation=median_translation,
             )
         # remove outlier landmarks
         if track_id != -1 and track.landmarks:
@@ -403,6 +419,9 @@ def run(
                 and len(track.landmarks) < config.MIN_LANDMARKS
             ):
                 track.active = False
+        track.locations[img_id] = track.poses[img_id] @ to_homogeneous_pt(
+            get_center_of_landmarks(track.landmarks.values())
+        )
         return track, left_features, right_features, stereo_matches
 
     for (img_id, stereo_image), new_detections in zip(images, detections):
@@ -488,6 +507,7 @@ def step(
                 object_tracks[match.track_index] = ObjectTrack(
                     landmarks={},
                     poses={img_id: current_cam_pose},
+                    locations={},
                     cls=new_detections[match.detection_index].left.cls,
                 )
     # per match, match features
@@ -546,22 +566,43 @@ def step(
 def _compute_estimated_trajectories(
     object_tracks: Dict[int, ObjectTrack], all_poses: Dict[int, np.ndarray]
 ) -> Tuple[Dict[int, Dict[int, Tuple[float, float, float]]]]:
-    trajectories_world = {}
-    trajectories_cam = {}
+    offline_trajectories_world = {}
+    offline_trajectories_cam = {}
+    online_trajectories_world = {}
+    online_trajectories_cam = {}
     for track_id, track in object_tracks.items():
         object_center = get_center_of_landmarks(track.landmarks.values())
-        trajectory_world = {}
-        trajectory_cam = {}
+        offline_trajectory_world = {}
+        offline_trajectory_cam = {}
+        online_trajectory_world = {}
+        online_trajectory_cam = {}
         for img_id, pose_world_obj in track.poses.items():
             Tr_world_cam = all_poses[img_id]
-            object_center_world = pose_world_obj @ to_homogeneous_pt(object_center)
-            object_center_cam = np.linalg.inv(Tr_world_cam) @ object_center_world
-            trajectory_world[int(img_id)] = tuple(
-                from_homogeneous_pt(object_center_world).tolist()
+            object_center_world_offline = pose_world_obj @ to_homogeneous_pt(
+                object_center
             )
-            trajectory_cam[int(img_id)] = tuple(
-                from_homogeneous_pt(object_center_cam).tolist()
+            object_center_world_online = track.locations[img_id]
+            object_center_cam_online = (
+                np.linalg.inv(Tr_world_cam) @ object_center_world_online
             )
-        trajectories_world[int(track_id)] = trajectory_world
-        trajectories_cam[int(track_id)] = trajectory_cam
-    return trajectories_world, trajectories_cam
+            object_center_cam_offline = (
+                np.linalg.inv(Tr_world_cam) @ object_center_world_offline
+            )
+            offline_trajectory_world[int(img_id)] = tuple(
+                from_homogeneous_pt(object_center_world_offline).tolist()
+            )
+            online_trajectory_world[int(img_id)] = tuple(
+                from_homogeneous_pt(object_center_world_online).tolist()
+            )
+            offline_trajectory_cam[int(img_id)] = tuple(
+                from_homogeneous_pt(object_center_cam_offline).tolist()
+            )
+            online_trajectory_cam[int(img_id)] = tuple(
+                from_homogeneous_pt(object_center_cam_online).tolist()
+            )
+        offline_trajectories_world[int(track_id)] = offline_trajectory_world
+        offline_trajectories_cam[int(track_id)] = offline_trajectory_cam
+    return (
+        (offline_trajectories_world, offline_trajectories_cam),
+        (online_trajectories_world, online_trajectories_cam),
+    )
