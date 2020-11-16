@@ -19,6 +19,7 @@ pandas = "^1.1.1"
 pathos = "^0.2.6"
 tqdm = "^4.48.2"
 scipy = "^1.5.4"
+pycocotools = "^2.0.2"
 
 [tool.poetry.dev-dependencies]
 black = "^19.10b0"
