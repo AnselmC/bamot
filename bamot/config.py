@@ -21,6 +21,7 @@ class Config:
     SLIDING_WINDOW_BA: int
     SLIDING_WINDOW_DESCRIPTORS: int
     MAX_BAD_FRAMES: int
+    CLEAR_STEREO_MATCHES: bool
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
@@ -51,6 +52,9 @@ __using_mad = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
+__clear_stereo_matches_default = bool(
+    os.environ.get("CLEAR_STEREO_MATCHES", default=False)
+)
 
 if __config_file.exists():
     with open(__config_file.as_posix(), "r") as fp:
@@ -78,6 +82,9 @@ CONFIG = Config(
     SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),
+    CLEAR_STEREO_MATCHES=__user_config.get(
+        "clear_stereo_matches", __clear_stereo_matches_default
+    ),
 )
 
 if CONFIG.USING_CONFIG_FILE:

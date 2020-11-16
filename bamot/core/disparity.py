@@ -123,6 +123,7 @@ def run(
                 object_tracks[match.track_index] = ObjectTrack(
                     landmarks={},
                     poses={img_id: current_pose},
+                    locations={},
                     cls=new_detections[match.detection_index].left.cls,
                 )
             track = object_tracks[match.track_index]

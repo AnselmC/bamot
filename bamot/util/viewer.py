@@ -5,8 +5,9 @@ from pathlib import Path
 from threading import Event
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-import cv2
 import numpy as np
+
+import cv2
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -22,7 +23,8 @@ BLACK = [0.0, 0.0, 0.0]
 
 class TrackGeometries(NamedTuple):
     pt_cloud: o3d.geometry.PointCloud
-    trajectory: o3d.geometry.LineSet
+    offline_trajectory: o3d.geometry.LineSet
+    online_trajectory: o3d.geometry.LineSet
     bbox: o3d.geometry.LineSet
     gt_trajectory: o3d.geometry.LineSet
     gt_bbox: o3d.geometry.LineSet
@@ -114,7 +116,8 @@ def _update_geometries(
             ido,
             TrackGeometries(
                 pt_cloud=o3d.geometry.PointCloud(),
-                trajectory=o3d.geometry.LineSet(),
+                offline_trajectory=o3d.geometry.LineSet(),
+                online_trajectory=o3d.geometry.LineSet(),
                 bbox=o3d.geometry.LineSet(),
                 gt_trajectory=o3d.geometry.LineSet(),
                 gt_bbox=o3d.geometry.LineSet(),
@@ -122,7 +125,8 @@ def _update_geometries(
             ),
         )
         # draw path
-        path_points = []
+        path_points_offline = []
+        path_points_online = []
         gt_points = []
         track_data = label_data.get(ido)
         points = []
@@ -167,7 +171,13 @@ def _update_geometries(
                     pass
             if track.landmarks:
                 center /= len(track.landmarks)
-            path_points.append(center.reshape(3,).tolist())
+            offline_point = center.reshape(3,).tolist()
+            path_points_offline.append(offline_point)
+            path_points_online.append(
+                from_homogeneous_pt(
+                    track.locations.get(img_id, to_homogeneous_pt(center))
+                )
+            )
             if track_data:
                 if track_data.get(img_id):
                     gt_point = track_data[img_id].world_pos
@@ -182,13 +192,23 @@ def _update_geometries(
                 track_size = len(points)
             if ido == -1:
                 break
-        path_lines = [[i, i + 1] for i in range(len(path_points) - 1)]
+        path_lines = [[i, i + 1] for i in range(len(path_points_offline) - 1)]
         # draw current landmarks
         LOGGER.debug("Track has %d points", track_size)
         track_geometries.pt_cloud.points = o3d.utility.Vector3dVector(points)
         if len(path_lines) > 0:
-            track_geometries.trajectory.points = o3d.utility.Vector3dVector(path_points)
-            track_geometries.trajectory.lines = o3d.utility.Vector2iVector(path_lines)
+            track_geometries.offline_trajectory.points = o3d.utility.Vector3dVector(
+                path_points_offline
+            )
+            track_geometries.offline_trajectory.lines = o3d.utility.Vector2iVector(
+                path_lines
+            )
+            track_geometries.online_trajectory.points = o3d.utility.Vector3dVector(
+                path_points_online
+            )
+            track_geometries.online_trajectory.lines = o3d.utility.Vector2iVector(
+                path_lines
+            )
             track_geometries.gt_trajectory.points = o3d.utility.Vector3dVector(
                 gt_points
             )
@@ -198,13 +218,15 @@ def _update_geometries(
         if track.active:
             track_geometries.pt_cloud.paint_uniform_color(color)
             if show_trajs.val:
-                track_geometries.trajectory.paint_uniform_color(color)
+                track_geometries.offline_trajectory.paint_uniform_color(color)
+                track_geometries.online_trajectory.paint_uniform_color(color)
                 if show_gt.val:
                     track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
                 else:
                     track_geometries.gt_trajectory.paint_uniform_color(BLACK)
             else:
-                track_geometries.trajectory.paint_uniform_color(BLACK)
+                track_geometries.offline_trajectory.paint_uniform_color(BLACK)
+                track_geometries.online_trajectory.paint_uniform_color(BLACK)
                 track_geometries.gt_trajectory.paint_uniform_color(BLACK)
             track_geometries.bbox.paint_uniform_color(color)
             if show_gt.val:
@@ -214,7 +236,8 @@ def _update_geometries(
         else:
             LOGGER.debug("Track is inactive")
             track_geometries.pt_cloud.paint_uniform_color([0.0, 0.0, 0.0])
-            track_geometries.trajectory.paint_uniform_color([0.0, 0.0, 0.0])
+            track_geometries.offline_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
+            track_geometries.online_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
             track_geometries.gt_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
             track_geometries.bbox.paint_uniform_color([0.0, 0.0, 0.0])
             track_geometries.gt_bbox.paint_uniform_color([0.0, 0.0, 0.0])
@@ -223,7 +246,10 @@ def _update_geometries(
                 track_geometries.pt_cloud, reset_bounding_box=first_update
             )
             visualizer.add_geometry(
-                track_geometries.trajectory, reset_bounding_box=first_update
+                track_geometries.offline_trajectory, reset_bounding_box=first_update
+            )
+            visualizer.add_geometry(
+                track_geometries.online_trajectory, reset_bounding_box=first_update
             )
             visualizer.add_geometry(
                 track_geometries.gt_trajectory, reset_bounding_box=first_update
@@ -237,7 +263,8 @@ def _update_geometries(
             all_track_geometries[ido] = track_geometries
         else:
             visualizer.update_geometry(track_geometries.pt_cloud)
-            visualizer.update_geometry(track_geometries.trajectory)
+            visualizer.update_geometry(track_geometries.offline_trajectory)
+            visualizer.update_geometry(track_geometries.online_trajectory)
             visualizer.update_geometry(track_geometries.gt_trajectory)
             visualizer.update_geometry(track_geometries.bbox)
             visualizer.update_geometry(track_geometries.gt_bbox)
@@ -247,7 +274,8 @@ def _update_geometries(
         if track_geometry is not None:
             visualizer.remove_geometry(track_geometry.pt_cloud)
             visualizer.remove_geometry(track_geometry.bbox)
-            visualizer.remove_geometry(track_geometry.trajectory)
+            visualizer.remove_geometry(track_geometry.offline_trajectory)
+            visualizer.remove_geometry(track_geometry.online_trajectory)
             visualizer.remove_geometry(track_geometry.gt_bbox)
             visualizer.remove_geometry(track_geometry.gt_trajectory)
             del all_track_geometries[ido]
@@ -350,8 +378,8 @@ def run(
         if new_data is not None or geometry_has_changed.val:
             geometry_has_changed.val = False
             if new_data is not None:
-                object_tracks = new_data["object_tracks"]
-                current_img_id = new_data["img_id"]
+                object_tracks = new_data.get("object_tracks", object_tracks)
+                current_img_id = new_data.get("img_id", current_img_id)
             LOGGER.debug("Got new data")
             (all_track_geometries, ego_geometries) = _update_geometries(
                 all_track_geometries=all_track_geometries,

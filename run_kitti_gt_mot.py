@@ -14,11 +14,11 @@ import warnings
 from pathlib import Path
 from typing import Iterable, List, Tuple, Union
 
+import numpy as np
+
 import colorlog
 import cv2
-import numpy as np
 import tqdm
-
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.base_types import StereoImage
@@ -293,7 +293,16 @@ if __name__ == "__main__":
     LOGGER.debug("Joining MOT thread")
     mot_process.join()
     LOGGER.debug("Joined MOT thread")
-    estimated_trajectories_world, estimated_trajectories_cam = returned_data.get()
+    offline_trajectories, online_trajectories = returned_data.get()
+    (
+        estimated_trajectories_world_offline,
+        estimated_trajectories_cam_offline,
+    ) = offline_trajectories
+    (
+        estimated_trajectories_world_online,
+        estimated_trajectories_cam_online,
+    ) = online_trajectories
+
     returned_data.task_done()
     returned_data.join()
     LOGGER.debug("Joining returned data queue")
@@ -313,14 +322,23 @@ if __name__ == "__main__":
         out_path = Path(args.out)
 
     # Save trajectories
-    out_path.mkdir(exist_ok=True, parents=True)
-    out_est_world = out_path / "est_trajectories_world.json"
-    out_est_cam = out_path / "est_trajectories_cam.json"
-    # estimated
-    with open(out_est_world, "w") as fp:
-        json.dump(estimated_trajectories_world, fp, indent=4, sort_keys=True)
-    with open(out_est_cam, "w") as fp:
-        json.dump(estimated_trajectories_cam, fp, indent=4, sort_keys=True)
+    offline_path = out_path / "offline"
+    online_path = out_path / "online"
+    offline_path.mkdir(exist_ok=True, parents=True)
+    online_path.mkdir(exist_ok=True, parents=True)
+    out_est_world_offline = offline_path / "est_trajectories_world.json"
+    out_est_cam_offline = offline_path / "est_trajectories_cam.json"
+    out_est_world_online = online_path / "est_trajectories_world.json"
+    out_est_cam_online = online_path / "est_trajectories_cam.json"
+    # estimated (both on- and offline)
+    with open(out_est_world_offline, "w") as fp:
+        json.dump(estimated_trajectories_world_offline, fp, indent=4, sort_keys=True)
+    with open(out_est_cam_offline, "w") as fp:
+        json.dump(estimated_trajectories_cam_offline, fp, indent=4, sort_keys=True)
+    with open(out_est_world_online, "w") as fp:
+        json.dump(estimated_trajectories_world_online, fp, indent=4, sort_keys=True)
+    with open(out_est_cam_online, "w") as fp:
+        json.dump(estimated_trajectories_cam_online, fp, indent=4, sort_keys=True)
     LOGGER.info(
         "Saved estimated object track trajectories to %s", out_path,
     )

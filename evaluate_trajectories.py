@@ -8,8 +8,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
 from bamot.config import CONFIG as config
-from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
-                              get_label_data_from_kitti)
+from bamot.util.kitti import get_gt_poses_from_kitti, get_label_data_from_kitti
 
 RNG = np.random.default_rng()
 COLORS = RNG.random((42, 3))
@@ -280,7 +279,9 @@ if __name__ == "__main__":
                         else:
                             ax_2d = fig.add_subplot(1, 1, 1)
                         err_dist = list(err_per_image.values())
-                        err, dist = zip(*[(x[0], x[1]) for x in err_dist if x[0][0] != "NA"])
+                        err, dist = zip(
+                            *[(x[0], x[1]) for x in err_dist if x[0][0] != "NA"]
+                        )
                         ax_2d.scatter(
                             [e[0] for e in err],
                             dist,
@@ -300,9 +301,7 @@ if __name__ == "__main__":
                             label="L1-error z (depth)",
                         )
                         ax_2d.scatter(
-                            [e[3] for e in err],
-                            dist,
-                            label="L1-error total",
+                            [e[3] for e in err], dist, label="L1-error total",
                         )
                         # ax_2d.set_xscale("log")
                         ax_2d.set_xlabel("Error [m]")
