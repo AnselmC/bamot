@@ -34,9 +34,16 @@ class Config:
 
 # ENV VARIABLES
 __config_file = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
+__const_motion_weight_default = os.environ.get("CONST_MOTION_WEIGHT", default=1)
 __const_motion_weights_default = [
-    float(os.environ.get("CONST_MOTION_WEIGHT_ROT", default=6)),
-    float(os.environ.get("CONST_MOTION_WEIGHT_TRANS", default=1)),
+    float(
+        os.environ.get("CONST_MOTION_WEIGHT_ROT", default=__const_motion_weight_default)
+    ),
+    float(
+        os.environ.get(
+            "CONST_MOTION_WEIGHT_TRANS", default=__const_motion_weight_default
+        )
+    ),
 ]
 __cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
@@ -70,7 +77,7 @@ CONFIG = Config(
     NUM_FEATURES=__user_config.get("num_features", 8000),
     SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
-    MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3)
+    MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),
 )
 
 if CONFIG.USING_CONFIG_FILE:
