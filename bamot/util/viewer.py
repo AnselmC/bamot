@@ -5,9 +5,8 @@ from pathlib import Path
 from threading import Event
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
-import numpy as np
-
 import cv2
+import numpy as np
 import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
@@ -133,7 +132,9 @@ def _update_geometries(
         white = np.array([1.0, 1.0, 1.0])
         color = track_geometries.color
         lighter_color = color + 0.25 * white
+        darker_color = color - 0.25 * white
         lighter_color = np.clip(lighter_color, 0, 1)
+        darker_color = np.clip(darker_color, 0, 1)
         track_size = 0
         for i, (img_id, pose_world_obj) in enumerate(track.poses.items()):
             center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
@@ -219,7 +220,7 @@ def _update_geometries(
             track_geometries.pt_cloud.paint_uniform_color(color)
             if show_trajs.val:
                 track_geometries.offline_trajectory.paint_uniform_color(color)
-                track_geometries.online_trajectory.paint_uniform_color(color)
+                track_geometries.online_trajectory.paint_uniform_color(darker_color)
                 if show_gt.val:
                     track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
                 else:
