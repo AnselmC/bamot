@@ -1,4 +1,5 @@
 import argparse
+import warnings
 from itertools import cycle
 from pathlib import Path
 from pprint import pprint
@@ -8,22 +9,24 @@ import numpy as np
 import pandas as pd
 import yaml
 
+warnings.filterwarnings("ignore")
+
 
 def _plt_hist(df, dst_dir, save):
     print("Plotting histogram...")
-    plt.hist(df.error, bins=60, stacked=True, log=True, density=True)
+    plt.hist(df.error_offline, bins=60, stacked=True, log=True, density=True)
     _, ymax = plt.ylim()
     plt.title("Histogram of errors (60 bins)")
     plt.axvline(
-        df.error.mean(),
+        df.error_offline.mean(),
         linestyle="dashed",
-        label=f"Mean: {df.error.mean():.2f}",
+        label=f"Mean: {df.error_offline.mean():.2f}",
         color="b",
     )
     plt.axvline(
-        df.error.median(),
+        df.error_offline.median(),
         linestyle="dotted",
-        label=f"Median: {df.error.median():.2f}",
+        label=f"Median: {df.error_offline.median():.2f}",
         color="r",
     )
     plt.xlabel("Error")
@@ -39,7 +42,7 @@ def _plt_hist(df, dst_dir, save):
 
 def _plt_hist_no_outliers(df, dst_dir, save):
     print("Plotting histogram w/o outliers...")
-    errs = df.where(df.error < df.error.std()).error
+    errs = df.where(df.error_offline < df.error_offline.std()).error_offline
     plt.hist(
         errs, bins=60, stacked=True, log=True, density=True,
     )
@@ -66,7 +69,7 @@ def _plt_hist_no_outliers(df, dst_dir, save):
 
 
 def _plt_error_by_dist(df, dst_dir, save):
-    print("Plotting error by distance...")
+    print("Plotting error_offline by distance...")
     plt.title("Distance vs. Error")
     markers = cycle(range(0, 11))
     colors = cycle(plt.cm.Spectral(np.linspace(0, 1, 100)).tolist())
@@ -75,7 +78,7 @@ def _plt_error_by_dist(df, dst_dir, save):
         for obj in df[df.scene == scene].object_id.unique():
             obj_df = df.where(df.scene == scene).where(df.object_id == obj)
             plt.scatter(
-                obj_df.error,
+                obj_df.error_offline,
                 obj_df.distance,
                 color=next(colors),
                 marker=marker,
@@ -123,29 +126,56 @@ def _summarize_df(df):
 
 def _summarize_best_worst(df, group, summarize_item):
     df_groupedby = df.groupby(group)
-    mean_errors = df_groupedby.error.mean()
-    median_errors = df_groupedby.error.median()
+    mean_errors_offline = df_groupedby.error_offline.mean()
+    median_errors_offline = df_groupedby.error_offline.median()
+    mean_errors_online = df_groupedby.error_online.mean()
+    median_errors_online = df_groupedby.error_online.median()
     summary = {}
     best = {}
-    best_mean = []
-    for item in mean_errors.nsmallest(n=3).items():
-        best_mean.append(summarize_item(df, item))
-    best_median = []
-    for item in median_errors.nsmallest(n=3).items():
-        best_median.append(summarize_item(df, item))
+    best_mean_offline = []
+    best_mean_online = []
+    for item in mean_errors_offline.nsmallest(n=3).items():
+        best_mean_offline.append(summarize_item(df, item))
+    for item in mean_errors_online.nsmallest(n=3).items():
+        best_mean_online.append(summarize_item(df, item))
+    best_median_offline = []
+    best_median_online = []
+    for item in median_errors_offline.nsmallest(n=3).items():
+        best_median_offline.append(summarize_item(df, item))
+    for item in median_errors_online.nsmallest(n=3).items():
+        best_median_online.append(summarize_item(df, item))
 
     worst = {}
-    worst_mean = []
-    for item in mean_errors.nlargest(n=3).items():
-        worst_mean.append(summarize_item(df, item))
-    worst_median = []
-    for item in median_errors.nlargest(n=3).items():
-        worst_median.append(summarize_item(df, item))
+    worst_mean_offline = []
+    worst_mean_online = []
+    for item in mean_errors_offline.nlargest(n=3).items():
+        worst_mean_offline.append(summarize_item(df, item))
+    for item in mean_errors_online.nlargest(n=3).items():
+        worst_mean_online.append(summarize_item(df, item))
+    worst_median_offline = []
+    worst_median_online = []
+    for item in median_errors_offline.nlargest(n=3).items():
+        worst_median_offline.append(summarize_item(df, item))
+    for item in median_errors_online.nlargest(n=3).items():
+        worst_median_online.append(summarize_item(df, item))
 
-    best["median"] = best_median
-    best["mean"] = best_mean
-    worst["median"] = worst_median
-    worst["mean"] = worst_mean
+    best_offline = {}
+    best_online = {}
+    best_offline["median"] = best_median_offline
+    best_offline["mean"] = best_mean_offline
+    best_online["median"] = best_median_online
+    best_online["mean"] = best_mean_online
+    best["offline"] = best_offline
+    best["online"] = best_online
+
+    worst_offline = {}
+    worst_online = {}
+    worst_offline["median"] = worst_median_offline
+    worst_offline["mean"] = worst_mean_offline
+    worst_online["median"] = worst_median_online
+    worst_online["mean"] = worst_mean_online
+    worst["offline"] = worst_offline
+    worst["online"] = worst_online
     summary["worst"] = worst
     summary["best"] = best
     return summary
@@ -169,23 +199,47 @@ def _summarize_per_obj(df, summarize_best_worst=False):
         df_groupedby_obj.distance.transform("mean") > 30
     ].groupby(["scene", "object_id", "obj_class"])
     obj_summary["far"] = _summarize_groupedby_obj(df_groupedby_obj_far)
-    # outliers: close: num_objects * median error gt 1
-    #           mid: num_objects * median error gt 5
-    #           far: num_objects * median error gt 10
+    # outliers: close: num_objects * median error_offline gt 1
+    #           mid: num_objects * median error_offline gt 5
+    #           far: num_objects * median error_offline gt 10
     # divided by num objects from all
-    num_outliers_close = (
-        obj_summary["close"]["num-objs"] - obj_summary["close"]["median-error-lt-1"]
+    num_outliers_close_offline = (
+        obj_summary["close"]["num-objs"]
+        - obj_summary["close"]["offline"]["median-error-lt-1"]
     )
-    num_outliers_mid = (
-        obj_summary["mid"]["num-objs"] - obj_summary["mid"]["median-error-lt-5"]
+    num_outliers_mid_offline = (
+        obj_summary["mid"]["num-objs"]
+        - obj_summary["mid"]["offline"]["median-error-lt-5"]
     )
-    num_outliers_far = (
-        obj_summary["far"]["num-objs"] - obj_summary["far"]["median-error-lt-10"]
+    num_outliers_far_offline = (
+        obj_summary["far"]["num-objs"]
+        - obj_summary["far"]["offline"]["median-error-lt-10"]
     )
-    num_outliers = num_outliers_close + num_outliers_mid + num_outliers_far
+    num_outliers_offline = (
+        num_outliers_close_offline + num_outliers_mid_offline + num_outliers_far_offline
+    )
+    num_outliers_close_online = (
+        obj_summary["close"]["num-objs"]
+        - obj_summary["close"]["online"]["median-error-lt-1"]
+    )
+    num_outliers_mid_online = (
+        obj_summary["mid"]["num-objs"]
+        - obj_summary["mid"]["online"]["median-error-lt-5"]
+    )
+    num_outliers_far_online = (
+        obj_summary["far"]["num-objs"]
+        - obj_summary["far"]["online"]["median-error-lt-10"]
+    )
+    num_outliers_online = (
+        num_outliers_close_online + num_outliers_mid_online + num_outliers_far_online
+    )
     num_objs = obj_summary["all"]["num-objs"]
     if num_objs:
-        obj_summary["outlier-ratio"] = num_outliers / num_objs
+        obj_summary["outlier-ratio"] = {}
+        obj_summary["outlier-ratio"]["offline"] = min(
+            num_outliers_offline / num_objs, 1
+        )
+        obj_summary["outlier-ratio"]["online"] = min(num_outliers_online / num_objs, 1)
     else:
         obj_summary["outlier-ratio"] = "NA"
     return obj_summary
@@ -193,22 +247,41 @@ def _summarize_per_obj(df, summarize_best_worst=False):
 
 def _summarize_groupedby_obj(df_groupedby_obj, summarize_best_worst=False):
     num_objs = len(df_groupedby_obj)
-    mean_errors = df_groupedby_obj.error.mean()
-    median_errors = df_groupedby_obj.error.median()
+    mean_errors_offline = df_groupedby_obj.error_offline.mean()
+    median_errors_offline = df_groupedby_obj.error_offline.median()
+    mean_errors_online = df_groupedby_obj.error_online.mean()
+    median_errors_online = df_groupedby_obj.error_online.median()
     obj_summary = {}
     obj_summary["num-objs"] = num_objs
-    obj_summary["mean-of-mean"] = float(mean_errors.mean())
-    obj_summary["median-of-mean"] = float(mean_errors.median())
-    obj_summary["mean-of-median"] = float(median_errors.mean())
-    obj_summary["median-of-median"] = float(median_errors.median())
-    obj_summary["mean-error-lt-10"] = float((mean_errors < 10).sum())
-    obj_summary["mean-error-lt-5"] = float((mean_errors < 5).sum())
-    obj_summary["mean-error-lt-3"] = float((mean_errors < 3).sum())
-    obj_summary["mean-error-lt-1"] = float((mean_errors < 1).sum())
-    obj_summary["median-error-lt-10"] = float((median_errors < 10).sum())
-    obj_summary["median-error-lt-5"] = float((median_errors < 5).sum())
-    obj_summary["median-error-lt-3"] = float((median_errors < 3).sum())
-    obj_summary["median-error-lt-1"] = float((median_errors < 1).sum())
+    offline_summary = {}
+    offline_summary["mean-of-mean"] = float(mean_errors_offline.mean())
+    offline_summary["median-of-mean"] = float(mean_errors_offline.median())
+    offline_summary["mean-of-median"] = float(median_errors_offline.mean())
+    offline_summary["median-of-median"] = float(median_errors_offline.median())
+    offline_summary["mean-error-lt-10"] = float((mean_errors_offline < 10).sum())
+    offline_summary["mean-error-lt-5"] = float((mean_errors_offline < 5).sum())
+    offline_summary["mean-error-lt-3"] = float((mean_errors_offline < 3).sum())
+    offline_summary["mean-error-lt-1"] = float((mean_errors_offline < 1).sum())
+    offline_summary["median-error-lt-10"] = float((median_errors_offline < 10).sum())
+    offline_summary["median-error-lt-5"] = float((median_errors_offline < 5).sum())
+    offline_summary["median-error-lt-3"] = float((median_errors_offline < 3).sum())
+    offline_summary["median-error-lt-1"] = float((median_errors_offline < 1).sum())
+    obj_summary["offline"] = offline_summary
+    online_summary = {}
+    online_summary["mean-of-mean"] = float(mean_errors_online.mean())
+    online_summary["median-of-mean"] = float(mean_errors_online.median())
+    online_summary["mean-of-median"] = float(median_errors_online.mean())
+    online_summary["median-of-median"] = float(median_errors_online.median())
+    online_summary["mean-error-lt-10"] = float((mean_errors_online < 10).sum())
+    online_summary["mean-error-lt-5"] = float((mean_errors_online < 5).sum())
+    online_summary["mean-error-lt-3"] = float((mean_errors_online < 3).sum())
+    online_summary["mean-error-lt-1"] = float((mean_errors_online < 1).sum())
+    online_summary["median-error-lt-10"] = float((median_errors_online < 10).sum())
+    online_summary["median-error-lt-5"] = float((median_errors_online < 5).sum())
+    online_summary["median-error-lt-3"] = float((median_errors_online < 3).sum())
+    online_summary["median-error-lt-1"] = float((median_errors_online < 1).sum())
+    obj_summary["online"] = online_summary
+
     if summarize_best_worst:
         best_worst = _summarize_best_worst(
             df,
@@ -220,25 +293,29 @@ def _summarize_groupedby_obj(df_groupedby_obj, summarize_best_worst=False):
 
 
 def _get_scene_summary(df, scene_row):
-    scene, error = scene_row
+    scene, error_offline = scene_row
     df_scene = df[df.scene == scene]
     num_frames_total = len(df_scene)
     num_objects = len(df_scene.object_id.unique())
-    max_error = float(df_scene.error.max())
-    min_error = float(df_scene.error.min())
+    max_error_offline = float(df_scene.error_offline.max())
+    min_error_offline = float(df_scene.error_offline.min())
+    max_error_online = float(df_scene.error_online.max())
+    min_error_online = float(df_scene.error_online.min())
     return {
         "scene": scene,
-        "error": error,
+        "error_offline": error_offline,
         "num_frames": num_frames_total,
         "num_objects": num_objects,
-        "max_error": max_error,
-        "min_error": min_error,
+        "max_error_offline": max_error_offline,
+        "min_error_offline": min_error_offline,
+        "max_error_online": max_error_online,
+        "min_error_online": min_error_online,
     }
 
 
 def _get_obj_summary(df, obj):
     scene, obj_id, obj_class = obj[0]
-    error = obj[1]
+    error_offline = obj[1]
     df_obj = df.loc[(df.scene == scene) & (df.object_id == obj_id)]
     num_frames_total = len(df_obj)
     try:
@@ -253,7 +330,7 @@ def _get_obj_summary(df, obj):
         "scene": scene,
         "object_id": obj_id,
         "class": obj_class,
-        "error": error,
+        "error_offline": error_offline,
         "num_frames": num_frames_total,
         "tracked_ratio": tracked_ratio,
         "fully_visible_ratio": fully_visible_ratio,
@@ -264,9 +341,16 @@ def _get_obj_summary(df, obj):
 
 def _get_metrics(df):
     metrics = {}
-    metrics["mean"] = float(df.error.mean())
-    metrics["median"] = float(df.error.median())
-    metrics["stddev"] = float(df.error.std())
+    errors_offline = {}
+    errors_offline["mean"] = float(df.error_offline.mean())
+    errors_offline["median"] = float(df.error_offline.median())
+    errors_offline["stddev"] = float(df.error_offline.std())
+    errors_online = {}
+    errors_online["mean"] = float(df.error_online.mean())
+    errors_online["median"] = float(df.error_online.median())
+    errors_online["stddev"] = float(df.error_online.std())
+    metrics["offline"] = errors_offline
+    metrics["online"] = errors_online
     if df.empty:
         metrics["tracked_ratio"] = "NA"
     else:
