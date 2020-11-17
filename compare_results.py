@@ -5,22 +5,40 @@ from pprint import pprint
 import yaml
 
 MAIN_METRICS = {
-    "median": {
-        "total": ["total", "median"],
-        "car": ["obj-type", "car", "median"],
-        "ped": ["obj-type", "pedestrian", "median"],
+    "offline-median": {
+        "total": ["total", "offline", "median"],
+        "car": ["obj-type", "car", "offline", "median"],
+        "ped": ["obj-type", "pedestrian", "offline", "median"],
         "reverse": False,
     },
-    "median-of-object-mean": {
-        "total": ["per-obj", "all", "median-of-mean"],
-        "car": ["obj-type", "car", "all", "median-of-mean"],
-        "ped": ["obj-type", "pedestrian", "all", "median-of-mean"],
+    "offline-median-of-object-mean": {
+        "total": ["per-obj", "all", "offline", "median-of-mean"],
+        "car": ["obj-type", "car", "all", "offline", "median-of-mean"],
+        "ped": ["obj-type", "pedestrian", "all", "offline", "median-of-mean"],
         "reverse": False,
     },
-    "outlier-ratio": {
-        "total": ["per-obj", "outlier-ratio"],
-        "car": ["obj-type", "car", "outlier-ratio"],
-        "ped": ["obj-type", "pedestrian", "outlier-ratio"],
+    "offline-outlier-ratio": {
+        "total": ["per-obj", "outlier-ratio", "offline"],
+        "car": ["obj-type", "car", "outlier-ratio", "offline"],
+        "ped": ["obj-type", "pedestrian", "outlier-ratio", "offline"],
+        "reverse": False,
+    },
+    "online-median": {
+        "total": ["total", "online", "median"],
+        "car": ["obj-type", "car", "online", "median"],
+        "ped": ["obj-type", "pedestrian", "online", "median"],
+        "reverse": False,
+    },
+    "online-median-of-object-mean": {
+        "total": ["per-obj", "all", "online", "median-of-mean"],
+        "car": ["obj-type", "car", "all", "online", "median-of-mean"],
+        "ped": ["obj-type", "pedestrian", "all", "online", "median-of-mean"],
+        "reverse": False,
+    },
+    "online-outlier-ratio": {
+        "total": ["per-obj", "outlier-ratio", "online"],
+        "car": ["obj-type", "car", "outlier-ratio", "online"],
+        "ped": ["obj-type", "pedestrian", "outlier-ratio", "online"],
         "reverse": False,
     },
 }
