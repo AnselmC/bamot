@@ -58,8 +58,8 @@ __clear_stereo_matches_default = bool(
     os.environ.get("CLEAR_STEREO_MATCHES", default=False)
 )
 __default_max_speed = float(
-    os.environ.get("MAX_SPEED_MS", default=30)
-)  # about 100 km/h
+    os.environ.get("MAX_SPEED_MS", default=40)
+)  # about 140 km/h
 
 __default_frame_rate = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
 

@@ -38,9 +38,9 @@ def get_median_translation(object_track):
     return np.median(translations)
 
 
-def _valid_motion(Tr_rel, median_translation):
+def _valid_motion(Tr_rel):
     curr_translation = np.linalg.norm(Tr_rel[:3, 3])
-    return curr_translation < 3 * median_translation
+    return curr_translation < config.MAX_SPEED / config.FRAME_RATE
 
 
 def _localize_object(
@@ -328,7 +328,7 @@ def run(
                 if T_rel_prev is not None:
                     T_world_obj2 = T_world_cam @ T_cam_obj_pnp
                     T_rel = np.linalg.inv(T_world_obj1) @ T_world_obj2
-                    valid_motion = _valid_motion(T_rel, median_translation)
+                    valid_motion = _valid_motion(T_rel)
                     if valid_motion:
                         T_cam_obj = T_cam_obj_pnp
                     else:
