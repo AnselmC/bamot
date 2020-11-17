@@ -22,6 +22,8 @@ class Config:
     SLIDING_WINDOW_DESCRIPTORS: int
     MAX_BAD_FRAMES: int
     CLEAR_STEREO_MATCHES: bool
+    FRAME_RATE: int
+    MAX_SPEED: float
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
@@ -55,6 +57,12 @@ __sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
 __clear_stereo_matches_default = bool(
     os.environ.get("CLEAR_STEREO_MATCHES", default=False)
 )
+__default_max_speed = float(
+    os.environ.get("MAX_SPEED_MS", default=30)
+)  # about 100 km/h
+
+__default_frame_rate = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
+
 
 if __config_file.exists():
     with open(__config_file.as_posix(), "r") as fp:
@@ -85,6 +93,8 @@ CONFIG = Config(
     CLEAR_STEREO_MATCHES=__user_config.get(
         "clear_stereo_matches", __clear_stereo_matches_default
     ),
+    MAX_SPEED=__user_config.get("max_speed_ms", __default_max_speed),
+    FRAME_RATE=__user_config.get("frame_rate", __default_frame_rate),
 )
 
 if CONFIG.USING_CONFIG_FILE:

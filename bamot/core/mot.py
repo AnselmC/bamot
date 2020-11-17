@@ -346,7 +346,7 @@ def run(
                 track.badly_tracked_frames > config.MAX_BAD_FRAMES
                 and enough_stereo_matches
             ):
-                track_logger.debug("Clearing landmark")
+                track_logger.debug("Clearing landmarks")
                 track.landmarks.clear()
                 track.badly_tracked_frames = 0
             else:

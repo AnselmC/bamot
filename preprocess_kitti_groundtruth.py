@@ -4,10 +4,10 @@ import argparse
 import pickle
 from pathlib import Path
 
-import cv2
 import numpy as np
-import tqdm
 
+import cv2
+import tqdm
 from bamot.config import CONFIG as config
 from bamot.core.base_types import StereoImage
 from bamot.core.preprocessing import preprocess_frame
@@ -112,7 +112,7 @@ if __name__ == "__main__":
             )
             result_slam = cv2.putText(
                 result_slam,
-                left_fname,
+                "/".join(left_fname.split("/")[-3:]),
                 (5, 25),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                 fontScale=1,
@@ -121,7 +121,7 @@ if __name__ == "__main__":
             )
             result_slam = cv2.putText(
                 result_slam,
-                right_fname,
+                "/".join(right_fname.split("/")[-3:]),
                 (5 + right_img_mot.shape[1], 25),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                 fontScale=1,
