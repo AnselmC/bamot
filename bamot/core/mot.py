@@ -8,9 +8,8 @@ import uuid
 from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
-import numpy as np
-
 import cv2
+import numpy as np
 import pathos
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
@@ -602,6 +601,8 @@ def _compute_estimated_trajectories(
             )
         offline_trajectories_world[int(track_id)] = offline_trajectory_world
         offline_trajectories_cam[int(track_id)] = offline_trajectory_cam
+        online_trajectories_world[int(track_id)] = online_trajectory_world
+        online_trajectories_cam[int(track_id)] = online_trajectory_cam
     return (
         (offline_trajectories_world, offline_trajectories_cam),
         (online_trajectories_world, online_trajectories_cam),
