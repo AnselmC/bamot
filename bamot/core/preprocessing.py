@@ -8,7 +8,7 @@ from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
                                    StereoObjectDetection)
 from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
                            get_convex_hull_from_mask, get_convex_hull_mask,
-                           project, to_homogeneous_pt)
+                           get_feature_matcher, project, to_homogeneous_pt)
 from scipy.optimize import linear_sum_assignment
 from shapely.geometry import Polygon
 
@@ -46,7 +46,7 @@ def transform_object_points(
     return np.array(right_obj_pts).reshape(-1, 2).astype(int)
 
 
-def match_detections(left_object_detections, right_object_detections):
+def match_detections(left_object_detections, right_object_detections, stereo_image):
     num_left = len(left_object_detections)
     num_right = len(right_object_detections)
     if num_left >= num_right:
@@ -55,21 +55,41 @@ def match_detections(left_object_detections, right_object_detections):
         left_first = True
         first_obj_detections = left_object_detections
         second_obj_detections = right_object_detections
+        first_image = stereo_image.left
+        second_image = stereo_image.right
     else:
         num_first = num_right
         num_second = num_left
         left_first = False
         first_obj_detections = right_object_detections
         second_obj_detections = left_object_detections
+        first_image = stereo_image.right
+        second_image = stereo_image.left
 
     cost_matrix = np.zeros((num_first, num_second))
+    feature_matcher = get_feature_matcher()
+
+    second_feature_map = {}
     for i, first_obj in enumerate(first_obj_detections):
         first_convex_hull = get_convex_hull_from_mask(first_obj.mask)
+        first_features = feature_matcher.detect_features(first_image, first_obj.mask)
+        first_obj.features = first_features
         if len(first_convex_hull) >= 3:
             first_obj_area = Polygon(get_convex_hull_from_mask(first_obj.mask))
         else:
             first_obj_area = Polygon()
         for j, second_obj in enumerate(second_obj_detections):
+            if second_feature_map.get(j):
+                second_features = second_feature_map[j]
+            else:
+                second_features = feature_matcher.detect_features(
+                    second_image, second_obj.mask
+                )
+                second_feature_map[j] = second_features
+            second_obj.features = second_features
+            matched_features = feature_matcher.match_features(
+                first_features, second_features
+            )
             second_convex_hull = get_convex_hull_from_mask(second_obj.mask)
             if len(second_convex_hull) >= 3:
                 second_obj_area = Polygon(get_convex_hull_from_mask(second_obj.mask))
@@ -79,7 +99,10 @@ def match_detections(left_object_detections, right_object_detections):
                 first_obj_area.intersection(second_obj_area).area
                 / first_obj_area.union(second_obj_area).area
             )
-            cost_matrix[i][j] = iou
+            normalized_matched_features = len(matched_features) / max(
+                1, min(len(first_features), len(second_features))
+            )
+            cost_matrix[i][j] = iou + normalized_matched_features
 
     first_indices, second_indices = linear_sum_assignment(cost_matrix, maximize=True)
 
@@ -126,7 +149,7 @@ def preprocess_frame(
     stereo_object_detections = []
     if left_object_detections and right_object_detections:
         matched_detections = match_detections(
-            left_object_detections, right_object_detections
+            left_object_detections, right_object_detections, stereo_image
         )
     else:
         matched_detections = []

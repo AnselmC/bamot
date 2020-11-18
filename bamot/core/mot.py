@@ -275,16 +275,26 @@ def run(
         track_logger.debug("Image: %d", img_id)
         feature_matcher = get_feature_matcher()
         # mask out object from image
-        left_features = feature_matcher.detect_features(
-            stereo_image.left, detection.left.mask, img_id, track_id, "left"
-        )
-        track_logger.debug("Detected %d features on left object", len(left_features))
-        right_features = feature_matcher.detect_features(
-            stereo_image.right, detection.right.mask, img_id, track_id, "right"
-        )
-        track_logger.debug("Detected %d features on right object", len(right_features))
-        detection.left.features = left_features
-        detection.right.features = right_features
+        if not detection.left.features:
+            left_features = feature_matcher.detect_features(
+                stereo_image.left, detection.left.mask, img_id, track_id, "left"
+            )
+            track_logger.debug(
+                "Detected %d features on left object", len(left_features)
+            )
+            detection.left.features = left_features
+        else:
+            left_features = detection.left.features
+        if not detection.right.features:
+            right_features = feature_matcher.detect_features(
+                stereo_image.right, detection.right.mask, img_id, track_id, "right"
+            )
+            track_logger.debug(
+                "Detected %d features on right object", len(right_features)
+            )
+            detection.right.features = right_features
+        else:
+            right_features = detection.right.features
         # match stereo features
         stereo_matches = feature_matcher.match_features(left_features, right_features)
         track_logger.debug("%d stereo matches", len(stereo_matches))

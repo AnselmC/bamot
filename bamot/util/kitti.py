@@ -293,16 +293,13 @@ def get_estimated_obj_detections(
                 > 0.0
             ):
                 pass
-                # raise ValueError(f"Objects with overlapping masks in frame {frame}")
             else:
                 combined_mask_per_frame[frame] = rletools.merge(
                     [combined_mask_per_frame[frame], mask], intersect=False
                 )
             bool_mask = rletools.decode(mask).astype(bool)
             if bool_mask.sum() > 2:
-                objects_per_frame[frame].append(
-                    ObjectDetection(bool_mask, cls)
-                )
+                objects_per_frame[frame].append(ObjectDetection(bool_mask, cls))
     return objects_per_frame
 
 
