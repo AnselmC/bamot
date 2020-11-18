@@ -96,9 +96,12 @@ if __name__ == "__main__":
             left_object_detections = get_gt_obj_detections_from_kitti(
                 kitti_path, scene, idx
             )
-            for obj in left_object_detections:
-                if colors.get(obj.track_id) is None:
-                    colors[obj.track_id] = get_color(normalized=False, as_tuple=True)
+            if not args.no_view:
+                for obj in left_object_detections:
+                    if colors.get(obj.track_id) is None:
+                        colors[obj.track_id] = get_color(
+                            normalized=False, as_tuple=True
+                        )
             masked_stereo_image_slam, stereo_object_detections = preprocess_frame(
                 stereo_image,
                 stereo_cam,

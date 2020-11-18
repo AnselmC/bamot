@@ -137,18 +137,18 @@ def preprocess_frame(
             matched_left.add(left_obj_idx)
             left_obj = left_object_detections[left_obj_idx]
             right_obj = right_object_detections[right_obj_idx]
-            color = colors[left_obj.track_id]
             left_mask[left_obj.mask] = 0
             right_mask[right_obj.mask] = 0
             right_obj.track_id = left_obj.track_id
             stereo_object_detections.append(StereoObjectDetection(left_obj, right_obj))
-            _draw_contours(left_obj.mask, raw_left_image, color)
-            _draw_contours(right_obj.mask, raw_right_image, color)
+            if colors:
+                color = colors[left_obj.track_id]
+                _draw_contours(left_obj.mask, raw_left_image, color)
+                _draw_contours(right_obj.mask, raw_right_image, color)
     unmatched_left = set(range(len(left_object_detections))).difference(matched_left)
     if unmatched_left:
         for left_idx in unmatched_left:
             obj = left_object_detections[left_idx]
-            color = colors[obj.track_id]
             # get masks for object
             left_obj_mask = obj.mask
             left_mask[left_obj_mask] = 0
@@ -162,8 +162,10 @@ def preprocess_frame(
                 mask=right_obj_mask, track_id=obj.track_id, cls=obj.cls,
             )
             stereo_object_detections.append(StereoObjectDetection(obj, right_obj))
-            _draw_contours(left_obj_mask, raw_left_image, color)
-            _draw_contours(right_obj_mask, raw_right_image, color)
+            if colors:
+                color = colors[obj.track_id]
+                _draw_contours(left_obj_mask, raw_left_image, color)
+                _draw_contours(right_obj_mask, raw_right_image, color)
 
     left_mask = left_mask == 0
     right_mask = right_mask == 0
