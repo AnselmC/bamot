@@ -48,6 +48,12 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--only-iou",
+        help="Use only Intersection-over-Union as matching heuristic between left and right detections",
+        action="store_true",
+    )
+
+    parser.add_argument(
         "--no-view",
         help="flag to disable viewing the preprocessed data while it's being generated (quit execution by hitting `q`)",
         action="store_true",
@@ -113,6 +119,7 @@ if __name__ == "__main__":
                 left_object_detections=left_object_detections,
                 right_object_detections=right_object_detections,
                 colors=colors,
+                only_iou=args.only_iou,
             )
             left_mot_mask = masked_stereo_image_slam.left == 0
             right_mot_mask = masked_stereo_image_slam.right == 0

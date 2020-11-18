@@ -46,7 +46,9 @@ def transform_object_points(
     return np.array(right_obj_pts).reshape(-1, 2).astype(int)
 
 
-def match_detections(left_object_detections, right_object_detections, stereo_image):
+def match_detections(
+    left_object_detections, right_object_detections, stereo_image, only_iou
+):
     num_left = len(left_object_detections)
     num_right = len(right_object_detections)
     if num_left >= num_right:
@@ -102,7 +104,7 @@ def match_detections(left_object_detections, right_object_detections, stereo_ima
             normalized_matched_features = len(matched_features) / max(
                 1, min(len(first_features), len(second_features))
             )
-            cost_matrix[i][j] = iou + normalized_matched_features
+            cost_matrix[i][j] = iou if only_iou else iou + normalized_matched_features
 
     first_indices, second_indices = linear_sum_assignment(cost_matrix, maximize=True)
 
@@ -129,6 +131,7 @@ def preprocess_frame(
     colors: Dict[int, Tuple[int, int, int]],
     left_object_detections: List[ObjectDetection],
     right_object_detections: Optional[List[ObjectDetection]] = None,
+    only_iou: bool = False,
 ) -> Tuple[StereoImage, List[StereoObjectDetection]]:
     """Masks out object detections from a stereo image and returns the masked image.
 
@@ -149,7 +152,7 @@ def preprocess_frame(
     stereo_object_detections = []
     if left_object_detections and right_object_detections:
         matched_detections = match_detections(
-            left_object_detections, right_object_detections, stereo_image
+            left_object_detections, right_object_detections, stereo_image, only_iou
         )
     else:
         matched_detections = []
