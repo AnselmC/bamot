@@ -23,6 +23,7 @@ class Config:
     MAX_BAD_FRAMES: int
     FRAME_RATE: int
     MAX_SPEED: float
+    BA_EVERY_N_STEPS: int
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
@@ -53,6 +54,7 @@ __using_mad = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
+__ba_every_n_steps_default = int(os.environ.get("BA_EVERY_N_STEPS", default=1))
 
 __default_max_speed = float(
     os.environ.get("MAX_SPEED_MS", default=40)
@@ -84,6 +86,7 @@ CONFIG = Config(
     MAX_DIST=__user_config.get("max_dist", 150),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),
     NUM_FEATURES=__user_config.get("num_features", 8000),
+    BA_EVERY_N_STEPS=__user_config.get("ba_every_n_steps", __ba_every_n_steps_default),
     SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),

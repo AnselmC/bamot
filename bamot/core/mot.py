@@ -15,7 +15,7 @@ from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    ImageId, Landmark, Match, ObjectTrack,
                                    Observation, StereoCamera, StereoImage,
-                                   StereoObjectDetection, TrackMatch,
+                                   StereoObjectDetection, TrackId, TrackMatch,
                                    get_camera_parameters_matrix)
 from bamot.core.optimization import object_bundle_adjustment
 from bamot.util.cv import (back_project, from_homogeneous_pt,
@@ -255,6 +255,7 @@ def run(
     continuous: bool,
 ):
     object_tracks: Dict[int, ObjectTrack] = {}
+    ba_slots: Tuple[set] = tuple(set() for _ in range(config.BA_EVERY_N_STEPS))
     LOGGER.info("Starting MOT run")
 
     def _process_match(
@@ -267,6 +268,7 @@ def run(
         img_shape,
         stereo_image,
         current_cam_pose,
+        run_ba,
     ):
         track.active = True
         track_logger = logging.getLogger(f"CORE:MOT:{track_id}")
@@ -371,7 +373,7 @@ def run(
         # BA optimizes landmark positions w.r.t. object and object position over time
         # -> SLAM optimizes motion of camera
         # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
-        if len(track.poses) > 3 and len(track.landmarks) > 0:
+        if len(track.poses) > 3 and len(track.landmarks) > 0 and run_ba:
             track_logger.debug("Running BA")
             track = object_bundle_adjustment(
                 object_track=copy.deepcopy(track),
@@ -430,6 +432,21 @@ def run(
         all_poses = slam_data.get()
         slam_data.task_done()
         current_pose = all_poses[img_id]
+        track_ids = [obj.left.track_id for obj in new_detections]
+
+        # clear slots
+        slot_sizes = {}
+        for idx, slot in enumerate(ba_slots):
+            slot.clear()
+            slot_sizes[idx] = 0
+        # add track_ids to ba slots
+        for track_id in track_ids:
+            slot_idx, _ = sorted(
+                [(idx, size) for idx, size in slot_sizes.items()], key=lambda x: x[1],
+            )[0]
+            ba_slots[slot_idx].add(track_id)
+            slot_sizes[slot_idx] += 1
+        tracks_to_run_ba = ba_slots[img_id % config.BA_EVERY_N_STEPS]
         try:
             (
                 object_tracks,
@@ -439,14 +456,13 @@ def run(
             ) = step(
                 new_detections=new_detections,
                 stereo_image=stereo_image,
-                object_tracks=copy.deepcopy(
-                    object_tracks
-                ),  # weird behavior w/o deepcopy
+                object_tracks=copy.deepcopy(object_tracks),
                 process_match=_process_match,
                 stereo_cam=stereo_cam,
                 img_id=img_id,
                 current_cam_pose=current_pose,
                 all_poses=all_poses,
+                tracks_to_run_ba=tracks_to_run_ba,
             )
         except Exception as exc:
             LOGGER.exception("Unexpected error: %s", exc)
@@ -477,6 +493,7 @@ def step(
     all_poses: Dict[ImageId, np.ndarray],
     img_id: ImageId,
     current_cam_pose: np.ndarray,
+    tracks_to_run_ba: List[TrackId],
 ) -> Tuple[
     Dict[int, ObjectTrack], List[List[Feature]], List[List[Feature]], List[List[Match]]
 ]:
@@ -518,6 +535,7 @@ def step(
             detection = new_detections[match.detection_index]
             track = object_tracks[match.track_index]
             track.fully_visible = new_detections[match.detection_index]
+            run_ba = match.track_index in tracks_to_run_ba
             active_tracks.append(match.track_index)
             matched_detections.append(match.detection_index)
             futures_to_track_index[
@@ -532,6 +550,7 @@ def step(
                     img_shape=img_shape,
                     stereo_image=stereo_image,
                     current_cam_pose=current_cam_pose,
+                    run_ba=run_ba,
                 )
             ] = match.track_index
 
