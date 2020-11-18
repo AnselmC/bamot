@@ -53,7 +53,7 @@ __using_mad = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
-)
+
 __default_max_speed = float(
     os.environ.get("MAX_SPEED_MS", default=40)
 )  # about 140 km/h

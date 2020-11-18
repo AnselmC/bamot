@@ -1,8 +1,13 @@
 import logging
 import time
+from typing import List
 
 import numpy as np
 import tqdm
+
+RNG = np.random.default_rng()
+Color = np.ndarray
+COLORS: List[Color] = RNG.random((42, 3))
 
 
 class TqdmLoggingHandler(logging.Handler):
@@ -45,3 +50,16 @@ def get_mad(arr):
     arr = np.ma.array(arr).compressed()  # should be faster to not use masked arrays.
     med = np.median(arr, axis=0)
     return np.median(np.abs(arr - med))
+
+
+def get_color(
+    normalized: bool = True, only_bright: bool = True, as_tuple: bool = False
+):
+    color = COLORS[RNG.choice(len(COLORS))]
+    if only_bright:
+        # only bright colors
+        color[np.argmin(color)] = 0
+        color[np.argmax(color)] = 1.0
+    if not normalized:
+        color = (255 * color).astype(int)
+    return color if not as_tuple else tuple(color.tolist())

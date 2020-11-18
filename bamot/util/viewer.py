@@ -11,12 +11,9 @@ import open3d as o3d
 from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 from bamot.util.kitti import LabelData, LabelDataRow
+from bamot.util.misc import Color, get_color
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
-RNG = np.random.default_rng()
-Color = np.ndarray
-# Create some random colors
-COLORS: List[Color] = RNG.random((42, 3))
 BLACK = [0.0, 0.0, 0.0]
 
 
@@ -85,14 +82,6 @@ def get_screen_size():
     return width, height
 
 
-def _get_color():
-    color = COLORS[RNG.choice(len(COLORS))]
-    # only bright colors
-    color[np.argmin(color)] = 0
-    color[np.argmax(color)] = 1.0
-    return color
-
-
 def _update_geometries(
     all_track_geometries: Dict[int, TrackGeometries],
     ego_geometries: EgoGeometries,
@@ -120,7 +109,7 @@ def _update_geometries(
                 bbox=o3d.geometry.LineSet(),
                 gt_trajectory=o3d.geometry.LineSet(),
                 gt_bbox=o3d.geometry.LineSet(),
-                color=_get_color(),
+                color=get_color(),
             ),
         )
         # draw path

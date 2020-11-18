@@ -4,10 +4,10 @@ import argparse
 import pickle
 from pathlib import Path
 
-import numpy as np
-
 import cv2
+import numpy as np
 import tqdm
+
 from bamot.config import CONFIG as config
 from bamot.core.base_types import StereoImage
 from bamot.core.preprocessing import preprocess_frame
@@ -15,6 +15,7 @@ from bamot.util.kitti import (get_cameras_from_kitti,
                               get_estimated_obj_detections,
                               get_gt_obj_detections_from_kitti,
                               get_image_stream)
+from bamot.util.misc import get_color
 from bamot.util.viewer import get_screen_size
 
 if __name__ == "__main__":
@@ -86,6 +87,7 @@ if __name__ == "__main__":
             )
         else:
             all_right_object_detections = {}
+        colors = {}
         for idx, (stereo_image, filenames) in tqdm.tqdm(
             enumerate(image_stream), total=len(image_stream), position=1,
         ):
@@ -94,11 +96,15 @@ if __name__ == "__main__":
             left_object_detections = get_gt_obj_detections_from_kitti(
                 kitti_path, scene, idx
             )
+            for obj in left_object_detections:
+                if colors.get(obj.track_id) is None:
+                    colors[obj.track_id] = get_color(normalized=False, as_tuple=True)
             masked_stereo_image_slam, stereo_object_detections = preprocess_frame(
                 stereo_image,
                 stereo_cam,
                 left_object_detections=left_object_detections,
                 right_object_detections=right_object_detections,
+                colors=colors,
             )
             left_mot_mask = masked_stereo_image_slam.left == 0
             right_mot_mask = masked_stereo_image_slam.right == 0

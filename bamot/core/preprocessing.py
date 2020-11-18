@@ -1,7 +1,8 @@
 """Contains preprocessing functionality, namely converting raw data to inputs for SLAM and MOT
 """
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import cv2
 import numpy as np
 from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
                                    StereoObjectDetection)
@@ -10,6 +11,13 @@ from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
                            project, to_homogeneous_pt)
 from scipy.optimize import linear_sum_assignment
 from shapely.geometry import Polygon
+
+
+def _draw_contours(mask, img, color):
+    contours, _ = cv2.findContours(
+        mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+    )
+    cv2.drawContours(img, contours, -1, color, 3)
 
 
 def transform_object_points(
@@ -95,6 +103,7 @@ def match_detections(left_object_detections, right_object_detections):
 def preprocess_frame(
     stereo_image: StereoImage,
     stereo_camera: StereoCamera,
+    colors: Dict[int, Tuple[int, int, int]],
     left_object_detections: List[ObjectDetection],
     right_object_detections: Optional[List[ObjectDetection]] = None,
 ) -> Tuple[StereoImage, List[StereoObjectDetection]]:
@@ -128,14 +137,18 @@ def preprocess_frame(
             matched_left.add(left_obj_idx)
             left_obj = left_object_detections[left_obj_idx]
             right_obj = right_object_detections[right_obj_idx]
+            color = colors[left_obj.track_id]
             left_mask[left_obj.mask] = 0
             right_mask[right_obj.mask] = 0
             right_obj.track_id = left_obj.track_id
             stereo_object_detections.append(StereoObjectDetection(left_obj, right_obj))
+            _draw_contours(left_obj.mask, raw_left_image, color)
+            _draw_contours(right_obj.mask, raw_right_image, color)
     unmatched_left = set(range(len(left_object_detections))).difference(matched_left)
     if unmatched_left:
         for left_idx in unmatched_left:
             obj = left_object_detections[left_idx]
+            color = colors[obj.track_id]
             # get masks for object
             left_obj_mask = obj.mask
             left_mask[left_obj_mask] = 0
@@ -149,6 +162,8 @@ def preprocess_frame(
                 mask=right_obj_mask, track_id=obj.track_id, cls=obj.cls,
             )
             stereo_object_detections.append(StereoObjectDetection(obj, right_obj))
+            _draw_contours(left_obj_mask, raw_left_image, color)
+            _draw_contours(right_obj_mask, raw_right_image, color)
 
     left_mask = left_mask == 0
     right_mask = right_mask == 0
