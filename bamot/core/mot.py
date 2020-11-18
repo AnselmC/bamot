@@ -351,8 +351,6 @@ def run(
                 track.badly_tracked_frames = 0
             else:
                 track.badly_tracked_frames += 1
-                if track.landmarks and config.CLEAR_STEREO_MATCHES:
-                    stereo_matches.clear()
 
         T_world_obj = T_world_cam @ T_cam_obj
         track.poses[img_id] = T_world_obj

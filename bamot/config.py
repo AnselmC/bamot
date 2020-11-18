@@ -21,7 +21,6 @@ class Config:
     SLIDING_WINDOW_BA: int
     SLIDING_WINDOW_DESCRIPTORS: int
     MAX_BAD_FRAMES: int
-    CLEAR_STEREO_MATCHES: bool
     FRAME_RATE: int
     MAX_SPEED: float
     CONFIG_FILE: Optional[str] = None
@@ -54,8 +53,6 @@ __using_mad = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
-__clear_stereo_matches_default = bool(
-    os.environ.get("CLEAR_STEREO_MATCHES", default=False)
 )
 __default_max_speed = float(
     os.environ.get("MAX_SPEED_MS", default=40)
@@ -90,9 +87,6 @@ CONFIG = Config(
     SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),
-    CLEAR_STEREO_MATCHES=__user_config.get(
-        "clear_stereo_matches", __clear_stereo_matches_default
-    ),
     MAX_SPEED=__user_config.get("max_speed_ms", __default_max_speed),
     FRAME_RATE=__user_config.get("frame_rate", __default_frame_rate),
 )
