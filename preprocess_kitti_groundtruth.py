@@ -38,6 +38,11 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--save-slam",
+        help="flag to store masked images for static SLAM (disabled with `no--save`) ",
+        action="store_true",
+    )
+    parser.add_argument(
         "--no-right",
         help="disable using precomputed right obj masks (transfer left masks to right)",
         action="store_true",
@@ -153,10 +158,15 @@ if __name__ == "__main__":
             if not args.no_save:
                 img_name = left_fname.split("/")[-1]
                 img_id = img_name.split(".")[0]
-                slam_left_path = save_path_slam_left / img_name
-                slam_right_path = save_path_slam_right / img_name
-                cv2.imwrite(slam_left_path.as_posix(), masked_stereo_image_slam.left)
-                cv2.imwrite(slam_right_path.as_posix(), masked_stereo_image_slam.right)
+                if args.save_slam:
+                    slam_left_path = save_path_slam_left / img_name
+                    slam_right_path = save_path_slam_right / img_name
+                    cv2.imwrite(
+                        slam_left_path.as_posix(), masked_stereo_image_slam.left
+                    )
+                    cv2.imwrite(
+                        slam_right_path.as_posix(), masked_stereo_image_slam.right
+                    )
                 obj_det_path = (save_path_mot / img_id).as_posix() + ".pkl"
                 with open(obj_det_path, "wb") as fp:
                     pickle.dump(stereo_object_detections, fp)
