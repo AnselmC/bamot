@@ -422,7 +422,6 @@ def run(
             )
         # remove outlier landmarks
         _remove_outlier_landmarks(track.landmarks, track.cls, track_logger)
-        track.all_landmarks.update(track.landmarks)
         # settings min_landmarks to 0 disables robust initialization
         if (
             len(track.poses) == 1
