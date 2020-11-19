@@ -26,6 +26,34 @@ from bamot.util.misc import get_mad, timer
 LOGGER = logging.getLogger("CORE:MOT")
 
 
+def _remove_outlier_landmarks(landmarks, cls, track_logger):
+    if landmarks:
+        landmarks_to_remove = []
+        points = []
+        for landmark in landmarks.values():
+            points.append(landmark.pt_3d)
+        points = np.array(points)
+        cluster_median_center = np.median(points, axis=0)
+        for lid, lm in landmarks.items():
+            if not config.USING_MEDIAN_CLUSTER:
+                cluster_size = (
+                    config.CLUSTER_SIZE_CAR if cls == "car" else config.CLUSTER_SIZE_PED
+                )
+                if np.linalg.norm(lm.pt_3d - cluster_median_center) > (
+                    cluster_size / 2
+                ):
+                    landmarks_to_remove.append(lid)
+            else:
+                if np.linalg.norm(
+                    lm.pt_3d - cluster_median_center
+                ) > config.MAD_SCALE_FACTOR * get_mad(points):
+                    landmarks_to_remove.append(lid)
+
+        track_logger.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
+        for lid in landmarks_to_remove:
+            landmarks.pop(lid)
+
+
 def get_median_translation(object_track):
     translations = []
     frames = list(object_track.poses.keys())
@@ -38,9 +66,10 @@ def get_median_translation(object_track):
     return np.median(translations)
 
 
-def _valid_motion(Tr_rel):
+def _valid_motion(Tr_rel, obj_cls):
     curr_translation = np.linalg.norm(Tr_rel[:3, 3])
-    return curr_translation < config.MAX_SPEED / config.FRAME_RATE
+    max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
+    return curr_translation < max_speed / config.FRAME_RATE
 
 
 def _localize_object(
@@ -340,7 +369,7 @@ def run(
                 if T_rel_prev is not None:
                     T_world_obj2 = T_world_cam @ T_cam_obj_pnp
                     T_rel = np.linalg.inv(T_world_obj1) @ T_world_obj2
-                    valid_motion = _valid_motion(T_rel)
+                    valid_motion = _valid_motion(T_rel, track.cls)
                     if valid_motion:
                         T_cam_obj = T_cam_obj_pnp
                     else:
@@ -392,42 +421,15 @@ def run(
                 median_translation=median_translation,
             )
         # remove outlier landmarks
-        if track_id != -1 and track.landmarks:
-            landmarks_to_remove = []
-            points = []
-            for landmark in track.landmarks.values():
-                points.append(landmark.pt_3d)
-            points = np.array(points)
-            cluster_median_center = np.median(points, axis=0)
-            for lid, lm in track.landmarks.items():
-                if not config.USING_MEDIAN_CLUSTER:
-                    cluster_size = (
-                        config.CLUSTER_SIZE_CAR
-                        if track.cls == "car"
-                        else config.CLUSTER_SIZE_PED
-                    )
-                    if np.linalg.norm(lm.pt_3d - cluster_median_center) > (
-                        cluster_size / 2
-                    ):
-                        landmarks_to_remove.append(lid)
-                else:
-                    if np.linalg.norm(
-                        lm.pt_3d - cluster_median_center
-                    ) > config.MAD_SCALE_FACTOR * get_mad(points):
-                        landmarks_to_remove.append(lid)
-
-            track_logger.debug(
-                "Removing %d outlier landmarks", len(landmarks_to_remove)
-            )
-            for lid in landmarks_to_remove:
-                track.landmarks.pop(lid)
-            # settings min_landmarks to 0 disables robust initialization
-            if (
-                len(track.poses) == 1
-                and config.MIN_LANDMARKS
-                and len(track.landmarks) < config.MIN_LANDMARKS
-            ):
-                track.active = False
+        _remove_outlier_landmarks(track.landmarks, track.cls, track_logger)
+        track.all_landmarks.update(track.landmarks)
+        # settings min_landmarks to 0 disables robust initialization
+        if (
+            len(track.poses) == 1
+            and config.MIN_LANDMARKS
+            and len(track.landmarks) < config.MIN_LANDMARKS
+        ):
+            track.active = False
         track.locations[img_id] = track.poses[img_id] @ to_homogeneous_pt(
             get_center_of_landmarks(track.landmarks.values())
         )

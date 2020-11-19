@@ -36,9 +36,10 @@ def object_bundle_adjustment(
     prev_cam, prev_prev_cam = None, None
     const_motion_edges = []
     frames = list(object_track.poses.keys())
-    trans_func = (
-        lambda x: np.tanh(-x + 0.5 * (config.MAX_SPEED / config.FRAME_RATE)) / 2 + 0.5
+    max_speed = (
+        config.MAX_SPEED_CAR if object_track.cls == "car" else config.MAX_SPEED_PED
     )
+    trans_func = lambda x: np.tanh(-x + 0.5 * (max_speed / config.FRAME_RATE)) / 2 + 0.5
 
     for img_id in frames[-config.SLIDING_WINDOW_BA :]:
         num_obs = get_obs_count(img_id, object_track)

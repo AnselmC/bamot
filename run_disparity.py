@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 
 import colorlog
+
 from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.disparity import run
@@ -199,7 +200,7 @@ if __name__ == "__main__":
             save_path=Path(args.record) if args.record else None,
             gt_poses=gt_poses,
             recording=args.record,
-            show_trajs=not args.viewer_disable_trajs,
+            trajs="both",
             show_gt=not args.viewer_disable_gt,
             cam_coordinates=args.cam,
         )

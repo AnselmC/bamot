@@ -22,7 +22,8 @@ class Config:
     SLIDING_WINDOW_DESCRIPTORS: int
     MAX_BAD_FRAMES: int
     FRAME_RATE: int
-    MAX_SPEED: float
+    MAX_SPEED_CAR: float
+    MAX_SPEED_PED: float
     BA_EVERY_N_STEPS: int
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
@@ -56,9 +57,12 @@ __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
 __ba_every_n_steps_default = int(os.environ.get("BA_EVERY_N_STEPS", default=1))
 
-__default_max_speed = float(
-    os.environ.get("MAX_SPEED_MS", default=40)
+__default_max_speed_car = float(
+    os.environ.get("MAX_SPEED_CAR", default=40)
 )  # about 140 km/h
+__default_max_speed_ped = float(
+    os.environ.get("MAX_SPEED_PED", default=4)
+)  # about 14 m/h
 
 __default_frame_rate = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
 
@@ -90,7 +94,8 @@ CONFIG = Config(
     SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),
-    MAX_SPEED=__user_config.get("max_speed_ms", __default_max_speed),
+    MAX_SPEED_CAR=__user_config.get("max_speed_car", __default_max_speed_car),
+    MAX_SPEED_PED=__user_config.get("max_speed_ped", __default_max_speed_ped),
     FRAME_RATE=__user_config.get("frame_rate", __default_frame_rate),
 )
 
