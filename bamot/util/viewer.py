@@ -3,7 +3,7 @@ import queue
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -89,7 +89,8 @@ def _update_geometries(
     object_tracks: Dict[int, ObjectTrack],
     label_data: LabelData,
     current_img_id: int,
-    show_trajs: bool,
+    show_online_trajs: bool,
+    show_offline_trajs: bool,
     show_gt: bool,
     gt_poses: List[np.ndarray],
     first_update: bool = False,
@@ -207,16 +208,17 @@ def _update_geometries(
             )
         if track.active:
             track_geometries.pt_cloud.paint_uniform_color(color)
-            if show_trajs.val:
+            if show_offline_trajs.val:
                 track_geometries.offline_trajectory.paint_uniform_color(color)
-                track_geometries.online_trajectory.paint_uniform_color(darker_color)
-                if show_gt.val:
-                    track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
-                else:
-                    track_geometries.gt_trajectory.paint_uniform_color(BLACK)
             else:
                 track_geometries.offline_trajectory.paint_uniform_color(BLACK)
+            if show_online_trajs.val:
+                track_geometries.online_trajectory.paint_uniform_color(darker_color)
+            else:
                 track_geometries.online_trajectory.paint_uniform_color(BLACK)
+            if (show_offline_trajs.val or show_online_trajs.val) and show_gt.val:
+                track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
+            else:
                 track_geometries.gt_trajectory.paint_uniform_color(BLACK)
             track_geometries.bbox.paint_uniform_color(color)
             if show_gt.val:
@@ -311,8 +313,14 @@ class Boolean:
     val: bool
 
 
-def _toggle(boolean: Boolean, geometry_has_changed):
-    boolean.val = not boolean.val
+def _toggle(boolean: Union[List[Boolean], Boolean], geometry_has_changed):
+    if isinstance(boolean, list):
+        # set both to false if both are true, else false
+        both_true = all([b.val for b in boolean])
+        for b in boolean:
+            b.val = not both_true
+    else:
+        boolean.val = not boolean.val
     geometry_has_changed.val = True
     return True
 
@@ -325,7 +333,7 @@ def run(
     gt_poses: Optional[List[np.ndarray]] = None,
     save_path: Optional[Path] = None,
     cam_coordinates: bool = False,
-    show_trajs: bool = True,
+    trajs: str = "both",
     show_gt: bool = True,
     recording: bool = False,
 ):
@@ -334,10 +342,26 @@ def run(
             save_path.mkdir(parents=True)
     vis = o3d.visualization.VisualizerWithKeyCallback()
     show_gt = Boolean(show_gt)
-    show_trajs = Boolean(show_trajs)
+    show_offline_trajs = Boolean(trajs in ["both", "offline"])
+    show_online_trajs = Boolean(trajs in ["both", "online"])
     geometry_has_changed = Boolean(False)
-    vis.register_key_callback(84, lambda vis: _toggle(show_trajs, geometry_has_changed))
-    vis.register_key_callback(71, lambda vis: _toggle(show_gt, geometry_has_changed))
+    B = 66
+    N = 78  # online
+    F = 70  # offline
+    G = 71  # GT
+    vis.register_key_callback(
+        N, lambda vis: _toggle(show_online_trajs, geometry_has_changed)
+    )
+    vis.register_key_callback(
+        F, lambda vis: _toggle(show_offline_trajs, geometry_has_changed)
+    )
+    vis.register_key_callback(
+        B,
+        lambda vis: _toggle(
+            [show_offline_trajs, show_online_trajs], geometry_has_changed
+        ),
+    )
+    vis.register_key_callback(G, lambda vis: _toggle(show_gt, geometry_has_changed))
     width, height = get_screen_size()
     vis.create_window("MOT", top=0, left=1440)
     view_control = vis.get_view_control()
@@ -378,7 +402,8 @@ def run(
                 object_tracks=object_tracks,
                 label_data=label_data,
                 show_gt=show_gt,
-                show_trajs=show_trajs,
+                show_offline_trajs=show_offline_trajs,
+                show_online_trajs=show_online_trajs,
                 gt_poses=gt_poses,
                 current_img_id=current_img_id,
                 first_update=first_update,
