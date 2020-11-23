@@ -113,9 +113,11 @@ def _localize_object(
         iterationsCount=num_iterations,
         reprojectionError=reprojection_error,
     )
-    if successful:
-        logger.debug("optimization successful! Found %d inliers", len(inliers))
-        logger.debug("running optimization with inliers...")
+    num_inliers = len(inliers) if inliers is not None else 0
+    inlier_ratio = num_inliers / len(track_matches)
+    if successful and inlier_ratio > 0.4:
+        logger.debug("Optimization successful! Found %d inliers", len(inliers))
+        logger.debug("Running optimization with inliers...")
         successful, rvec, tvec = cv2.solvePnP(
             objectPoints=np.array([mp for i, mp in enumerate(pts_3d) if i in inliers]),
             imagePoints=np.array([ip for i, ip in enumerate(pts_2d) if i in inliers]),
@@ -133,7 +135,7 @@ def _localize_object(
             optimized_pose[:3, 3] = tvec
             LOGGER.debug("Optimized pose from \n%s\nto\n%s", T_cam_obj, optimized_pose)
             return optimized_pose, True
-    logger.debug("optimization failed...")
+    logger.debug("Optimization failed...")
     return T_cam_obj, False
 
 
@@ -338,7 +340,6 @@ def run(
             try:
                 T_world_obj0 = track.poses[list(track.poses.keys())[-2]]
             except KeyError as e:
-                print(track.poses.keys())
                 raise e
             T_rel_prev = np.linalg.inv(T_world_obj0) @ T_world_obj1
             track_logger.debug("Adding const motion")
@@ -372,8 +373,6 @@ def run(
                     valid_motion = _valid_motion(T_rel, track.cls)
                     if valid_motion:
                         T_cam_obj = T_cam_obj_pnp
-                    else:
-                        assert not np.array_equal(T_cam_obj, T_cam_obj_pnp)
         if not (enough_track_matches and successful and valid_motion):
             if track_matches:
                 track_logger.debug("Clearing track matches")
