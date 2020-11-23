@@ -205,12 +205,20 @@ if __name__ == "__main__":
         help="Which estimated trajectories to display in viewer (`none` disables GT trajectories as well - default: `both`)",
         default="both",
     )
+    parser.add_argument(
+        "--use-gt",
+        help="Use ground truth object masks for left image",
+        action="store_true",
+    )
 
     args = parser.parse_args()
     _validate_args(args)
     scene = str(args.scene).zfill(4)
     kitti_path = Path(config.KITTI_PATH)
-    obj_detections_path = Path(config.DETECTIONS_PATH) / scene
+    if args.use_gt:
+        obj_detections_path = Path(config.GT_DETECTIONS_PATH) / scene
+    else:
+        obj_detections_path = Path(config.EST_DETECTIONS_PATH) / scene
 
     LOGGER.setLevel(LOG_LEVELS[args.verbosity])
 
@@ -289,6 +297,7 @@ if __name__ == "__main__":
             trajs=args.trajs,
             show_gt=not args.viewer_disable_gt,
             cam_coordinates=args.cam,
+            track_ids_match=args.use_gt,
         )
     LOGGER.info("No more frames - terminating processes")
     LOGGER.debug("Joining MOT thread")

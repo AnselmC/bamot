@@ -97,7 +97,11 @@ def get_image_stream(
 
 
 def get_label_data_from_kitti(
-    kitti_path: Path, scene: str, poses: List[np.ndarray], offset: int = 0
+    kitti_path: Path,
+    scene: str,
+    poses: List[np.ndarray],
+    offset: int = 0,
+    indexed_by_image_id: bool = False,
 ) -> LabelData:
     detection_file = _get_detection_file(kitti_path, scene)
     if not detection_file.exists():
@@ -115,6 +119,8 @@ def get_label_data_from_kitti(
             if track_id == -1:
                 continue
             object_class = str(cols[2])
+            if object_class not in ["Car", "Pedestrian"]:
+                continue
             truncation_level = int(cols[3])
             occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
@@ -129,8 +135,13 @@ def get_label_data_from_kitti(
             location_world = from_homogeneous_pt(
                 T_w_cam2 @ to_homogeneous_pt(location_cam2)
             )
-            if not label_data.get(track_id):
-                label_data[track_id] = {}
+            if indexed_by_image_id:
+                if not label_data.get(frame):
+                    label_data[frame] = {}
+            else:
+                if not label_data.get(track_id):
+                    label_data[track_id] = {}
+
             label_row = LabelDataRow(
                 world_pos=location_world.tolist(),
                 cam_pos=location_cam2.tolist(),
@@ -141,15 +152,17 @@ def get_label_data_from_kitti(
                 dim_3d=dim_3d,
                 rot_3d=rot_3d,
             )
-            label_data[track_id][frame] = label_row
+            if indexed_by_image_id:
+                label_data[frame][track_id] = label_row
+            else:
+                label_data[track_id][frame] = label_row
 
     LOGGER.debug("Extracted GT trajectories for %d objects", len(label_data))
     return label_data
 
 
 def get_gt_poses_from_kitti(kitti_path: Path, scene: str) -> List[np.ndarray]:
-    """Adapted from Sergio Agostinho, returns GT poses of left cam
-    """
+    """Adapted from Sergio Agostinho, returns GT poses of left cam"""
     oxts_file = _get_oxts_file(kitti_path, scene)
     poses = []
     if not oxts_file.exists():
@@ -259,19 +272,20 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
 
 
 def get_estimated_obj_detections(
-    kitti_path: Path, scene: str
+    kitti_path: Path, scene: str, side: str = "left"
 ) -> Dict[int, List[ObjectDetection]]:
     # adapted from https://github.com/VisualComputingInstitute/mots_tools/blob/master/mots_common/io.py
     objects_per_frame = {}
     combined_mask_per_frame = {}  # To check that no frame contains overlapping masks
-    path = _get_estimated_detection_file(kitti_path, scene)
+    path = _get_estimated_detection_file(kitti_path, scene, side)
     with open(path.as_posix(), "r") as f:
         for line in f:
             line = line.strip()
             fields = line.split(" ")
 
             frame = int(fields[0])
-            class_id = int(fields[6])
+            track_id = int(fields[1])
+            class_id = int(fields[2])
 
             if frame not in objects_per_frame:
                 objects_per_frame[frame] = []
@@ -279,8 +293,8 @@ def get_estimated_obj_detections(
             if class_id not in [1, 2]:
                 continue
             cls = "car" if class_id == 1 else "pedestrian"
-            w, h = map(int, fields[7:9])
-            mask = {"size": [w, h], "counts": fields[9].encode(encoding="UTF-8")}
+            w, h = map(int, fields[3:5])
+            mask = {"size": [w, h], "counts": fields[5].encode(encoding="UTF-8")}
 
             if frame not in combined_mask_per_frame:
                 combined_mask_per_frame[frame] = mask
@@ -299,7 +313,9 @@ def get_estimated_obj_detections(
                 )
             bool_mask = rletools.decode(mask).astype(bool)
             if bool_mask.sum() > 2:
-                objects_per_frame[frame].append(ObjectDetection(bool_mask, cls))
+                objects_per_frame[frame].append(
+                    ObjectDetection(bool_mask, cls, track_id=track_id)
+                )
     return objects_per_frame
 
 
@@ -330,8 +346,9 @@ def _get_oxts_file(kitti_path: Path, scene: str) -> Path:
     return kitti_path / "oxts" / (scene + ".txt")
 
 
-def _get_estimated_detection_file(kitti_path: Path, scene: str) -> Path:
-    return kitti_path / "detections" / "5" / (scene + ".txt")
+def _get_estimated_detection_file(kitti_path: Path, scene: str, side: str) -> Path:
+    side_dir = "image_02" if side == "left" else "image_03"
+    return kitti_path / "detections" / side_dir / (scene + ".txt")
 
 
 def _get_calib_cam_to_cam_file(kitti_path: Path) -> Path:

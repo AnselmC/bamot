@@ -14,7 +14,8 @@ class Config:
     USING_MEDIAN_CLUSTER: bool
     USING_CONSTANT_MOTION: bool
     KITTI_PATH: str
-    DETECTIONS_PATH: str
+    GT_DETECTIONS_PATH: str
+    EST_DETECTIONS_PATH: str
     MAX_DIST: float
     FEATURE_MATCHER: str
     NUM_FEATURES: str
@@ -84,8 +85,11 @@ CONFIG = Config(
     USING_MEDIAN_CLUSTER=__user_config.get("median_cluster", __using_mad),
     USING_CONSTANT_MOTION=__user_config.get("constant_motion", __using_const_motion),
     KITTI_PATH=__kitti_path.as_posix(),
-    DETECTIONS_PATH=__user_config.get(
-        "detections_path", (__kitti_path / "preprocessed" / "mot").as_posix()
+    GT_DETECTIONS_PATH=__user_config.get(
+        "gt_detections_path", (__kitti_path / "preprocessed_gt" / "mot").as_posix()
+    ),
+    EST_DETECTIONS_PATH=__user_config.get(
+        "detections_path", (__kitti_path / "preprocessed_est" / "mot").as_posix()
     ),
     MAX_DIST=__user_config.get("max_dist", 150),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),

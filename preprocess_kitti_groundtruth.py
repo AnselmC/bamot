@@ -44,7 +44,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--no-right",
-        help="disable using precomputed right obj masks (transfer left masks to right)",
+        help="disable using estimated right obj masks (transfer left masks to right)",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--use-gt",
+        help="Use ground truth object masks for left image",
         action="store_true",
     )
     parser.add_argument(
@@ -73,7 +78,10 @@ if __name__ == "__main__":
         kitti_path = Path(config.KITTI_PATH)
         if not args.no_save:
             if not args.o:
-                save_path = kitti_path / "preprocessed"
+                if args.use_gt:
+                    save_path = kitti_path / "preprocessed_gt"
+                else:
+                    save_path = kitti_path / "preprocessed_est"
             else:
                 save_path = Path(args.o)
             save_path_slam = save_path / "slam"
@@ -94,19 +102,27 @@ if __name__ == "__main__":
 
         if not args.no_right:
             all_right_object_detections = get_estimated_obj_detections(
-                kitti_path, scene
+                kitti_path, scene, "right"
             )
         else:
             all_right_object_detections = {}
+        if not args.use_gt:
+            all_left_object_detections = get_estimated_obj_detections(
+                kitti_path, scene, "left"
+            )
+
         colors = {}
         for idx, (stereo_image, filenames) in tqdm.tqdm(
             enumerate(image_stream), total=len(image_stream), position=1,
         ):
             right_object_detections = all_right_object_detections.get(idx)
             left_fname, right_fname = filenames
-            left_object_detections = get_gt_obj_detections_from_kitti(
-                kitti_path, scene, idx
-            )
+            if args.use_gt:
+                left_object_detections = get_gt_obj_detections_from_kitti(
+                    kitti_path, scene, idx
+                )
+            else:
+                left_object_detections = all_left_object_detections.get(idx)
             if not args.no_view:
                 for obj in left_object_detections:
                     if colors.get(obj.track_id) is None:

@@ -14,7 +14,12 @@ from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
-BLACK = [0.0, 0.0, 0.0]
+
+
+@dataclass
+class Colors:
+    BLACK: np.ndarray = (0.0, 0.0, 0.0)
+    WHITE: np.ndarray = (1.0, 1.0, 1.0)
 
 
 class TrackGeometries(NamedTuple):
@@ -22,8 +27,6 @@ class TrackGeometries(NamedTuple):
     offline_trajectory: o3d.geometry.LineSet
     online_trajectory: o3d.geometry.LineSet
     bbox: o3d.geometry.LineSet
-    gt_trajectory: o3d.geometry.LineSet
-    gt_bbox: o3d.geometry.LineSet
     color: Color
 
 
@@ -82,20 +85,85 @@ def get_screen_size():
     return width, height
 
 
-def _update_geometries(
-    all_track_geometries: Dict[int, TrackGeometries],
-    ego_geometries: EgoGeometries,
-    visualizer: o3d.visualization.Visualizer,
-    object_tracks: Dict[int, ObjectTrack],
-    label_data: LabelData,
-    current_img_id: int,
-    show_online_trajs: bool,
-    show_offline_trajs: bool,
-    show_gt: bool,
-    gt_poses: List[np.ndarray],
-    first_update: bool = False,
-) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
-    LOGGER.debug("Displaying %d tracks", len(object_tracks))
+def _update_gt_visualization(
+    label_data,
+    all_gt_track_geometries,
+    visualizer,
+    current_img_id,
+    track_ids_match,
+    all_track_geometries,
+    gt_poses,
+    show_gt,
+    show_trajs,
+):
+    for track_id, track_data in label_data.items():
+        if current_img_id not in track_data:
+            if track_id in all_gt_track_geometries:
+                geom = all_gt_track_geometries.pop(track_id)
+                visualizer.remove_geometry(geom.bbox)
+                visualizer.remove_geometry(geom.online_trajectory)
+        else:
+            geometry = all_gt_track_geometries.get(
+                track_id,
+                TrackGeometries(
+                    pt_cloud=None,
+                    offline_trajectory=None,
+                    online_trajectory=o3d.geometry.LineSet(),
+                    bbox=o3d.geometry.LineSet(),
+                    color=Colors.WHITE,
+                ),
+            )
+            bbox_points, bbox_lines = _compute_bounding_box_from_kitti(
+                track_data[current_img_id], gt_poses[current_img_id]
+            )
+            geometry.bbox.points = bbox_points
+            geometry.bbox.lines = bbox_lines
+
+            traj_points = np.asarray(geometry.online_trajectory.points).tolist()
+            traj_points.append(track_data[current_img_id].world_pos)
+            lines = [[i, i + 1] for i in range(len(traj_points) - 1)]
+
+            geometry.online_trajectory.points = o3d.utility.Vector3dVector(traj_points)
+            geometry.online_trajectory.lines = o3d.utility.Vector2iVector(lines)
+
+            # paint black if GT is disabled
+            if show_gt.val:
+                color = (
+                    all_track_geometries.get(track_id).color
+                    if track_ids_match
+                    and all_track_geometries.get(track_id) is not None
+                    else Colors.WHITE
+                )
+                geometry.bbox.paint_uniform_color(color)
+                if show_trajs:
+                    geometry.online_trajectory.paint_uniform_color(color)
+                else:
+                    geometry.online_trajectory.paint_uniform_color(Colors.BLACK)
+            else:
+                geometry.bbox.paint_uniform_color(Colors.BLACK)
+                geometry.online_trajectory.paint_uniform_color(Colors.BLACK)
+
+            # update geometries in visualizer
+            if all_gt_track_geometries.get(track_id) is None:
+                visualizer.add_geometry(geometry.bbox)
+                all_gt_track_geometries[track_id] = geometry
+            elif len(lines) == 1:
+                visualizer.update_geometry(geometry.bbox)
+                visualizer.add_geometry(geometry.online_trajectory)
+            else:
+                visualizer.update_geometry(geometry.bbox)
+                visualizer.update_geometry(geometry.online_trajectory)
+
+
+def _update_track_visualization(
+    all_track_geometries,
+    object_tracks,
+    visualizer,
+    show_online_trajs,
+    show_offline_trajs,
+    current_img_id,
+):
+    # display current track estimates
     inactive_tracks = []
     for ido, track in object_tracks.items():
         if not track.active:
@@ -108,21 +176,16 @@ def _update_geometries(
                 offline_trajectory=o3d.geometry.LineSet(),
                 online_trajectory=o3d.geometry.LineSet(),
                 bbox=o3d.geometry.LineSet(),
-                gt_trajectory=o3d.geometry.LineSet(),
-                gt_bbox=o3d.geometry.LineSet(),
                 color=get_color(),
             ),
         )
         # draw path
         path_points_offline = []
         path_points_online = []
-        gt_points = []
-        track_data = label_data.get(ido)
         points = []
-        white = np.array([1.0, 1.0, 1.0])
         color = track_geometries.color
-        lighter_color = color + 0.25 * white
-        darker_color = color - 0.25 * white
+        lighter_color = color + 0.25 * np.array(Colors.WHITE)
+        darker_color = color - 0.25 * np.array(Colors.WHITE)
         lighter_color = np.clip(lighter_color, 0, 1)
         darker_color = np.clip(darker_color, 0, 1)
         track_size = 0
@@ -169,25 +232,13 @@ def _update_geometries(
                     track.locations.get(img_id, to_homogeneous_pt(center))
                 )
             )
-            if track_data:
-                if track_data.get(img_id):
-                    gt_point = track_data[img_id].world_pos
-                    gt_points.append(gt_point)
-                    # TODO: don't update every step
-                    gt_bbox_points, gt_bbox_lines = _compute_bounding_box_from_kitti(
-                        track_data[img_id], gt_poses[img_id]
-                    )
-                    track_geometries.gt_bbox.points = gt_bbox_points
-                    track_geometries.gt_bbox.lines = gt_bbox_lines
             if i == len(track.poses) - 1:
                 track_size = len(points)
-            if ido == -1:
-                break
         path_lines = [[i, i + 1] for i in range(len(path_points_offline) - 1)]
         # draw current landmarks
         LOGGER.debug("Track has %d points", track_size)
         track_geometries.pt_cloud.points = o3d.utility.Vector3dVector(points)
-        if len(path_lines) > 0:
+        if path_lines:
             track_geometries.offline_trajectory.points = o3d.utility.Vector3dVector(
                 path_points_offline
             )
@@ -200,66 +251,34 @@ def _update_geometries(
             track_geometries.online_trajectory.lines = o3d.utility.Vector2iVector(
                 path_lines
             )
-            track_geometries.gt_trajectory.points = o3d.utility.Vector3dVector(
-                gt_points
-            )
-            track_geometries.gt_trajectory.lines = o3d.utility.Vector2iVector(
-                path_lines
-            )
         if track.active:
             track_geometries.pt_cloud.paint_uniform_color(color)
             if show_offline_trajs.val:
                 track_geometries.offline_trajectory.paint_uniform_color(color)
             else:
-                track_geometries.offline_trajectory.paint_uniform_color(BLACK)
+                track_geometries.offline_trajectory.paint_uniform_color(Colors.BLACK)
             if show_online_trajs.val:
                 track_geometries.online_trajectory.paint_uniform_color(darker_color)
             else:
-                track_geometries.online_trajectory.paint_uniform_color(BLACK)
-            if (show_offline_trajs.val or show_online_trajs.val) and show_gt.val:
-                track_geometries.gt_trajectory.paint_uniform_color(lighter_color)
-            else:
-                track_geometries.gt_trajectory.paint_uniform_color(BLACK)
+                track_geometries.online_trajectory.paint_uniform_color(Colors.BLACK)
             track_geometries.bbox.paint_uniform_color(color)
-            if show_gt.val:
-                track_geometries.gt_bbox.paint_uniform_color(lighter_color)
-            else:
-                track_geometries.gt_bbox.paint_uniform_color(BLACK)
         else:
             LOGGER.debug("Track is inactive")
             track_geometries.pt_cloud.paint_uniform_color([0.0, 0.0, 0.0])
             track_geometries.offline_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
             track_geometries.online_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
-            track_geometries.gt_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
             track_geometries.bbox.paint_uniform_color([0.0, 0.0, 0.0])
-            track_geometries.gt_bbox.paint_uniform_color([0.0, 0.0, 0.0])
         if all_track_geometries.get(ido) is None:
-            visualizer.add_geometry(
-                track_geometries.pt_cloud, reset_bounding_box=first_update
-            )
-            visualizer.add_geometry(
-                track_geometries.offline_trajectory, reset_bounding_box=first_update
-            )
-            visualizer.add_geometry(
-                track_geometries.online_trajectory, reset_bounding_box=first_update
-            )
-            visualizer.add_geometry(
-                track_geometries.gt_trajectory, reset_bounding_box=first_update
-            )
-            visualizer.add_geometry(
-                track_geometries.bbox, reset_bounding_box=first_update
-            )
-            visualizer.add_geometry(
-                track_geometries.gt_bbox, reset_bounding_box=first_update
-            )
+            visualizer.add_geometry(track_geometries.pt_cloud)
+            visualizer.add_geometry(track_geometries.offline_trajectory)
+            visualizer.add_geometry(track_geometries.online_trajectory)
+            visualizer.add_geometry(track_geometries.bbox)
             all_track_geometries[ido] = track_geometries
         else:
             visualizer.update_geometry(track_geometries.pt_cloud)
             visualizer.update_geometry(track_geometries.offline_trajectory)
             visualizer.update_geometry(track_geometries.online_trajectory)
-            visualizer.update_geometry(track_geometries.gt_trajectory)
             visualizer.update_geometry(track_geometries.bbox)
-            visualizer.update_geometry(track_geometries.gt_bbox)
 
     for ido in inactive_tracks:
         track_geometry = all_track_geometries.get(ido)
@@ -268,9 +287,10 @@ def _update_geometries(
             visualizer.remove_geometry(track_geometry.bbox)
             visualizer.remove_geometry(track_geometry.offline_trajectory)
             visualizer.remove_geometry(track_geometry.online_trajectory)
-            visualizer.remove_geometry(track_geometry.gt_bbox)
-            visualizer.remove_geometry(track_geometry.gt_trajectory)
             del all_track_geometries[ido]
+
+
+def _update_ego_visualization(gt_poses, visualizer, ego_geometries, current_img_id):
     ego_pts = []
     ego_path_lines = []
     for img_id, pose in enumerate(gt_poses):
@@ -305,7 +325,52 @@ def _update_geometries(
             visualizer.update_geometry(ego_geometries.trajectory)
             visualizer.update_geometry(ego_geometries.curr_pose)
 
-    return all_track_geometries, ego_geometries
+
+def _update_geometries(
+    all_track_geometries: Dict[int, TrackGeometries],
+    all_gt_track_geometries: Dict[int, TrackGeometries],
+    ego_geometries: EgoGeometries,
+    visualizer: o3d.visualization.Visualizer,
+    object_tracks: Dict[int, ObjectTrack],
+    label_data: LabelData,
+    current_img_id: int,
+    show_online_trajs: bool,
+    show_offline_trajs: bool,
+    show_gt: bool,
+    gt_poses: List[np.ndarray],
+    track_ids_match: bool = False,
+) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
+    LOGGER.debug("Displaying %d tracks", len(object_tracks))
+    # display all GT tracks present in current img
+    _update_gt_visualization(
+        label_data=label_data,
+        all_gt_track_geometries=all_gt_track_geometries,
+        visualizer=visualizer,
+        all_track_geometries=all_track_geometries,
+        show_gt=show_gt,
+        show_trajs=(show_online_trajs.val or show_offline_trajs.val),
+        gt_poses=gt_poses,
+        track_ids_match=track_ids_match,
+        current_img_id=current_img_id,
+    )
+
+    # display all track estimates
+    _update_track_visualization(
+        all_track_geometries=all_track_geometries,
+        object_tracks=object_tracks,
+        visualizer=visualizer,
+        show_online_trajs=show_online_trajs,
+        show_offline_trajs=show_offline_trajs,
+        current_img_id=current_img_id,
+    )
+
+    # display ego camera and trajectory
+    _update_ego_visualization(
+        gt_poses=gt_poses,
+        visualizer=visualizer,
+        ego_geometries=ego_geometries,
+        current_img_id=current_img_id,
+    )
 
 
 @dataclass
@@ -336,6 +401,7 @@ def run(
     trajs: str = "both",
     show_gt: bool = True,
     recording: bool = False,
+    track_ids_match: bool = False,
 ):
     if save_path:
         if not save_path.exists():
@@ -372,6 +438,7 @@ def run(
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
     all_track_geometries: Dict[int, TrackGeometries] = {}
+    all_gt_track_geometries: Dict[int, TrackGeometries] = {}
     ego_geometries = EgoGeometries(
         trajectory=o3d.geometry.LineSet(),
         curr_pose=_create_camera_lineset(),
@@ -395,8 +462,9 @@ def run(
                 object_tracks = new_data.get("object_tracks", object_tracks)
                 current_img_id = new_data.get("img_id", current_img_id)
             LOGGER.debug("Got new data")
-            (all_track_geometries, ego_geometries) = _update_geometries(
+            _update_geometries(
                 all_track_geometries=all_track_geometries,
+                all_gt_track_geometries=all_gt_track_geometries,
                 ego_geometries=ego_geometries,
                 visualizer=vis,
                 object_tracks=object_tracks,
@@ -406,7 +474,7 @@ def run(
                 show_online_trajs=show_online_trajs,
                 gt_poses=gt_poses,
                 current_img_id=current_img_id,
-                first_update=first_update,
+                track_ids_match=track_ids_match,
             )
             if new_data is not None:
                 stereo_image = new_data["stereo_image"]
