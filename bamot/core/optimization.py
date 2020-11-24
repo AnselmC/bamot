@@ -39,7 +39,8 @@ def object_bundle_adjustment(
     max_speed = (
         config.MAX_SPEED_CAR if object_track.cls == "car" else config.MAX_SPEED_PED
     )
-    trans_func = lambda x: np.tanh(-x + 0.5 * (max_speed / config.FRAME_RATE)) / 2 + 0.5
+    max_dist = max_speed / config.FRAME_RATE
+    trans_func = lambda x: np.tanh(-x / max_dist + 1) / 2 + 0.5
 
     for img_id in frames[-config.SLIDING_WINDOW_BA :]:
         num_obs = get_obs_count(img_id, object_track)
@@ -67,8 +68,7 @@ def object_bundle_adjustment(
                 else config.CONSTANT_MOTION_WEIGHTS_PED
             )
             rot_weight = rot_weight * num_obs
-            # sigmoid = np.exp(-np.logaddexp(1, -median_translation / num_obs))
-            trans_weight = trans_weight * num_obs * (1 + trans_func(median_translation))
+            trans_weight = trans_weight * num_obs * trans_func(median_translation)
             if prev_prev_cam is None:
                 prev_prev_cam = pose_vertex
             elif prev_cam is None:
@@ -79,10 +79,11 @@ def object_bundle_adjustment(
                 const_motion_edge.set_vertex(1, prev_cam)
                 const_motion_edge.set_vertex(2, pose_vertex)
                 info = np.diag(
-                    np.hstack([np.repeat(rot_weight, 3), np.repeat(trans_weight, 3),])
+                    np.hstack([np.repeat(trans_weight, 3), np.repeat(rot_weight, 3),])
                 )
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
+                # TODO: what to set as delta?
                 robust_kernel = g2o.RobustKernelHuber()
                 const_motion_edge.set_robust_kernel(robust_kernel)
                 optimizer.add_edge(const_motion_edge)
