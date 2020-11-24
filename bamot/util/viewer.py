@@ -8,7 +8,8 @@ from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 import cv2
 import numpy as np
 import open3d as o3d
-from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage
+from bamot.core.base_types import (Feature, Match, ObjectTrack, StereoImage,
+                                   TrackId)
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
 from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
@@ -162,6 +163,7 @@ def _update_track_visualization(
     show_online_trajs,
     show_offline_trajs,
     current_img_id,
+    cached_colors,
 ):
     # display current track estimates
     inactive_tracks = []
@@ -176,7 +178,7 @@ def _update_track_visualization(
                 offline_trajectory=o3d.geometry.LineSet(),
                 online_trajectory=o3d.geometry.LineSet(),
                 bbox=o3d.geometry.LineSet(),
-                color=get_color(),
+                color=cached_colors.get(ido, get_color()),
             ),
         )
         # draw path
@@ -283,6 +285,7 @@ def _update_track_visualization(
     for ido in inactive_tracks:
         track_geometry = all_track_geometries.get(ido)
         if track_geometry is not None:
+            cached_colors[ido] = track_geometry.color
             visualizer.remove_geometry(track_geometry.pt_cloud)
             visualizer.remove_geometry(track_geometry.bbox)
             visualizer.remove_geometry(track_geometry.offline_trajectory)
@@ -327,16 +330,17 @@ def _update_ego_visualization(gt_poses, visualizer, ego_geometries, current_img_
 
 
 def _update_geometries(
-    all_track_geometries: Dict[int, TrackGeometries],
-    all_gt_track_geometries: Dict[int, TrackGeometries],
+    all_track_geometries: Dict[TrackId, TrackGeometries],
+    all_gt_track_geometries: Dict[TrackId, TrackGeometries],
     ego_geometries: EgoGeometries,
     visualizer: o3d.visualization.Visualizer,
-    object_tracks: Dict[int, ObjectTrack],
+    object_tracks: Dict[TrackId, ObjectTrack],
     label_data: LabelData,
     current_img_id: int,
     show_online_trajs: bool,
     show_offline_trajs: bool,
     show_gt: bool,
+    cached_colors: Dict[TrackId, Color],
     gt_poses: List[np.ndarray],
     track_ids_match: bool = False,
 ) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
@@ -362,6 +366,7 @@ def _update_geometries(
         show_online_trajs=show_online_trajs,
         show_offline_trajs=show_offline_trajs,
         current_img_id=current_img_id,
+        cached_colors=cached_colors,
     )
 
     # display ego camera and trajectory
@@ -449,6 +454,7 @@ def run(
     first_update = True
     counter = 0
     object_tracks = {}
+    cached_colors = {}
     current_img_id = 0
     while not stop_flag.is_set() or not shared_data.empty():
         try:
@@ -475,6 +481,7 @@ def run(
                 gt_poses=gt_poses,
                 current_img_id=current_img_id,
                 track_ids_match=track_ids_match,
+                cached_colors=cached_colors,
             )
             if new_data is not None:
                 stereo_image = new_data["stereo_image"]
