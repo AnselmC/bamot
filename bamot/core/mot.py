@@ -296,7 +296,6 @@ def run(
         track_id,
         stereo_cam,
         img_id,
-        img_shape,
         stereo_image,
         current_cam_pose,
         run_ba,
@@ -428,9 +427,10 @@ def run(
             and len(track.landmarks) < config.MIN_LANDMARKS
         ):
             track.active = False
-        track.locations[img_id] = track.poses[img_id] @ to_homogeneous_pt(
-            get_center_of_landmarks(track.landmarks.values())
-        )
+        if track.landmarks:
+            track.locations[img_id] = track.poses[img_id] @ to_homogeneous_pt(
+                get_center_of_landmarks(track.landmarks.values())
+            )
         return track, left_features, right_features, stereo_matches
 
     for (img_id, stereo_image), new_detections in zip(images, detections):
@@ -507,48 +507,75 @@ def step(
 ) -> Tuple[
     Dict[int, ObjectTrack], List[List[Feature]], List[List[Feature]], List[List[Match]]
 ]:
-    img_shape = stereo_image.left.shape
     all_left_features = []
     all_right_features = []
     all_stereo_matches = []
     LOGGER.debug("Running step for image %d", img_id)
     LOGGER.debug("Current ego pose:\n%s", current_cam_pose)
-    if new_detections and all(map(lambda x: x.left.track_id is None, new_detections)):
-        # no track ids yet
-        raise NotImplementedError("This still needs to be implemented...")
-    else:
-        # track ids already exist
-        matches = [
-            TrackMatch(track_index=track_idx, detection_index=detection_idx)
-            for detection_idx, track_idx in enumerate(
-                map(lambda x: x.left.track_id, new_detections)
+    matches = [
+        TrackMatch(track_index=track_idx, detection_index=detection_idx)
+        for detection_idx, track_idx in enumerate(
+            map(lambda x: x.left.track_id, new_detections)
+        )
+    ]
+    unmatched_tracks = set(object_tracks.keys()).difference(
+        set([x.left.track_id for x in new_detections])
+    )
+    # if new track ids are present, the tracks need to be added to the object_tracks
+    for match in matches:
+        if object_tracks.get(match.track_index) is None:
+            LOGGER.debug("Added track with index %d", match.track_index)
+            object_tracks[match.track_index] = ObjectTrack(
+                landmarks={},
+                poses={img_id: current_cam_pose},
+                locations={},
+                cls=new_detections[match.detection_index].left.cls,
             )
-        ]
-        # if new track ids are present, the tracks need to be added to the object_tracks
-        for match in matches:
-            if object_tracks.get(match.track_index) is None:
-                LOGGER.debug("Added track with index %d", match.track_index)
-                object_tracks[match.track_index] = ObjectTrack(
-                    landmarks={},
-                    poses={img_id: current_cam_pose},
-                    locations={},
-                    cls=new_detections[match.detection_index].left.cls,
-                )
     # per match, match features
     active_tracks = []
     matched_detections = []
     LOGGER.debug("%d matches with object tracks", len(matches))
+
+    def _add_constant_motion(track, img_id):
+        T_world_obj1 = track.poses[list(track.poses.keys())[-1]]  # sorted by default
+        if len(track.poses) >= 2:
+            try:
+                T_world_obj0 = track.poses[list(track.poses.keys())[-2]]
+            except KeyError as e:
+                raise e
+            T_rel_prev = np.linalg.inv(T_world_obj0) @ T_world_obj1
+            if _valid_motion(T_rel_prev, track.cls):
+                T_world_obj = T_world_obj1 @ T_rel_prev  # constant motion assumption
+            else:
+                T_world_obj = T_world_obj1
+        else:
+            T_world_obj = T_world_obj1
+        track.poses[img_id] = T_world_obj
+        if track.landmarks:
+            track.locations[img_id] = track.poses[img_id] @ to_homogeneous_pt(
+                get_center_of_landmarks(track.landmarks.values())
+            )
+        return track
+
     # TODO: currently disabled bc slower than single threaded and single process
     with pathos.threading.ThreadPool(nodes=len(matches) if False else 1) as executor:
-        futures_to_track_index = {}
+        matched_futures_to_track_index = {}
+        unmatched_futures_to_track_index = {}
+        for track_id in unmatched_tracks:
+            track = object_tracks[track_id]
+            track.fully_visible = False
+            unmatched_futures_to_track_index[
+                executor.apipe(_add_constant_motion, track=track, img_id=img_id)
+            ] = track_id
         for match in matches:
             detection = new_detections[match.detection_index]
             track = object_tracks[match.track_index]
+            track.last_seen = img_id
             track.fully_visible = new_detections[match.detection_index]
             run_ba = match.track_index in tracks_to_run_ba
             active_tracks.append(match.track_index)
             matched_detections.append(match.detection_index)
-            futures_to_track_index[
+            matched_futures_to_track_index[
                 executor.apipe(
                     process_match,
                     track=track,
@@ -557,14 +584,17 @@ def step(
                     track_id=match.track_index,
                     stereo_cam=stereo_cam,
                     img_id=img_id,
-                    img_shape=img_shape,
                     stereo_image=stereo_image,
                     current_cam_pose=current_cam_pose,
                     run_ba=run_ba,
                 )
             ] = match.track_index
 
-        for future, track_index in futures_to_track_index.items():
+        for future, track_index in unmatched_futures_to_track_index.items():
+            track = future.get()
+            object_tracks[track_index] = track
+
+        for future, track_index in matched_futures_to_track_index.items():
             track, left_features, right_features, stereo_matches = future.get()
             object_tracks[track_index] = track
             if track.active:
@@ -580,8 +610,9 @@ def step(
     old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
     num_deactivated = 0
     for track_id in old_tracks:
-        if object_tracks[track_id].active:
-            object_tracks[track_id].active = False
+        track = object_tracks[track_id]
+        if (img_id - track.last_seen) > 10:
+            track.active = False
             num_deactivated += 1
     LOGGER.debug("Deactivated %d tracks", num_deactivated)
     LOGGER.debug("Finished step %d", img_id)

@@ -102,6 +102,7 @@ class ObjectTrack:
     fully_visible: bool = True
     active: bool = True
     badly_tracked_frames: int = 0
+    last_seen: int = -1
 
 
 @dataclass

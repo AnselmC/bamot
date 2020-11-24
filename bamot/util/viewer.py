@@ -229,29 +229,30 @@ def _update_track_visualization(
                 center /= len(track.landmarks)
             offline_point = center.reshape(3,).tolist()
             path_points_offline.append(offline_point)
-            path_points_online.append(
-                from_homogeneous_pt(
-                    track.locations.get(img_id, to_homogeneous_pt(center))
+            online_point = track.locations.get(img_id)
+            if online_point is not None:
+                path_points_online.append(
+                    from_homogeneous_pt(online_point).reshape(3,).tolist()
                 )
-            )
             if i == len(track.poses) - 1:
                 track_size = len(points)
-        path_lines = [[i, i + 1] for i in range(len(path_points_offline) - 1)]
+        path_lines_offline = [[i, i + 1] for i in range(len(path_points_offline) - 1)]
+        path_lines_online = [[i, i + 1] for i in range(len(path_points_online) - 1)]
         # draw current landmarks
         LOGGER.debug("Track has %d points", track_size)
         track_geometries.pt_cloud.points = o3d.utility.Vector3dVector(points)
-        if path_lines:
+        if path_lines_offline:
             track_geometries.offline_trajectory.points = o3d.utility.Vector3dVector(
                 path_points_offline
             )
             track_geometries.offline_trajectory.lines = o3d.utility.Vector2iVector(
-                path_lines
+                path_lines_offline
             )
             track_geometries.online_trajectory.points = o3d.utility.Vector3dVector(
                 path_points_online
             )
             track_geometries.online_trajectory.lines = o3d.utility.Vector2iVector(
-                path_lines
+                path_lines_online
             )
         if track.active:
             track_geometries.pt_cloud.paint_uniform_color(color)
@@ -272,10 +273,16 @@ def _update_track_visualization(
             track_geometries.bbox.paint_uniform_color([0.0, 0.0, 0.0])
         if all_track_geometries.get(ido) is None:
             visualizer.add_geometry(track_geometries.pt_cloud)
-            visualizer.add_geometry(track_geometries.offline_trajectory)
-            visualizer.add_geometry(track_geometries.online_trajectory)
             visualizer.add_geometry(track_geometries.bbox)
             all_track_geometries[ido] = track_geometries
+        elif len(path_lines_online) == 1:
+            visualizer.add_geometry(track_geometries.online_trajectory)
+            visualizer.update_geometry(track_geometries.pt_cloud)
+            visualizer.update_geometry(track_geometries.bbox)
+        elif len(path_lines_offline) == 1:
+            visualizer.add_geometry(track_geometries.offline_trajectory)
+            visualizer.update_geometry(track_geometries.pt_cloud)
+            visualizer.update_geometry(track_geometries.bbox)
         else:
             visualizer.update_geometry(track_geometries.pt_cloud)
             visualizer.update_geometry(track_geometries.offline_trajectory)
