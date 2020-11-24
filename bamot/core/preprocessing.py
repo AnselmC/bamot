@@ -6,9 +6,8 @@ import cv2
 import numpy as np
 from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
                                    StereoObjectDetection)
-from bamot.util.cv import (back_project, dilate_mask, from_homogeneous_pt,
-                           get_convex_hull_from_mask, get_convex_hull_mask,
-                           get_feature_matcher, project, to_homogeneous_pt)
+from bamot.util.cv import (dilate_mask, get_convex_hull_from_mask,
+                           get_convex_hull_mask, get_feature_matcher)
 from scipy.optimize import linear_sum_assignment
 from shapely.geometry import Polygon
 
@@ -18,32 +17,6 @@ def _draw_contours(mask, img, color):
         mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
     )
     cv2.drawContours(img, contours, -1, color, 3)
-
-
-def transform_object_points(
-    left_object_pts: np.ndarray, stereo_camera: StereoCamera
-) -> np.ndarray:
-    """Transforms points from left image into right image.
-
-    :param left_object_pts: The 2d points given in left image coordinates
-    :type left_object_pts: an array of n points with the shape (n, 2)
-    :param stereo_camera: the stereo camera setup
-    :type stereo_camera: a StereoCamera data structure
-    :returns: the transformed 2d points
-    :rtype: an np.ndarray of shape (num_points, 2)
-    """
-    right_obj_pts = []
-    for pt_2d in left_object_pts:
-        pt_3d = back_project(stereo_camera.left, pt_2d).reshape(3, 1)
-        pt_3d_hom = to_homogeneous_pt(pt_3d)
-        pt_3d_right_hom = (
-            np.linalg.inv(stereo_camera.T_left_right) @ pt_3d_hom
-        ).reshape(4, 1)
-        pt_2d_right = project(
-            stereo_camera.right, from_homogeneous_pt(pt_3d_right_hom)
-        ).reshape(2, 1)
-        right_obj_pts.append(pt_2d_right)
-    return np.array(right_obj_pts).reshape(-1, 2).astype(int)
 
 
 def match_detections(
@@ -110,10 +83,9 @@ def match_detections(
 
     good_matches = []
     for row_idx, col_idx in zip(first_indices, second_indices):
-        iou = cost_matrix[row_idx, col_idx].sum()
-        if iou == 0:
+        edge_weight = cost_matrix[row_idx, col_idx].sum()
+        if edge_weight == 0:
             continue
-
         if left_first:
             left_idx = row_idx
             right_idx = col_idx
@@ -130,8 +102,10 @@ def preprocess_frame(
     stereo_camera: StereoCamera,
     colors: Dict[int, Tuple[int, int, int]],
     left_object_detections: List[ObjectDetection],
+    use_right_tracks: bool = False,
     right_object_detections: Optional[List[ObjectDetection]] = None,
     only_iou: bool = False,
+    use_unmatched: bool = False,
 ) -> Tuple[StereoImage, List[StereoObjectDetection]]:
     """Masks out object detections from a stereo image and returns the masked image.
 
@@ -157,41 +131,83 @@ def preprocess_frame(
     else:
         matched_detections = []
 
-    matched_left = set()
+    matched = set()
+    feature_matcher = get_feature_matcher()
     if matched_detections:
         for left_obj_idx, right_obj_idx in matched_detections:
-            matched_left.add(left_obj_idx)
             left_obj = left_object_detections[left_obj_idx]
             right_obj = right_object_detections[right_obj_idx]
             left_mask[left_obj.mask] = 0
             right_mask[right_obj.mask] = 0
-            right_obj.track_id = left_obj.track_id
-            stereo_object_detections.append(StereoObjectDetection(left_obj, right_obj))
+            if use_right_tracks:
+                matched.add(right_obj_idx)
+                left_obj.track_id = right_obj.track_id
+            else:
+                matched.add(left_obj_idx)
+                right_obj.track_id = left_obj.track_id
             if colors:
                 color = colors[left_obj.track_id]
                 _draw_contours(left_obj.mask, raw_left_image, color)
                 _draw_contours(right_obj.mask, raw_right_image, color)
-    unmatched_left = set(range(len(left_object_detections))).difference(matched_left)
-    if unmatched_left:
-        for left_idx in unmatched_left:
-            obj = left_object_detections[left_idx]
+            stereo_object_detections.append(StereoObjectDetection(left_obj, right_obj))
+    if use_right_tracks:
+        unmatched = set(range(len(right_object_detections))).difference(matched)
+    else:
+        unmatched = set(range(len(left_object_detections))).difference(matched)
+    if unmatched:
+        for idx in unmatched:
+            if use_right_tracks:
+                obj = right_object_detections[idx]
+            else:
+                obj = left_object_detections[idx]
             # get masks for object
-            left_obj_mask = obj.mask
-            left_mask[left_obj_mask] = 0
-            left_hull_pts = np.array(get_convex_hull_from_mask(left_obj_mask))
+            obj_mask = obj.mask
+            hull_pts = np.array(get_convex_hull_from_mask(obj_mask))
 
-            right_obj_pts = transform_object_points(left_hull_pts, stereo_camera)
-            right_obj_mask = get_convex_hull_mask(np.flip(right_obj_pts), img_shape)
-            right_obj_mask = dilate_mask(right_obj_mask, num_pixels=5)
-            right_mask[right_obj_mask] = 0
-            right_obj = ObjectDetection(
-                mask=right_obj_mask, track_id=obj.track_id, cls=obj.cls,
+            other_obj_mask = get_convex_hull_mask(np.flip(hull_pts), img_shape)
+            other_obj_mask = dilate_mask(
+                other_obj_mask, num_pixels=int(obj_mask.sum() * 0.01)
             )
-            stereo_object_detections.append(StereoObjectDetection(obj, right_obj))
-            if colors:
-                color = colors[obj.track_id]
-                _draw_contours(left_obj_mask, raw_left_image, color)
-                _draw_contours(right_obj_mask, raw_right_image, color)
+            if use_right_tracks:
+                right_mask[obj_mask] = 0
+                if use_unmatched:
+                    left_mask[other_obj_mask] = 0
+                    features = feature_matcher.detect_features(
+                        raw_left_image, other_obj_mask
+                    )
+                    left_obj = ObjectDetection(
+                        mask=other_obj_mask,
+                        track_id=obj.track_id,
+                        cls=obj.cls,
+                        features=features,
+                    )
+                    stereo_object_detections.append(
+                        StereoObjectDetection(left_obj, obj)
+                    )
+                    if colors:
+                        color = colors[obj.track_id]
+                        _draw_contours(obj_mask, raw_right_image, color)
+                        _draw_contours(other_obj_mask, raw_left_image, color)
+            else:
+                left_mask[obj_mask] = 0
+                if use_unmatched:
+                    right_mask[other_obj_mask] = 0
+                    features = feature_matcher.detect_features(
+                        raw_right_image, other_obj_mask
+                    )
+                    right_obj = ObjectDetection(
+                        mask=other_obj_mask,
+                        track_id=obj.track_id,
+                        cls=obj.cls,
+                        features=features,
+                    )
+                    stereo_object_detections.append(
+                        StereoObjectDetection(obj, right_obj)
+                    )
+                    if colors:
+                        color = colors[obj.track_id]
+                        _draw_contours(obj_mask, raw_left_image, color)
+                        _draw_contours(other_obj_mask, raw_right_image, color)
 
     left_mask = left_mask == 0
     right_mask = right_mask == 0

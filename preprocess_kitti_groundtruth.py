@@ -53,6 +53,11 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--use-unmatched",
+        help="Use unmatched tracks by translating mask to other image and dilating it.",
+        action="store_true",
+    )
+    parser.add_argument(
         "--only-iou",
         help="Use only Intersection-over-Union as matching heuristic between left and right detections",
         action="store_true",
@@ -68,6 +73,11 @@ if __name__ == "__main__":
         "--no-continue",
         action="store_true",
         help="Disable continuous stream (press `n` for next frame)",
+    )
+    parser.add_argument(
+        "--use-right-tracks",
+        action="store_true",
+        help="Use right track ids (default uses left)",
     )
 
     args = parser.parse_args()
@@ -115,23 +125,32 @@ if __name__ == "__main__":
         for idx, (stereo_image, filenames) in tqdm.tqdm(
             enumerate(image_stream), total=len(image_stream), position=1,
         ):
-            right_object_detections = all_right_object_detections.get(idx)
+            right_object_detections = all_right_object_detections.get(idx, [])
             left_fname, right_fname = filenames
             if args.use_gt:
                 left_object_detections = get_gt_obj_detections_from_kitti(
                     kitti_path, scene, idx
                 )
             else:
-                left_object_detections = all_left_object_detections.get(idx)
+                left_object_detections = all_left_object_detections.get(idx, [])
             if not args.no_view:
-                for obj in left_object_detections:
-                    if colors.get(obj.track_id) is None:
-                        colors[obj.track_id] = get_color(
-                            normalized=False, as_tuple=True
-                        )
+                if args.use_right_tracks:
+                    for obj in right_object_detections:
+                        if colors.get(obj.track_id) is None:
+                            colors[obj.track_id] = get_color(
+                                normalized=False, as_tuple=True
+                            )
+                else:
+                    for obj in left_object_detections:
+                        if colors.get(obj.track_id) is None:
+                            colors[obj.track_id] = get_color(
+                                normalized=False, as_tuple=True
+                            )
             masked_stereo_image_slam, stereo_object_detections = preprocess_frame(
                 stereo_image,
                 stereo_cam,
+                use_right_tracks=args.use_right_tracks,
+                use_unmatched=args.use_unmatched,
                 left_object_detections=left_object_detections,
                 right_object_detections=right_object_detections,
                 colors=colors,
