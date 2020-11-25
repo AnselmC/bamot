@@ -41,7 +41,9 @@ class Config:
 
 
 # ENV VARIABLES
-__config_file = Path(".").parent / os.environ.get("CONFIG_FILE", default="config.yaml")
+__config_file_default = Path(".").parent / os.environ.get(
+    "CONFIG_FILE", default="config.yaml"
+)
 __const_motion_weight_default = os.environ.get("CONST_MOTION_WEIGHT", default=1)
 __const_motion_weights_default = [
     float(
@@ -53,52 +55,59 @@ __const_motion_weights_default = [
         )
     ),
 ]
-__track_point_cloud_sizes = bool(
+__track_point_cloud_sizes_default = bool(
     os.environ.get("TRACK_POINT_CLOUD_SIZES", default=False)
 )
 __cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
-__using_mad = bool(os.environ.get("USING_MAD", default=False))
-__using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
-__kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
-__sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
+__using_mad_default = bool(os.environ.get("USING_MAD", default=False))
+__using_const_motion_default = bool(os.environ.get("USING_CONST_MOTION", default=True))
+__kitti_scene_default = os.environ.get("SCENE", default="UNKNOWN")
+__sliding_window_ba_default = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
 __ba_every_n_steps_default = int(os.environ.get("BA_EVERY_N_STEPS", default=1))
 __ba_normalize_trans_error = bool(
     os.environ.get("BA_NORMALIZE_TRANS_ERROR", default=False)
 )
+__keep_track_for_n_frames_after_lost_default = int(
+    os.environ.get("KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST", default=1)
+)
 
-__default_max_speed_car = float(
+__max_speed_car_default = float(
     os.environ.get("MAX_SPEED_CAR", default=40)
 )  # about 140 km/h
-__default_max_speed_ped = float(
+__max_speed_ped_default = float(
     os.environ.get("MAX_SPEED_PED", default=4)
 )  # about 14 m/h
 
-__default_frame_rate = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
+__frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
 
 
-if __config_file.exists():
-    with open(__config_file.as_posix(), "r") as fp:
+if __config_file_default.exists():
+    with open(__config_file_default.as_posix(), "r") as fp:
         __user_config = yaml.load(fp, Loader=yaml.FullLoader)
 else:
     __user_config: Dict[str, Any] = {}
 
-__kitti_path = Path(
+__kitti_path_default = Path(
     __user_config.get("kitti_path", "./data/KITTI/tracking/training")
 ).absolute()
 
-__preprocessed_path = __kitti_path / "preprocessed"
+__preprocessed_path_default = __kitti_path_default / "preprocessed"
 
 CONFIG = Config(
-    USING_CONFIG_FILE=__config_file.exists(),
-    USING_MEDIAN_CLUSTER=__user_config.get("median_cluster", __using_mad),
-    USING_CONSTANT_MOTION=__user_config.get("constant_motion", __using_const_motion),
-    KITTI_PATH=__kitti_path.as_posix(),
+    USING_CONFIG_FILE=__config_file_default.exists(),
+    USING_MEDIAN_CLUSTER=__user_config.get("median_cluster", __using_mad_default),
+    USING_CONSTANT_MOTION=__user_config.get(
+        "constant_motion", __using_const_motion_default
+    ),
+    KITTI_PATH=__kitti_path_default.as_posix(),
     GT_DETECTIONS_PATH=__user_config.get(
-        "gt_detections_path", (__kitti_path / "preprocessed_gt" / "mot").as_posix()
+        "gt_detections_path",
+        (__kitti_path_default / "preprocessed_gt" / "mot").as_posix(),
     ),
     EST_DETECTIONS_PATH=__user_config.get(
-        "detections_path", (__kitti_path / "preprocessed_est" / "mot").as_posix()
+        "detections_path",
+        (__kitti_path_default / "preprocessed_est" / "mot").as_posix(),
     ),
     MAX_DIST=__user_config.get("max_dist", 150),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),
@@ -107,19 +116,25 @@ CONFIG = Config(
     BA_NORMALIZE_TRANS_ERROR=__user_config.get(
         "ba_normalize_trans_error", __ba_normalize_trans_error
     ),
-    SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
+    SLIDING_WINDOW_BA=__user_config.get(
+        "sliding_window_ba", __sliding_window_ba_default
+    ),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),
-    MAX_SPEED_CAR=__user_config.get("max_speed_car", __default_max_speed_car),
-    MAX_SPEED_PED=__user_config.get("max_speed_ped", __default_max_speed_ped),
-    FRAME_RATE=__user_config.get("frame_rate", __default_frame_rate),
+    MAX_SPEED_CAR=__user_config.get("max_speed_car", __max_speed_car_default),
+    MAX_SPEED_PED=__user_config.get("max_speed_ped", __max_speed_ped_default),
+    FRAME_RATE=__user_config.get("frame_rate", __frame_rate_default),
     TRACK_POINT_CLOUD_SIZES=__user_config.get(
-        "track_point_cloud_sizes", __track_point_cloud_sizes
+        "track_point_cloud_sizes", __track_point_cloud_sizes_default
+    ),
+    KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST=__user_config.get(
+        "keep_track_for_n_frames_after_lost",
+        __keep_track_for_n_frames_after_lost_default,
     ),
 )
 
 if CONFIG.USING_CONFIG_FILE:
-    CONFIG.CONFIG_FILE = __config_file.as_posix()
+    CONFIG.CONFIG_FILE = __config_file_default.as_posix()
 
 if CONFIG.USING_MEDIAN_CLUSTER:
     CONFIG.MAD_SCALE_FACTOR = __user_config.get(
@@ -152,7 +167,9 @@ if CONFIG.FEATURE_MATCHER == "superpoint":
 elif CONFIG.FEATURE_MATCHER == "superpoint_preprocessed":
     CONFIG.SUPERPOINT_PREPROCESSED_PATH = __user_config.get(
         "superpoint_preprocessed_path",
-        (__preprocessed_path / "superpoint" / __kitti_scene.zfill(4)).as_posix(),
+        (
+            __preprocessed_path_default / "superpoint" / __kitti_scene_default.zfill(4)
+        ).as_posix(),
     )
 
 
