@@ -468,10 +468,10 @@ def run(
             new_data = shared_data.get_nowait()
             shared_data.task_done()
         except queue.Empty:
-            new_data = None
-        if new_data is not None or geometry_has_changed.val:
+            new_data = {}
+        if new_data or geometry_has_changed.val:
             geometry_has_changed.val = False
-            if new_data is not None:
+            if new_data:
                 object_tracks = new_data.get("object_tracks", object_tracks)
                 current_img_id = new_data.get("img_id", current_img_id)
             LOGGER.debug("Got new data")
@@ -490,7 +490,7 @@ def run(
                 track_ids_match=track_ids_match,
                 cached_colors=cached_colors,
             )
-            if new_data is not None:
+            if new_data:
                 stereo_image = new_data["stereo_image"]
                 all_left_features = new_data.get("all_left_features", [])
                 all_right_features = new_data.get("all_right_features", [])

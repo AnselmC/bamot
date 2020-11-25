@@ -441,7 +441,7 @@ def run(
                 if point_cloud_sizes.get(track_id):
                     point_cloud_sizes[track_id].append(point_cloud_size)
                 else:
-                    point_cloud_sizes = [point_cloud_size]
+                    point_cloud_sizes[track_id] = [point_cloud_size]
         if stop_flag.is_set():
             break
         while not continuous and not next_step.is_set():
@@ -499,8 +499,10 @@ def run(
     stop_flag.set()
     shared_data.put({})
     returned_data.put(
-        dict(trajectories=_compute_estimated_trajectories(object_tracks, all_poses)),
-        point_cloud_sizes=point_cloud_sizes,
+        dict(
+            trajectories=_compute_estimated_trajectories(object_tracks, all_poses),
+            point_cloud_sizes=point_cloud_sizes,
+        ),
     )
 
 
@@ -608,11 +610,6 @@ def step(
         for future, track_index in matched_futures_to_track_index.items():
             track, left_features, right_features, stereo_matches = future.get()
             object_tracks[track_index] = track
-            if track.active:
-                object_tracks[track_index] = track
-            else:
-                if object_tracks.get(track_index):
-                    del object_tracks[track_index]
             all_left_features.append(left_features)
             all_right_features.append(right_features)
             all_stereo_matches.append(stereo_matches)
@@ -649,21 +646,22 @@ def _compute_estimated_trajectories(
             object_center_world_offline = pose_world_obj @ to_homogeneous_pt(
                 object_center
             )
-            object_center_world_online = track.locations[img_id]
-            object_center_cam_online = (
-                np.linalg.inv(Tr_world_cam) @ object_center_world_online
-            )
             object_center_cam_offline = (
                 np.linalg.inv(Tr_world_cam) @ object_center_world_offline
             )
             offline_trajectory_world[int(img_id)] = tuple(
                 from_homogeneous_pt(object_center_world_offline).tolist()
             )
-            online_trajectory_world[int(img_id)] = tuple(
-                from_homogeneous_pt(object_center_world_online).tolist()
-            )
             offline_trajectory_cam[int(img_id)] = tuple(
                 from_homogeneous_pt(object_center_cam_offline).tolist()
+            )
+        for img_id, object_center_world_online in track.locations.items():
+            Tr_world_cam = all_poses[img_id]
+            object_center_cam_online = (
+                np.linalg.inv(Tr_world_cam) @ object_center_world_online
+            )
+            online_trajectory_world[int(img_id)] = tuple(
+                from_homogeneous_pt(object_center_world_online).tolist()
             )
             online_trajectory_cam[int(img_id)] = tuple(
                 from_homogeneous_pt(object_center_cam_online).tolist()

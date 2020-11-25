@@ -299,10 +299,11 @@ if __name__ == "__main__":
             cam_coordinates=args.cam,
             track_ids_match=args.use_gt,
         )
+    while not shared_data.empty():
+        shared_data.get()
+        shared_data.task_done()
+    shared_data.join()
     LOGGER.info("No more frames - terminating processes")
-    LOGGER.debug("Joining MOT thread")
-    mot_process.join()
-    LOGGER.debug("Joined MOT thread")
     returned = returned_data.get()
     point_cloud_sizes = returned["point_cloud_sizes"]
     offline_trajectories, online_trajectories = returned["trajectories"]
@@ -316,16 +317,19 @@ if __name__ == "__main__":
     ) = online_trajectories
 
     returned_data.task_done()
+    LOGGER.info("Joining returned data queue")
     returned_data.join()
-    LOGGER.debug("Joining returned data queue")
-    LOGGER.debug("Joined returned data queue")
-    LOGGER.debug("Joining fake SLAM thread")
+    LOGGER.info("Joined returned data queue")
+    LOGGER.info("Joining fake SLAM thread")
     while not slam_data.empty():
         slam_data.get()
         slam_data.task_done()
     slam_data.join()
     slam_process.join()
-    LOGGER.debug("Joined fake SLAM thread")
+    LOGGER.info("Joined fake SLAM thread")
+    LOGGER.info("Joining MOT thread")
+    mot_process.join()
+    LOGGER.info("Joined MOT thread")
     if not args.out:
         out_path = kitti_path / "trajectories" / scene / config.FEATURE_MATCHER
         for tag in args.tags:
@@ -355,7 +359,7 @@ if __name__ == "__main__":
         "Saved estimated object track trajectories to %s", out_path,
     )
 
-    if config.TRACK_POINT_CLOUD_SIZES:
+    if config.TRACK_POINT_CLOUD_SIZES and point_cloud_sizes:
         point_cloud_size_summary_file = out_path / "pcl.json"
         summary = {}
         max_size = max(map(max, point_cloud_sizes.values()))
@@ -375,6 +379,8 @@ if __name__ == "__main__":
         summary["avg-obj"] = avg_size_obj
         summary["min-obj"] = min_size_obj
         summary["max-obj"] = max_size_obj
+        LOGGER.info("Point cloud statistics:")
+        LOGGER.info(json.dumps(summary, indent=4))
         with open(point_cloud_size_summary_file, "w") as fp:
             json.dump(summary, fp, indent=4)
 
@@ -391,8 +397,4 @@ if __name__ == "__main__":
         ).stdout.strip()
         json.dump(state, fp, indent=4)
 
-    while not shared_data.empty():
-        shared_data.get()
-        shared_data.task_done()
-    shared_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT MOT")
