@@ -303,7 +303,9 @@ if __name__ == "__main__":
     LOGGER.debug("Joining MOT thread")
     mot_process.join()
     LOGGER.debug("Joined MOT thread")
-    offline_trajectories, online_trajectories = returned_data.get()
+    returned = returned_data.get()
+    point_cloud_sizes = returned["point_cloud_sizes"]
+    offline_trajectories, online_trajectories = returned["trajectories"]
     (
         estimated_trajectories_world_offline,
         estimated_trajectories_cam_offline,
@@ -352,6 +354,29 @@ if __name__ == "__main__":
     LOGGER.info(
         "Saved estimated object track trajectories to %s", out_path,
     )
+
+    if config.TRACK_POINT_CLOUD_SIZES:
+        point_cloud_size_summary_file = out_path / "pcl.json"
+        summary = {}
+        max_size = max(map(max, point_cloud_sizes.values()))
+        min_size = min(map(min, point_cloud_sizes.values()))
+        sum_and_len = [
+            (sum(s), len(s)) for s in [sizes for sizes in point_cloud_sizes.values()]
+        ]
+        total_sum = sum(s[0] for s in sum_and_len)
+        total_len = sum(s[1] for s in sum_and_len)
+        avg_size = total_sum / total_len
+        max_size_obj = max(map(np.mean, point_cloud_sizes.values()))
+        min_size_obj = min(map(np.mean, point_cloud_sizes.values()))
+        avg_size_obj = np.mean(list(map(np.mean, point_cloud_sizes.values())))
+        summary["max"] = max_size
+        summary["min"] = min_size
+        summary["avg"] = avg_size
+        summary["avg-obj"] = avg_size_obj
+        summary["min-obj"] = min_size_obj
+        summary["max-obj"] = max_size_obj
+        with open(point_cloud_size_summary_file, "w") as fp:
+            json.dump(summary, fp, indent=4)
 
     # Save config + git hash
     state_file = out_path / "state.json"

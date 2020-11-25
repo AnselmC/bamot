@@ -40,7 +40,10 @@ def object_bundle_adjustment(
         config.MAX_SPEED_CAR if object_track.cls == "car" else config.MAX_SPEED_PED
     )
     max_dist = max_speed / config.FRAME_RATE
-    trans_func = lambda x: np.tanh(-x / max_dist + 1) / 2 + 0.5
+    if config.BA_NORMALIZE_TRANS_ERROR:
+        trans_func = lambda x: np.tanh(-x / max_dist + 1) / 2 + 0.5
+    else:
+        trans_func = lambda x: 1
 
     for img_id in frames[-config.SLIDING_WINDOW_BA :]:
         num_obs = get_obs_count(img_id, object_track)

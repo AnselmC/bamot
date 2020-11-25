@@ -26,6 +26,9 @@ class Config:
     MAX_SPEED_CAR: float
     MAX_SPEED_PED: float
     BA_EVERY_N_STEPS: int
+    BA_NORMALIZE_TRANS_ERROR: bool
+    KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST: int
+    TRACK_POINT_CLOUD_SIZES: bool = False
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
@@ -50,6 +53,9 @@ __const_motion_weights_default = [
         )
     ),
 ]
+__track_point_cloud_sizes = bool(
+    os.environ.get("TRACK_POINT_CLOUD_SIZES", default=False)
+)
 __cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
 __using_mad = bool(os.environ.get("USING_MAD", default=False))
@@ -57,6 +63,9 @@ __using_const_motion = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
 __ba_every_n_steps_default = int(os.environ.get("BA_EVERY_N_STEPS", default=1))
+__ba_normalize_trans_error = bool(
+    os.environ.get("BA_NORMALIZE_TRANS_ERROR", default=False)
+)
 
 __default_max_speed_car = float(
     os.environ.get("MAX_SPEED_CAR", default=40)
@@ -95,12 +104,18 @@ CONFIG = Config(
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),
     NUM_FEATURES=__user_config.get("num_features", 8000),
     BA_EVERY_N_STEPS=__user_config.get("ba_every_n_steps", __ba_every_n_steps_default),
+    BA_NORMALIZE_TRANS_ERROR=__user_config.get(
+        "ba_normalize_trans_error", __ba_normalize_trans_error
+    ),
     SLIDING_WINDOW_BA=__user_config.get("sliding_window_ba", __sliding_window_ba),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),
     MAX_SPEED_CAR=__user_config.get("max_speed_car", __default_max_speed_car),
     MAX_SPEED_PED=__user_config.get("max_speed_ped", __default_max_speed_ped),
     FRAME_RATE=__user_config.get("frame_rate", __default_frame_rate),
+    TRACK_POINT_CLOUD_SIZES=__user_config.get(
+        "track_point_cloud_sizes", __track_point_cloud_sizes
+    ),
 )
 
 if CONFIG.USING_CONFIG_FILE:

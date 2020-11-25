@@ -433,7 +433,15 @@ def run(
             )
         return track, left_features, right_features, stereo_matches
 
+    point_cloud_sizes = {}
     for (img_id, stereo_image), new_detections in zip(images, detections):
+        if config.TRACK_POINT_CLOUD_SIZES:
+            for track_id, obj in object_tracks.items():
+                point_cloud_size = len(obj.landmarks)
+                if point_cloud_sizes.get(track_id):
+                    point_cloud_sizes[track_id].append(point_cloud_size)
+                else:
+                    point_cloud_sizes = [point_cloud_size]
         if stop_flag.is_set():
             break
         while not continuous and not next_step.is_set():
@@ -490,7 +498,10 @@ def run(
         )
     stop_flag.set()
     shared_data.put({})
-    returned_data.put(_compute_estimated_trajectories(object_tracks, all_poses))
+    returned_data.put(
+        dict(trajectories=_compute_estimated_trajectories(object_tracks, all_poses)),
+        point_cloud_sizes=point_cloud_sizes,
+    )
 
 
 @timer
@@ -611,7 +622,7 @@ def step(
     num_deactivated = 0
     for track_id in old_tracks:
         track = object_tracks[track_id]
-        if (img_id - track.last_seen) > 10:
+        if (img_id - track.last_seen) > config.KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST:
             track.active = False
             num_deactivated += 1
     LOGGER.debug("Deactivated %d tracks", num_deactivated)
