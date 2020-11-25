@@ -7,6 +7,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.optimize import linear_sum_assignment
 
 from bamot.config import CONFIG as config
 from bamot.util.kitti import get_gt_poses_from_kitti, get_label_data_from_kitti
@@ -53,6 +54,44 @@ def _set_min_max_ax(ax, gt_traj):
     ax.set_zlim(
         z_min_cam - 0.5 * np.abs(z_min_cam), z_max_cam + 0.5 * np.abs(z_max_cam)
     )
+
+
+def _associate_gt_to_est(est_world, gt_label_data):
+    cost_matrix = np.zeros((max(est_world.keys()) + 1, max(gt_label_data.keys()) + 1))
+    for track_id_est, est_traj in est_world.items():
+        for track_id_gt, track_data in gt_label_data.items():
+            # find overlapping img_ids
+            overlapping_img_ids = set(est_traj.keys()).intersection(track_data.keys())
+            errors = []
+            for img_id in overlapping_img_ids:
+                est_pt = est_traj[img_id]
+                gt_pt = track_data[img_id].world_pos
+                error = _get_error(est_pt, gt_pt).error
+                if np.isfinite(error):
+                    errors.append(error)
+            if errors:
+                score = 1 / np.median(errors)
+            else:
+                score = 0
+            cost_matrix[track_id_est][track_id_gt] = score
+    track_ids_est, track_ids_gt = linear_sum_assignment(cost_matrix, maximize=True)
+    track_id_mapping = {}
+    matched_est = set()
+    matched_gt = set()
+    for track_id_est, track_id_gt in zip(track_ids_est, track_ids_gt):
+        weight = cost_matrix[track_id_est][track_id_gt].sum()
+        if not np.isfinite(weight) or weight == 0:
+            continue  # invalid match
+        matched_est.add(track_id_est)
+        matched_gt.add(track_id_gt)
+        track_id_mapping[int(track_id_gt)] = int(track_id_est)
+
+    not_matched_est = set(est_world.keys()).difference(matched_est)
+    not_matched_gt = set(gt_label_data.keys()).difference(matched_gt)
+    print(f"Couldn't match estimated ids: {not_matched_est}")
+    print(f"Couldn't match gt ids: {not_matched_gt}")
+    print(track_id_mapping)
+    return track_id_mapping
 
 
 if __name__ == "__main__":
@@ -161,6 +200,8 @@ if __name__ == "__main__":
     label_data = get_label_data_from_kitti(kitti_path, scene, poses=gt_poses,)
     print("Loaded GT trajectories")
 
+    print("Matching GT tracks to estimated tracks")
+    track_mapping = _associate_gt_to_est(est_trajectories_world_offline, label_data)
     if args.save:
         save_dir = Path(args.save) / args.trajectories.split("/")[-1] / scene
         save_dir.mkdir(exist_ok=True, parents=True)
@@ -171,16 +212,19 @@ if __name__ == "__main__":
         if args.plot:
             fig_world = plt.figure(figsize=plt.figaspect(0.5))
             ax_3d_world = fig_world.add_subplot(1, 1, 1, projection="3d")
-        for i, track_id in enumerate(label_data.keys()):
+        for i, track_id_gt in enumerate(label_data.keys()):
             if i > num_objects:
                 break
-            track_dict = label_data[track_id]
-            if track_id not in est_trajectories_cam_offline:
+            if track_id_gt not in track_mapping:
                 continue
-            est_traj_world_offline_dict = est_trajectories_world_offline[track_id]
-            est_traj_cam_offline_dict = est_trajectories_cam_offline[track_id]
-            est_traj_world_online_dict = est_trajectories_world_online.get(track_id, {})
-            est_traj_cam_online_dict = est_trajectories_cam_online.get(track_id, {})
+            track_dict = label_data[track_id_gt]
+            track_id_est = track_mapping[track_id_gt]
+            est_traj_world_offline_dict = est_trajectories_world_offline[track_id_est]
+            est_traj_cam_offline_dict = est_trajectories_cam_offline[track_id_est]
+            est_traj_world_online_dict = est_trajectories_world_online.get(
+                track_id_est, {}
+            )
+            est_traj_cam_online_dict = est_trajectories_cam_online.get(track_id_est, {})
             err_per_image = {}
             for img_id, row_data in track_dict.items():
                 gt_pt_cam = np.array(row_data.cam_pos).reshape(3, 1)
@@ -194,7 +238,7 @@ if __name__ == "__main__":
                 err_per_image[img_id]["distance"] = dist_from_camera
                 err_per_image[img_id]["offline"] = error_offline
                 err_per_image[img_id]["online"] = error_online
-            err_per_obj[track_id] = err_per_image
+            err_per_obj[track_id_gt] = err_per_image
             if args.plot:
                 if j == 0:
                     fig = plt.figure(figsize=plt.figaspect(0.5))
@@ -252,18 +296,34 @@ if __name__ == "__main__":
                     [color.tolist() + [alphas[i]] for i in range(len(gt_traj_world))]
                 ).reshape(-1, 4)
                 if args.plot in ["both", "trajectory"]:
+                    _set_min_max_ax(ax_3d, gt_traj_world)
                     ax_3d.scatter(
-                        gt_traj_cam[:, 0],
-                        gt_traj_cam[:, 2],
-                        gt_traj_cam[:, 1],
+                        gt_traj_world[:, 0],
+                        gt_traj_world[:, 2],
+                        gt_traj_world[:, 1],
                         label="GT trajectory",
                         color=colors,
                         norm=NoNormalize(),
                         linewidths=0.5,
                         marker=".",
                     )
-                    _set_min_max_ax(ax_3d, gt_traj_cam)
                     # _set_min_max_ax(ax_3d_world, gt_traj_world)
+                    ax_3d.plot(
+                        est_traj_world_offline[:, 0],
+                        est_traj_world_offline[:, 2],
+                        est_traj_world_offline[:, 1],
+                        label="Estimated offline trajectory",
+                        color=color,
+                        marker="|",
+                    )
+                    ax_3d.plot(
+                        est_traj_world_online[:, 0],
+                        est_traj_world_online[:, 2],
+                        est_traj_world_online[:, 1],
+                        label="Estimated online trajectory",
+                        color=color,
+                        marker="+",
+                    )
                     ax_3d_world.scatter(
                         gt_traj_world[:, 0],
                         gt_traj_world[:, 1],
@@ -274,14 +334,6 @@ if __name__ == "__main__":
                         linewidths=0.5,
                         marker=".",
                     )
-                    ax_3d.plot(
-                        est_traj_cam_offline[:, 0],
-                        est_traj_cam_offline[:, 2],
-                        est_traj_cam_offline[:, 1],
-                        label="Estimated offline trajectory",
-                        color=color,
-                        marker="|",
-                    )
                     ax_3d_world.plot(
                         est_traj_world_offline[:, 0],
                         est_traj_world_offline[:, 1],
@@ -289,14 +341,6 @@ if __name__ == "__main__":
                         label="Estimated offline trajectory",
                         color=color,
                         marker="|",
-                    )
-                    ax_3d.plot(
-                        est_traj_cam_online[:, 0],
-                        est_traj_cam_online[:, 2],
-                        est_traj_cam_online[:, 1],
-                        label="Estimated online trajectory",
-                        color=color,
-                        marker="+",
                     )
                     ax_3d_world.plot(
                         est_traj_world_online[:, 0],
@@ -357,14 +401,15 @@ if __name__ == "__main__":
                         ax_3d.xaxis.pane.set_color((1, 1, 1, 0))
                         ax_3d.yaxis.pane.set_color((1, 1, 1, 0))
                         ax_3d.zaxis.pane.set_color((1, 1, 1, 0))
+                        fig.tight_layout()
                     if args.save:
-                        path = save_dir / f"{track_id}-{args.plot}.pdf"
-                        fig.suptitle(f"Object w/ ID {track_id}", color="w")
+                        path = save_dir / f"{track_id_gt}-{args.plot}.pdf"
+                        fig.suptitle(f"Object w/ GT ID {track_id_gt}", color="w")
                         plt.savefig(
                             path.as_posix(), transparent=False, bbox_inches="tight"
                         )
                     else:
-                        fig.suptitle(f"Object w/ ID {track_id}")
+                        fig.suptitle(f"Object w/ GT ID {track_id_gt}")
                         plt.show()
 
         if j == 1 and args.plot in ["both", "trajectory"]:
@@ -387,6 +432,9 @@ if __name__ == "__main__":
 
     mean_err_total = []
     if args.save:
+        track_mapping_file = save_dir / "track_mapping.json"
+        with open(track_mapping_file, "w") as fp:
+            json.dump(track_mapping, fp, sort_keys=True, indent=4)
         eval_file = save_dir / "evaluation.csv"
         with open(eval_file.as_posix(), "w") as fp:
             columns = [
