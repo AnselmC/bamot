@@ -2,11 +2,9 @@ import copy
 import logging
 import time
 
-import numpy as np
-
 import cv2
-from bamot.core.base_types import (Landmark, ObjectTrack, StereoImage,
-                                   TrackMatch)
+import numpy as np
+from bamot.core.base_types import Landmark, ObjectTrack, StereoImage, TrackMatch
 from bamot.core.mot import _compute_estimated_trajectories
 
 LOGGER = logging.getLogger("CORE:DISPARITY")
@@ -155,4 +153,5 @@ def run(
             }
         )
     stop_flag.set()
-    returned_data.put(_compute_estimated_trajectories(object_tracks, all_poses))
+    shared_data.put({})
+    returned_data.put(_compute_estimated_trajectories(object_tracks, all_poses)[0])

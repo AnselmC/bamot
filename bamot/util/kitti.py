@@ -34,7 +34,7 @@ LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
 def get_detection_stream(
     obj_detections_path: Path,
     offset: int,
-    label_data,
+    label_data: Optional[LabelData] = None,
     object_ids: Optional[List[int]] = None,
 ) -> Iterable[List[StereoObjectDetection]]:
     detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
@@ -47,13 +47,14 @@ def get_detection_stream(
         if object_ids:
             detections = [d for d in detections if d.left.track_id in object_ids]
 
-        for d in detections:
-            try:
-                row_data = label_data[d.left.track_id][i + offset]
-                d.fully_visible = row_data.occ_lvl <= 1 and row_data.trunc_lvl <= 1
-            except KeyError as exc:
-                # TODO: why is this happening?
-                pass
+        if label_data:  # only available for GT tracks
+            for d in detections:
+                try:
+                    row_data = label_data[d.left.track_id][i + offset]
+                    d.fully_visible = row_data.occ_lvl <= 1 and row_data.trunc_lvl <= 1
+                except KeyError as exc:
+                    # TODO: why is this happening?
+                    pass
         yield detections
     LOGGER.debug("Finished yielding object detections")
 

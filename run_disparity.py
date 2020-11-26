@@ -137,9 +137,27 @@ if __name__ == "__main__":
         help="Use this to only track specific object ids (can't be used in conjunction w/ `-nid`)",
         nargs="+",
     )
+    parser.add_argument(
+        "--use-gt", help="Use ground truth object masks", action="store_true",
+    )
+    parser.add_argument(
+        "--overwrite",
+        help="Allow overwriting of existing trajectories",
+        action="store_true",
+    )
+
     args = parser.parse_args()
-    LOGGER.setLevel(LOG_LEVELS[args.verbosity])
     scene = str(args.scene).zfill(4)
+    kitti_path = Path(config.KITTI_PATH)
+    if not args.out:
+        out_path = kitti_path / "trajectories" / scene / "disparity"
+        for tag in args.tags:
+            out_path /= tag
+    else:
+        out_path = Path(args.out)
+
+    out_path.mkdir(exist_ok=args.overwrite, parents=True)
+    LOGGER.setLevel(LOG_LEVELS[args.verbosity])
     if args.multiprocessing:
         queue_class = mp.JoinableQueue
         flag_class = mp.Event
@@ -153,7 +171,6 @@ if __name__ == "__main__":
     slam_data = queue_class()
     stop_flag = flag_class()
     next_step = flag_class()
-    kitti_path = Path(config.KITTI_PATH)
     img_shape = get_image_shape(kitti_path, scene)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
     stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
@@ -162,11 +179,14 @@ if __name__ == "__main__":
     label_data = get_label_data_from_kitti(
         kitti_path, scene, poses=gt_poses, offset=args.offset
     )
-    obj_detections_path = Path(config.DETECTIONS_PATH) / scene
+    if args.use_gt:
+        obj_detections_path = Path(config.GT_DETECTIONS_PATH) / scene
+    else:
+        obj_detections_path = Path(config.EST_DETECTIONS_PATH) / scene
     detection_stream = get_detection_stream(
         obj_detections_path,
         offset=args.offset,
-        label_data=label_data,
+        label_data=label_data if args.use_gt else None,
         object_ids=[int(idx) for idx in args.indeces] if args.indeces else None,
     )
     disp_process = process_class(
@@ -204,19 +224,15 @@ if __name__ == "__main__":
             show_gt=not args.viewer_disable_gt,
             cam_coordinates=args.cam,
         )
-    disp_process.join()
+    while not shared_data.empty():
+        shared_data.get()
+        shared_data.task_done()
+    shared_data.join()
     estimated_trajectories_world, estimated_trajectories_cam = returned_data.get()
     returned_data.task_done()
     returned_data.join()
-    if not args.out:
-        out_path = kitti_path / "trajectories" / scene / "disparity"
-        for tag in args.tags:
-            out_path /= tag
-    else:
-        out_path = Path(args.out)
-
+    disp_process.join()
     # Save trajectories
-    out_path.mkdir(exist_ok=True, parents=True)
     out_est_world = out_path / "est_trajectories_world.json"
     out_est_cam = out_path / "est_trajectories_cam.json"
     # estimated
@@ -241,5 +257,4 @@ if __name__ == "__main__":
         ).stdout.strip()
         json.dump(state, fp, indent=4)
 
-    shared_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT DISPARITY")

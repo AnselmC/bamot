@@ -116,6 +116,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--track-ids-match",
+        help="Estimated track ids match the GT track ids",
+        action="store_true",
+    )
+
+    parser.add_argument(
         "-s",
         "--save",
         dest="save",
@@ -201,7 +207,10 @@ if __name__ == "__main__":
     print("Loaded GT trajectories")
 
     print("Matching GT tracks to estimated tracks")
-    track_mapping = _associate_gt_to_est(est_trajectories_world_offline, label_data)
+    if not args.track_ids_match:
+        track_mapping = _associate_gt_to_est(est_trajectories_world_offline, label_data)
+    else:
+        track_mapping = dict(zip(label_data.keys(), label_data.keys()))
     if args.save:
         save_dir = Path(args.save) / args.trajectories.split("/")[-1] / scene
         save_dir.mkdir(exist_ok=True, parents=True)
