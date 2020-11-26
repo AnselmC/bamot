@@ -213,20 +213,26 @@ if __name__ == "__main__":
         help="Use right track ids (default uses left)",
     )
     parser.add_argument(
-        "--disable-mp", dest="disable_mp", help="Disable multiprocessing of scenes"
+        "--disable-mp",
+        dest="disable_mp",
+        help="Disable multiprocessing of scenes (automatically disabled w/o `--no-view`)",
     )
 
     args = parser.parse_args()
     scenes = args.s if "all" not in args.s else range(0, 20)
-    num_processes = os.cpu_count() if not args.disable_mp else 1
+    num_processes = os.cpu_count() if (not args.disable_mp) and args.no_view else 1
 
-    with mp.Manager() as manager:
-        with manager.Pool(processes=num_processes,) as p:
-            # TODO: overall pbar doesn't really work
-            for scene in tqdm.tqdm(
-                p.imap(_process_scene, scenes),
-                total=len(scenes),
-                position=len(scenes) + 1,
-                nrows=len(scenes) + 1,
-            ):
-                pass
+    if num_processes > 1:
+        with mp.Manager() as manager:
+            with manager.Pool(processes=num_processes,) as p:
+                # TODO: overall pbar doesn't really work
+                for scene in tqdm.tqdm(
+                    p.imap(_process_scene, scenes),
+                    total=len(scenes),
+                    position=len(scenes) + 1,
+                    nrows=len(scenes) + 1,
+                ):
+                    pass
+    else:
+        for scene in tqdm.tqdm(scenes, total=len(scenes), position=0):
+            _process_scene(scene)
