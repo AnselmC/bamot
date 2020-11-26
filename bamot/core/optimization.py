@@ -41,7 +41,7 @@ def object_bundle_adjustment(
     )
     max_dist = max_speed / config.FRAME_RATE
     if config.BA_NORMALIZE_TRANS_ERROR:
-        trans_func = lambda x: np.tanh(-x / max_dist + 1) / 2 + 0.5
+        trans_func = lambda x: np.tanh(-x / (0.5 * max_dist) + 1) / 2 + 0.5
     else:
         trans_func = lambda x: 1
 
@@ -165,7 +165,7 @@ def object_bundle_adjustment(
             ]
             ** 2
         )
-        if edge.chi2() > 5.991 or np.isinf(pczi) or np.isnan(pczi):
+        if edge.chi2() > 5.991 or not np.isfinite(pczi):
             edge.set_level(1)
             num_outliers += 1
         edge.set_robust_kernel(None)
