@@ -4,3 +4,6 @@
 [submodule "g2opy"]
 	path = bamot/thirdparty/g2opy
 	url = git@github.com:AnselmC/g2opy.git
+[submodule "bamot/thirdparty/pointnet2"]
+	path = bamot/thirdparty/pointnet2
+	url = git@github.com:erikwijmans/Pointnet2_PyTorch.git
