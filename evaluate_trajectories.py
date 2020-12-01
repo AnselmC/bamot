@@ -249,8 +249,12 @@ if __name__ == "__main__":
                 continue
             track_dict = label_data[track_id_gt]
             track_id_est = track_mapping[track_id_gt]
-            est_traj_world_offline_dict = est_trajectories_world_offline[track_id_est]
-            est_traj_cam_offline_dict = est_trajectories_cam_offline[track_id_est]
+            est_traj_world_offline_dict = est_trajectories_world_offline.get(
+                track_id_est, {}
+            )
+            est_traj_cam_offline_dict = est_trajectories_cam_offline.get(
+                track_id_est, {}
+            )
             est_traj_world_online_dict = est_trajectories_world_online.get(
                 track_id_est, {}
             )
