@@ -35,7 +35,7 @@ if __name__ == "__main__":
         "--scene",
         dest="scene",
         help="the scene to plot",
-        choices=list(map(str, range(0, 20))),
+        choices=list(map(str, range(0, 21))),
     )
     parser.add_argument(
         "--save", dest="save", help="Where to save left image w/ painted bounding boxes"
