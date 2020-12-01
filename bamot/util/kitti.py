@@ -2,7 +2,7 @@ import glob
 import logging
 import pickle
 from pathlib import Path
-from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -67,7 +67,10 @@ def get_image_shape(kitti_path: str, scene: str) -> Tuple[int, int]:
 
 
 def get_image_stream(
-    kitti_path: Path, scene: str, offset: int = 0, with_file_names: bool = False,
+    kitti_path: Path,
+    scene: str,
+    offset: int = 0,
+    with_file_names: bool = False,
 ) -> Iterable[StereoImage]:
     class Stream:
         def __init__(self, generator, length):
@@ -98,19 +101,21 @@ def get_image_stream(
 
 
 def get_label_data_from_kitti(
-    kitti_path: Path,
-    scene: str,
+    kitti_path: Union[str, Path],
+    scene: Union[str, int],
     poses: List[np.ndarray],
     offset: int = 0,
     indexed_by_image_id: bool = False,
 ) -> LabelData:
+    kitti_path = _convert_to_path_if_needed(kitti_path)
+    scene = _convert_to_str_scene(scene)
     detection_file = _get_detection_file(kitti_path, scene)
     if not detection_file.exists():
         raise FileNotFoundError(
             f"Detection file {detection_file.as_posix()} doesn't exist"
         )
     label_data: LabelData = {}
-    with open(detection_file.as_posix(), "r") as fp:
+    with open(detection_file, "r") as fp:
         for line in fp:
             cols = line.split(" ")
             frame = int(cols[0])
@@ -162,8 +167,22 @@ def get_label_data_from_kitti(
     return label_data
 
 
-def get_gt_poses_from_kitti(kitti_path: Path, scene: str) -> List[np.ndarray]:
+def _convert_to_path_if_needed(path: Union[str, Path]) -> Path:
+    if isinstance(path, str):
+        return Path(path)
+    return path
+
+
+def _convert_to_str_scene(scene: Union[str, int]) -> str:
+    return str(scene).zfill(4)  # can already be in correct format
+
+
+def get_gt_poses_from_kitti(
+    kitti_path: Union[Path, str], scene: Union[int, str]
+) -> List[np.ndarray]:
     """Adapted from Sergio Agostinho, returns GT poses of left cam"""
+    kitti_path = _convert_to_path_if_needed(kitti_path)
+    scene = _convert_to_str_scene(scene)
     oxts_file = _get_oxts_file(kitti_path, scene)
     poses = []
     if not oxts_file.exists():
@@ -201,7 +220,7 @@ def get_gt_poses_from_kitti(kitti_path: Path, scene: str) -> List[np.ndarray]:
         "velmode",
         "orimode",
     )
-    df = pd.read_csv(oxts_file.as_posix(), sep=" ", names=cols, index_col=False)
+    df = pd.read_csv(oxts_file, sep=" ", names=cols, index_col=False)
     Tr_cam_imu = get_transformation_cam_to_imu(kitti_path, scene)
     poses = [
         T_w_imu @ np.linalg.inv(Tr_cam_imu)
@@ -214,7 +233,7 @@ def get_gt_poses_from_kitti(kitti_path: Path, scene: str) -> List[np.ndarray]:
 
 def get_transformation_cam_to_imu(kitti_path: Path, scene) -> np.ndarray:
     calib_file = _get_calib_file(kitti_path, scene)
-    with open(calib_file.as_posix(), "r") as fp:
+    with open(calib_file, "r") as fp:
         for line in fp:
             cols = line.split(" ")
             name = cols[0]
@@ -231,7 +250,7 @@ def get_transformation_cam_to_imu(kitti_path: Path, scene) -> np.ndarray:
 
 def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     calib_file = _get_calib_cam_to_cam_file(kitti_path)
-    with open(calib_file.as_posix(), "r") as fp:
+    with open(calib_file, "r") as fp:
         for line in fp:
             cols = line.split(" ")
             name = cols[0]
@@ -279,7 +298,7 @@ def get_estimated_obj_detections(
     objects_per_frame = {}
     combined_mask_per_frame = {}  # To check that no frame contains overlapping masks
     path = _get_estimated_detection_file(kitti_path, scene, side)
-    with open(path.as_posix(), "r") as f:
+    with open(path, "r") as f:
         for line in f:
             line = line.strip()
             fields = line.split(" ")
@@ -338,7 +357,11 @@ def get_gt_obj_detections_from_kitti(
 
         if obj_mask.sum() <= 2:
             continue
-        obj_det = ObjectDetection(mask=obj_mask, track_id=track_id, cls=obj_class,)
+        obj_det = ObjectDetection(
+            mask=obj_mask,
+            track_id=track_id,
+            cls=obj_class,
+        )
         obj_detections.append(obj_det)
     return obj_detections
 

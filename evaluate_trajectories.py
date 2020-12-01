@@ -28,13 +28,22 @@ class Error(NamedTuple):
     error_z: float
 
 
+ErrorUnmatched = Error(np.NAN, np.NAN, np.NAN, np.NAN)
+
+
 def _get_error(est_pt, gt_pt):
     if est_pt is None:
-        return Error(np.NAN, np.NAN, np.NAN, np.NAN)
+        return ErrorUnmatched
     else:
         est_pt = np.array(est_pt).reshape(3, 1)
         error = np.linalg.norm(gt_pt - est_pt)
-        err_x, err_y, err_z = np.abs(gt_pt - est_pt).reshape(3,).tolist()
+        err_x, err_y, err_z = (
+            np.abs(gt_pt - est_pt)
+            .reshape(
+                3,
+            )
+            .tolist()
+        )
         return Error(error, err_x, err_y, err_z)
 
 
@@ -88,10 +97,7 @@ def _associate_gt_to_est(est_world, gt_label_data):
 
     not_matched_est = set(est_world.keys()).difference(matched_est)
     not_matched_gt = set(gt_label_data.keys()).difference(matched_gt)
-    print(f"Couldn't match estimated ids: {not_matched_est}")
-    print(f"Couldn't match gt ids: {not_matched_gt}")
-    print(track_id_mapping)
-    return track_id_mapping
+    return track_id_mapping, not_matched_gt
 
 
 if __name__ == "__main__":
@@ -163,6 +169,12 @@ if __name__ == "__main__":
                 int(k) if k.lstrip("-").isdigit() else k: v for k, v in d.items()
             },
         )
+    # TODO: remove once bug doesn't exist anymore
+    if isinstance(est_trajectories_world_offline, list):
+        (
+            est_trajectories_world_offline,
+            est_trajectories_cam_offline,
+        ) = est_trajectories_world_offline
 
     if online_path.exists():
         with open(est_trajectory_file_online.as_posix(), "r") as fp:
@@ -203,20 +215,29 @@ if __name__ == "__main__":
             args.scene = scene
     scene = str(args.scene).zfill(4)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
-    label_data = get_label_data_from_kitti(kitti_path, scene, poses=gt_poses,)
+    label_data = get_label_data_from_kitti(
+        kitti_path,
+        scene,
+        poses=gt_poses,
+    )
     print("Loaded GT trajectories")
 
     print("Matching GT tracks to estimated tracks")
     if not args.track_ids_match:
-        track_mapping = _associate_gt_to_est(est_trajectories_world_offline, label_data)
+        track_mapping, unmatched_gt_track_ids = _associate_gt_to_est(
+            est_trajectories_world_offline, label_data
+        )
     else:
         track_mapping = dict(zip(label_data.keys(), label_data.keys()))
+        unmatched_gt_track_ids = set()
     if args.save:
         save_dir = Path(args.save) / args.trajectories.split("/")[-1] / scene
         save_dir.mkdir(exist_ok=True, parents=True)
     err_per_obj = {}
     num_objects = args.num_objects if args.num_objects else len(label_data)
     print(f"Number of objects: {num_objects}")
+    print(f"Number of unmatched GT objects: {len(unmatched_gt_track_ids)}")
+
     for j in range(2):
         if args.plot:
             fig_world = plt.figure(figsize=plt.figaspect(0.5))
