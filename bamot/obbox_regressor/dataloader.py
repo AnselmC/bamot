@@ -73,7 +73,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
             if dataset is None:
                 dataset = df
             else:
-                dataset.append(df)
+                dataset = dataset.append(df)
         dataset.dropna(inplace=True)
 
         # get all gt data for all scenes
