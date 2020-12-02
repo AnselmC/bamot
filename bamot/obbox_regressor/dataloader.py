@@ -123,7 +123,8 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
             size * (self._train_val_test_ratio[2] / sum(self._train_val_test_ratio))
         )
         train_size = size - val_size - test_size
-        # TODO: shuffle dataframe first
+        # shuffle dataframe first
+        df = df.sample(frac=1, random_state=42)
         self._dataset = {}
         self._dataset["train"] = dataset.iloc[:train_size]
         self._dataset["val"] = dataset.iloc[train_size : train_size + val_size]
@@ -135,7 +136,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
                 self._dataset["train"], pointcloud_size=self._pointcloud_size
             ),
             batch_size=self._train_batch_size,
-            num_workers=1,  # os.cpu_count(),
+            num_workers=os.cpu_count(),
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -144,7 +145,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
                 self._dataset["val"], pointcloud_size=self._pointcloud_size
             ),
             batch_size=self._eval_batch_size,
-            num_workers=1,  # os.cpu_count(),
+            num_workers=os.cpu_count(),
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -153,5 +154,5 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
                 self._dataset["test"], pointcloud_size=self._pointcloud_size
             ),
             batch_size=self._eval_batch_size,
-            num_workers=1,  # os.cpu_count(),
+            num_workers=os.cpu_count(),
         )
