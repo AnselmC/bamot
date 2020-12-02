@@ -216,3 +216,5 @@ data
 .coverage
 /*.yaml
 *.avi
+
+*.sbatch
