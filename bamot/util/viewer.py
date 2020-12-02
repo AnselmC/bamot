@@ -227,12 +227,18 @@ def _update_track_visualization(
                     pass
             if track.landmarks:
                 center /= len(track.landmarks)
-            offline_point = center.reshape(3,).tolist()
+            offline_point = center.reshape(
+                3,
+            ).tolist()
             path_points_offline.append(offline_point)
             online_point = track.locations.get(img_id)
             if online_point is not None:
                 path_points_online.append(
-                    from_homogeneous_pt(online_point).reshape(3,).tolist()
+                    from_homogeneous_pt(online_point)
+                    .reshape(
+                        3,
+                    )
+                    .tolist()
                 )
             if i == len(track.poses) - 1:
                 track_size = len(points)
@@ -248,6 +254,7 @@ def _update_track_visualization(
             track_geometries.offline_trajectory.lines = o3d.utility.Vector2iVector(
                 path_lines_offline
             )
+        if path_lines_online:
             track_geometries.online_trajectory.points = o3d.utility.Vector3dVector(
                 path_points_online
             )
@@ -274,19 +281,21 @@ def _update_track_visualization(
         if all_track_geometries.get(ido) is None:
             visualizer.add_geometry(track_geometries.pt_cloud)
             visualizer.add_geometry(track_geometries.bbox)
+            if len(path_lines_online) >= 1:
+                visualizer.add_geometry(track_geometries.online_trajectory)
+            if len(path_lines_offline) >= 1:
+                visualizer.add_geometry(track_geometries.offline_trajectory)
             all_track_geometries[ido] = track_geometries
-        elif len(path_lines_online) == 1:
-            visualizer.add_geometry(track_geometries.online_trajectory)
-            visualizer.update_geometry(track_geometries.pt_cloud)
-            visualizer.update_geometry(track_geometries.bbox)
-        elif len(path_lines_offline) == 1:
-            visualizer.add_geometry(track_geometries.offline_trajectory)
-            visualizer.update_geometry(track_geometries.pt_cloud)
-            visualizer.update_geometry(track_geometries.bbox)
         else:
             visualizer.update_geometry(track_geometries.pt_cloud)
-            visualizer.update_geometry(track_geometries.offline_trajectory)
-            visualizer.update_geometry(track_geometries.online_trajectory)
+            if len(path_lines_offline) >= 1:
+                visualizer.add_geometry(track_geometries.offline_trajectory)
+            else:
+                visualizer.update_geometry(track_geometries.offline_trajectory)
+            if len(path_lines_online) >= 1:
+                visualizer.add_geometry(track_geometries.online_trajectory)
+            else:
+                visualizer.update_geometry(track_geometries.online_trajectory)
             visualizer.update_geometry(track_geometries.bbox)
 
     for ido in inactive_tracks:
@@ -446,7 +455,13 @@ def run(
     view_control.set_constant_z_far(150)
     view_control.set_constant_z_near(-10)
     opts = vis.get_render_option()
-    opts.background_color = np.array([0.0, 0.0, 0.0,])
+    opts.background_color = np.array(
+        [
+            0.0,
+            0.0,
+            0.0,
+        ]
+    )
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
     all_track_geometries: Dict[int, TrackGeometries] = {}
@@ -535,7 +550,7 @@ def run(
     LOGGER.debug("Finished viewer")
 
 
-def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam):
+def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam: np.ndarray):
     world_pos = row.world_pos
     # whl
     h, w, l = row.dim_3d
