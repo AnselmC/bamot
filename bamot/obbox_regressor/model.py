@@ -24,7 +24,7 @@ class OBBoxRegressor(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-        self._backbone = PointNet2SemSegSSG(hparams={"model.use_xyz":True})
+        self._backbone = PointNet2SemSegSSG(hparams={"model.use_xyz": True})
         dim_backbone = 13 * num_points
         self._regressor = nn.Sequential(
             nn.Linear(dim_backbone, 128),
@@ -134,3 +134,7 @@ class OBBoxRegressor(pl.LightningModule):
         self.log("size_loss_test", size_loss)
         total_loss = loc_loss + angle_loss + size_loss
         self.log("loss_test", total_loss)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+        return optimizer
