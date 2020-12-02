@@ -24,7 +24,7 @@ class OBBoxRegressor(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-        self._backbone = PointNet2SemSegSSG()
+        self._backbone = PointNet2SemSegSSG(hparams={"model.use_xyz":True})
         dim_backbone = 13 * num_points
         self._regressor = nn.Sequential(
             nn.Linear(dim_backbone, 128),
