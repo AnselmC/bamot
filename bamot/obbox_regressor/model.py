@@ -4,8 +4,11 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import wandb as wb
 from bamot.thirdparty.pointnet2.pointnet2.models.pointnet2_ssg_sem import \
     PointNet2SemSegSSG
+from bamot.util.cv import get_corners_from_vector
+from bamot.util.misc import get_color
 from torch.nn import functional as F
 
 
@@ -29,6 +32,8 @@ class OBBoxRegressor(pl.LightningModule):
             nn.Dropout(prob_dropout),
             nn.Linear(128, 7),
         )
+        self._est_color = get_color(normalized=True, as_tuple=True)
+        self._gt_color = get_color(normalized=True, as_tuple=True)
 
     def forward(self, pointcloud, feature_vector):
         x = self._backbone(pointcloud)
@@ -89,6 +94,34 @@ class OBBoxRegressor(pl.LightningModule):
         self.log("size_loss_valid", size_loss)
         total_loss = loc_loss + angle_loss + size_loss
         self.log("loss_valid", total_loss)
+        # log first pointcloud + GT box + Est Box from batch
+        gt_corners = get_corners_from_vector(target[0])
+        est_corners = get_corners_from_vector(y[0])
+        self.log(
+            "estimated_obbox",
+            {
+                "point_scene": wb.Object3D(
+                    {
+                        "type": "lidar/beta",
+                        "points": pointcloud[0],
+                        "boxes": np.array(
+                            [
+                                {
+                                    "corners": gt_corners,
+                                    "label": "GT OBBox",
+                                    "color": self._gt_color,
+                                },
+                                {
+                                    "corners": est_corners,
+                                    "label": "EST OBBox",
+                                    "color": self._est_color,
+                                },
+                            ]
+                        ),
+                    }
+                )
+            },
+        )
 
     def test_step(self, batch, batch_idx):
         pointcloud = batch["pointcloud"]

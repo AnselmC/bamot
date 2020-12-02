@@ -15,7 +15,7 @@ def main(args):
     dm = BAMOTPointCloudDataModule(
         dataset_dir=args.input_files_dir,
     )
-    wandb_logger = WandbLogger()
+    wandb_logger = WandbLogger(project="bamot")
     trainer = pl.Trainer(logger=wandb_logger, gpus=args.gpus)
     trainer.fit(model, dm)
     trainer.test(datamodule=dm)
