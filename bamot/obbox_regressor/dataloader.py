@@ -63,7 +63,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str):
         all_files = list(
-            filter(lambda f: f.suffix == "csv", Path(self._dataset_dir).iterdir())
+            filter(lambda f: f.suffix == ".csv", Path(self._dataset_dir).iterdir())
         )
         if not all_files:
             raise ValueError(f"No `.csv` files found at `{self._dataset_dir}`")
