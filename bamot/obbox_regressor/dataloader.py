@@ -26,15 +26,8 @@ class BAMOTPointCloudDataset(Dataset):
     def __len__(self):
         return len(self._dataframe)
 
-    def __getitem(self, idx: int) -> Dict[str, torch.Tensor]:
-        row = self._dataframe.loc[idx]
-        ptc_fname = row.pointcloud_fname
-        num_poses = row.num_poses
-        num_other_tracks = row.num_other_tracks
-        feature_vector = torch.Tensor([num_poses, num_other_tracks])
-        target_vector = torch.Tensor(row.target)
-        # read pointcloud and convert to tensor
-        pointcloud = np.load(ptc_fname).reshape(-1, 3).astype(np.float32)
+    def _load_and_process_pointcloud(self, pointcloud_fname):
+        pointcloud = np.load(pointcloud_fname).reshape(-1, 3).astype(np.float32)
         if len(pointcloud) != self._pointcloud_size:
             # randomly drop or repeat points
             pointcloud = self._rng.choice(
@@ -42,7 +35,19 @@ class BAMOTPointCloudDataset(Dataset):
                 size=self._pointcloud_size,
                 replace=len(pointcloud) < self._pointcloud_size,
             )
-        pointcloud = torch.Tensor(pointcloud)
+        return pointcloud
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        row = self._dataframe.iloc[idx]
+        ptc_fname = row.pointcloud_fname
+        num_poses = row.num_poses
+        num_other_tracks = row.num_other_tracks
+        feature_vector = torch.Tensor(
+            np.array([num_poses, num_other_tracks]).reshape(-1)
+        )
+        target_vector = torch.Tensor(row.target.tolist())
+        # read pointcloud and convert to tensor
+        pointcloud = torch.Tensor(self._load_and_process_pointcloud(ptc_fname))
 
         return dict(
             pointcloud=pointcloud, target=target_vector, feature_vector=feature_vector
@@ -56,6 +61,8 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
         train_val_test_ratio: Tuple[int, int, int] = (8, 1, 1),
         track_id_mapping: Dict[int, int] = {},
         pointcloud_size: int = 1024,
+        train_batch_size: int = 2,
+        eval_batch_size: int = 2,
         **kwargs,
     ):
         super().__init__()
@@ -63,6 +70,8 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
         self._track_id_mapping = track_id_mapping
         self._train_val_test_ratio = train_val_test_ratio
         self._pointcloud_size = pointcloud_size
+        self._train_batch_size = train_batch_size
+        self._eval_batch_size = eval_batch_size
 
     def setup(self, stage: str):
         all_files = list(
@@ -102,7 +111,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
                 track_id = row.track_id
             row_data = all_gt_data[scene][track_id][img_id]
             target_vector = np.array(
-                [row_data.cam_pos, row_data.rot_angle, row_data.dim_3d]
+                [*row_data.cam_pos, row_data.rot_angle, *row_data.dim_3d]
             ).reshape(-1)
             target_vectors.append(target_vector)
         dataset["target"] = target_vectors
@@ -114,34 +123,35 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
             size * (self._train_val_test_ratio[2] / sum(self._train_val_test_ratio))
         )
         train_size = size - val_size - test_size
+        # TODO: shuffle dataframe first
         self._dataset = {}
-        (
-            self._dataset["train"],
-            self._dataset["val"],
-            self._dataset["test"],
-        ) = random_split(
-            BAMOTPointCloudDataset(dataset, pointcloud_size=self._pointcloud_size),
-            [train_size, val_size, test_size],
-            generator=torch.Generator().manual_seed(42),
-        )
+        self._dataset["train"] = dataset.iloc[:train_size]
+        self._dataset["val"] = dataset.iloc[train_size : train_size + val_size]
+        self._dataset["test"] = dataset.iloc[-test_size:]
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
-            self._dataset["train"],
+            BAMOTPointCloudDataset(
+                self._dataset["train"], pointcloud_size=self._pointcloud_size
+            ),
             batch_size=self._train_batch_size,
-            num_workers=os.cpu_count(),
+            num_workers=1,  # os.cpu_count(),
         )
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
-            self._dataset["val"],
+            BAMOTPointCloudDataset(
+                self._dataset["val"], pointcloud_size=self._pointcloud_size
+            ),
             batch_size=self._eval_batch_size,
-            num_workers=os.cpu_count(),
+            num_workers=1,  # os.cpu_count(),
         )
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(
-            self._dataset["test"],
+            BAMOTPointCloudDataset(
+                self._dataset["test"], pointcloud_size=self._pointcloud_size
+            ),
             batch_size=self._eval_batch_size,
-            num_workers=os.cpu_count(),
+            num_workers=1,  # os.cpu_count(),
         )

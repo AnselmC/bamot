@@ -4,12 +4,13 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import wandb as wb
 from bamot.thirdparty.pointnet2.pointnet2.models.pointnet2_ssg_sem import \
     PointNet2SemSegSSG
 from bamot.util.cv import get_corners_from_vector
 from bamot.util.misc import get_color
 from torch.nn import functional as F
+
+import wandb as wb
 
 
 class OBBoxRegressor(pl.LightningModule):
@@ -20,12 +21,15 @@ class OBBoxRegressor(pl.LightningModule):
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         prob_dropout: float = 0.2,
-        **kwargs
+        dim_feature_vector: int = 2,
+        **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters()
-        self._backbone = PointNet2SemSegSSG(hparams={"model.use_xyz": True})
-        dim_backbone = 13 * num_points
+        self._backbone = nn.Sequential(
+            PointNet2SemSegSSG(hparams={"model.use_xyz": True}), nn.Flatten()
+        )
+        dim_backbone = 13 * num_points + dim_feature_vector
         self._regressor = nn.Sequential(
             nn.Linear(dim_backbone, 128),
             nn.ReLU(),
@@ -37,7 +41,7 @@ class OBBoxRegressor(pl.LightningModule):
 
     def forward(self, pointcloud, feature_vector):
         x = self._backbone(pointcloud)
-        stacked = torch.stack(x.view(-1), feature_vector)
+        stacked = torch.cat((x, feature_vector), 1)
         out = self._regressor(stacked)
         return out
 
@@ -54,16 +58,16 @@ class OBBoxRegressor(pl.LightningModule):
     def _get_angle_loss(
         self, angle: torch.Tensor, target_angle: torch.Tensor
     ) -> torch.Tensor:
-        scaled_angle = torch.remainder(angle, torch.Tensor(np.pi))
+        scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]))
         return F.smooth_l1_loss(scaled_angle, target_angle)
 
     def _get_losses(self, y: torch.Tensor, target: torch.Tensor) -> Tuple[torch.Tensor]:
-        loc = y[:, :, :3]
-        target_loc = target[:, :, :3]
-        angle = y[:, :, 3:4]
-        target_angle = target[:, :, 3:4]
-        size = y[:, :, 4:]
-        target_size = y[:, :, 4:]
+        loc = y[:, :3]
+        target_loc = target[:, :3]
+        angle = y[:, 3:4]
+        target_angle = target[:, 3:4]
+        size = y[:, 4:]
+        target_size = y[:, 4:]
         loc_loss = self._get_location_loss(loc, target_loc)
         angle_loss = self._get_angle_loss(angle, target_angle)
         size_loss = self._get_size_loss(size, target_size)
@@ -94,34 +98,35 @@ class OBBoxRegressor(pl.LightningModule):
         self.log("size_loss_valid", size_loss)
         total_loss = loc_loss + angle_loss + size_loss
         self.log("loss_valid", total_loss)
+        # TODO: current error: no json serializable
         # log first pointcloud + GT box + Est Box from batch
-        gt_corners = get_corners_from_vector(target[0])
-        est_corners = get_corners_from_vector(y[0])
-        self.log(
-            "estimated_obbox",
-            {
-                "point_scene": wb.Object3D(
-                    {
-                        "type": "lidar/beta",
-                        "points": pointcloud[0],
-                        "boxes": np.array(
-                            [
-                                {
-                                    "corners": gt_corners,
-                                    "label": "GT OBBox",
-                                    "color": self._gt_color,
-                                },
-                                {
-                                    "corners": est_corners,
-                                    "label": "EST OBBox",
-                                    "color": self._est_color,
-                                },
-                            ]
-                        ),
-                    }
-                )
-            },
-        )
+        # gt_corners = get_corners_from_vector(target[0].numpy())
+        # est_corners = get_corners_from_vector(y[0].numpy())
+        # self.log(
+        #    "estimated_obbox",
+        #    {
+        #        "point_scene": wb.Object3D(
+        #            {
+        #                "type": "lidar/beta",
+        #                "points": pointcloud[0],
+        #                "boxes": np.array(
+        #                    [
+        #                        {
+        #                            "corners": gt_corners,
+        #                            "label": "GT OBBox",
+        #                            "color": self._gt_color,
+        #                        },
+        #                        {
+        #                            "corners": est_corners,
+        #                            "label": "EST OBBox",
+        #                            "color": self._est_color,
+        #                        },
+        #                    ]
+        #                ),
+        #            }
+        #        )
+        #    },
+        # )
 
     def test_step(self, batch, batch_idx):
         pointcloud = batch["pointcloud"]
