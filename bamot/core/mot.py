@@ -18,9 +18,9 @@ from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    StereoObjectDetection, TrackId, TrackMatch,
                                    get_camera_parameters_matrix)
 from bamot.core.optimization import object_bundle_adjustment
-from bamot.util.cv import (back_project, from_homogeneous_pt,
+from bamot.util.cv import (back_project, from_homogeneous,
                            get_center_of_landmarks, get_feature_matcher,
-                           to_homogeneous_pt, triangulate)
+                           to_homogeneous, triangulate)
 from bamot.util.misc import get_mad, timer
 
 LOGGER = logging.getLogger("CORE:MOT")
@@ -160,7 +160,7 @@ def _add_new_landmarks_and_observations(
     for features_idx, landmark_idx in track_matches:
         feature = left_features[features_idx]
         pt_obj = landmarks[landmark_mapping[landmark_idx]].pt_3d
-        pt_cam = from_homogeneous_pt(T_cam_obj @ to_homogeneous_pt(pt_obj))
+        pt_cam = from_homogeneous(T_cam_obj @ to_homogeneous(pt_obj))
         z = pt_cam[2]
         if (
             z < 0.5 or np.linalg.norm(pt_cam) > config.MAX_DIST
@@ -218,8 +218,8 @@ def _add_new_landmarks_and_observations(
             # triangulated point should not be behind camera (or very close) or too far away
             bad_matches.append((left_feature_idx, right_feature_idx))
             continue
-        pt_3d_obj = from_homogeneous_pt(
-            np.linalg.inv(T_cam_obj) @ to_homogeneous_pt(pt_3d_left_cam)
+        pt_3d_obj = from_homogeneous(
+            np.linalg.inv(T_cam_obj) @ to_homogeneous(pt_3d_left_cam)
         ).reshape(3, 1)
         # create new landmark
         obs = Observation(
@@ -235,7 +235,10 @@ def _add_new_landmarks_and_observations(
     return landmarks
 
 
-def _get_median_descriptor(observations: List[Observation], norm: int,) -> np.ndarray:
+def _get_median_descriptor(
+    observations: List[Observation],
+    norm: int,
+) -> np.ndarray:
     subset = observations[-config.SLIDING_WINDOW_DESCRIPTORS :]
     distances = np.zeros((len(subset), len(subset)))
     for i, obs in enumerate(subset):
@@ -428,7 +431,7 @@ def run(
         ):
             track.active = False
         if track.landmarks:
-            track.locations[img_id] = track.poses[img_id] @ to_homogeneous_pt(
+            track.locations[img_id] = track.poses[img_id] @ to_homogeneous(
                 get_center_of_landmarks(track.landmarks.values())
             )
         return track, left_features, right_features, stereo_matches
@@ -460,7 +463,8 @@ def run(
         # add track_ids to ba slots
         for track_id in track_ids:
             slot_idx, _ = sorted(
-                [(idx, size) for idx, size in slot_sizes.items()], key=lambda x: x[1],
+                [(idx, size) for idx, size in slot_sizes.items()],
+                key=lambda x: x[1],
             )[0]
             ba_slots[slot_idx].add(track_id)
             slot_sizes[slot_idx] += 1
@@ -565,7 +569,7 @@ def step(
             T_world_obj = T_world_obj1
         track.poses[img_id] = T_world_obj
         if track.landmarks:
-            track.locations[img_id] = track.poses[img_id] @ to_homogeneous_pt(
+            track.locations[img_id] = track.poses[img_id] @ to_homogeneous(
                 get_center_of_landmarks(track.landmarks.values())
             )
         return track
@@ -643,17 +647,15 @@ def _compute_estimated_trajectories(
         online_trajectory_cam = {}
         for img_id, pose_world_obj in track.poses.items():
             Tr_world_cam = all_poses[img_id]
-            object_center_world_offline = pose_world_obj @ to_homogeneous_pt(
-                object_center
-            )
+            object_center_world_offline = pose_world_obj @ to_homogeneous(object_center)
             object_center_cam_offline = (
                 np.linalg.inv(Tr_world_cam) @ object_center_world_offline
             )
             offline_trajectory_world[int(img_id)] = tuple(
-                from_homogeneous_pt(object_center_world_offline).tolist()
+                from_homogeneous(object_center_world_offline).tolist()
             )
             offline_trajectory_cam[int(img_id)] = tuple(
-                from_homogeneous_pt(object_center_cam_offline).tolist()
+                from_homogeneous(object_center_cam_offline).tolist()
             )
         for img_id, object_center_world_online in track.locations.items():
             Tr_world_cam = all_poses[img_id]
@@ -661,10 +663,10 @@ def _compute_estimated_trajectories(
                 np.linalg.inv(Tr_world_cam) @ object_center_world_online
             )
             online_trajectory_world[int(img_id)] = tuple(
-                from_homogeneous_pt(object_center_world_online).tolist()
+                from_homogeneous(object_center_world_online).tolist()
             )
             online_trajectory_cam[int(img_id)] = tuple(
-                from_homogeneous_pt(object_center_cam_online).tolist()
+                from_homogeneous(object_center_cam_online).tolist()
             )
         offline_trajectories_world[int(track_id)] = offline_trajectory_world
         offline_trajectories_cam[int(track_id)] = offline_trajectory_cam

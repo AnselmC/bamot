@@ -163,33 +163,16 @@ def mask_img(
     return masked_img.astype(np.uint8)
 
 
-def to_homogeneous_arr(arr: np.ndarray) -> np.ndarray:
+def to_homogeneous(arr: np.ndarray) -> np.ndarray:
     if len(arr) != 3:
         raise RuntimeError(f"Array must be 3D to convert to 4D, but is {len(arr)}D")
     return np.vstack([arr, np.ones(len(arr.T)).reshape(1, -1)])
 
 
-def from_homogeneous_arr(arr: np.ndarray) -> np.ndarray:
+def from_homogeneous(arr: np.ndarray) -> np.ndarray:
     if len(arr) != 4:
         raise RuntimeError(f"Array must be 4D to convert to 3D, but is {len(arr)}D")
     return arr[:-1, :] / arr[-1, :]
-
-
-def to_homogeneous_pt(pt: np.ndarray) -> np.ndarray:
-    pt_hom = np.array(
-        [
-            *pt.reshape(
-                -1,
-            ),
-            1,
-        ]
-    ).reshape(-1, 1)
-    return pt_hom
-
-
-def from_homogeneous_pt(pt_hom: np.ndarray) -> np.ndarray:
-    pt = pt_hom[:-1] / pt_hom[-1]
-    return pt
 
 
 def get_preprocessed_superpoint_feature_matcher(path: str):

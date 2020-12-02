@@ -1,10 +1,9 @@
 import numpy as np
 import pytest
-
 from bamot.core.base_types import (CameraParameters, Landmark, ObjectTrack,
                                    Observation, StereoCamera)
 from bamot.core.optimization import object_bundle_adjustment
-from bamot.util.cv import from_homogeneous_pt, project, to_homogeneous_pt
+from bamot.util.cv import from_homogeneous, project, to_homogeneous
 
 RNG = np.random.default_rng()
 
@@ -68,7 +67,7 @@ def landmarks(object_points, object_poses, camera_params):
             if RNG.normal(0.8, 0.5) <= 0.5:
                 # point isn't observed at this pose
                 continue
-            pt_3d = from_homogeneous_pt(pose @ to_homogeneous_pt(pt_obj))
+            pt_3d = from_homogeneous(pose @ to_homogeneous(pt_obj))
             pt_2d = (project(camera_params, pt_3d) + RNG.random() * 2).reshape(
                 (2,)
             )  # up to two pixel error

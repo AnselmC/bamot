@@ -11,7 +11,7 @@ import pycocotools.mask as rletools
 from bamot.core.base_types import (CameraParameters, ImageId, ObjectDetection,
                                    StereoCamera, StereoImage,
                                    StereoObjectDetection, TrackId)
-from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
+from bamot.util.cv import from_homogeneous, to_homogeneous
 
 LOGGER = logging.getLogger("Util:Kitti")
 
@@ -136,9 +136,8 @@ def get_label_data_from_kitti(
             )  # in camera coordinates
             rot_angle = float(cols[16])  # in camera coordinates
             T_w_cam2 = poses[frame]
-            location_world = from_homogeneous_pt(
-                T_w_cam2 @ to_homogeneous_pt(location_cam2)
-            )
+            location_world = from_homogeneous(T_w_cam2 @ to_homogeneous(location_cam2))
+            location_world = from_homogeneous(T_w_cam2 @ to_homogeneous(location_cam2))
             if indexed_by_image_id:
                 if not label_data.get(frame):
                     label_data[frame] = {}

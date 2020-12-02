@@ -5,7 +5,7 @@ import g2o
 import numpy as np
 from bamot.config import CONFIG as config
 from bamot.core.base_types import ImageId, ObjectTrack, StereoCamera
-from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
+from bamot.util.cv import from_homogeneous, to_homogeneous
 
 LOGGER = logging.getLogger("CORE:OPTIMIZATION")
 
@@ -82,7 +82,12 @@ def object_bundle_adjustment(
                 const_motion_edge.set_vertex(1, prev_cam)
                 const_motion_edge.set_vertex(2, pose_vertex)
                 info = np.diag(
-                    np.hstack([np.repeat(trans_weight, 3), np.repeat(rot_weight, 3),])
+                    np.hstack(
+                        [
+                            np.repeat(trans_weight, 3),
+                            np.repeat(rot_weight, 3),
+                        ]
+                    )
                 )
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
@@ -108,7 +113,11 @@ def object_bundle_adjustment(
         point_vertex.set_id(landmark_id)
         landmark_mapping[idx] = landmark_id
         point_vertex.set_marginalized(True)
-        point_vertex.set_estimate(landmark.pt_3d.reshape(3,))
+        point_vertex.set_estimate(
+            landmark.pt_3d.reshape(
+                3,
+            )
+        )
         landmark_id += 2
         optimizer.add_vertex(point_vertex)
         num_landmarks += 1
@@ -156,27 +165,23 @@ def object_bundle_adjustment(
     for edge, _ in mono_edges:
         edge.compute_error()
         pt_obj, T_obj_cam = edge.vertices()
-        pt_obj = pt_obj.estimate()
+        pt_obj = pt_obj.estimate().reshape(3, 1)
         T_obj_cam = T_obj_cam.estimate().matrix()
         pczi = (
             1.0
-            / from_homogeneous_pt(np.linalg.inv(T_obj_cam) @ to_homogeneous_pt(pt_obj))[
-                -1
-            ]
+            / from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))[-1]
             ** 2
         )
-        if edge.chi2() > 5.991 or not np.isfinite(pczi):
+        if edge.chi2() > 5.991:  # or not np.isfinite(pczi):
             edge.set_level(1)
             num_outliers += 1
         edge.set_robust_kernel(None)
     for edge, _ in stereo_edges:
         edge.compute_error()
         pt_obj, T_obj_cam = edge.vertices()
-        pt_obj = pt_obj.estimate()
+        pt_obj = pt_obj.estimate().reshape(3, 1)
         T_obj_cam = T_obj_cam.estimate().matrix()
-        pt_cam = from_homogeneous_pt(
-            np.linalg.inv(T_obj_cam) @ to_homogeneous_pt(pt_obj)
-        )
+        pt_cam = from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))
         if edge.chi2() > 7.815 or np.isinf(1.0 / pt_cam[2] ** 2):
             edge.set_level(1)
             num_outliers += 1
@@ -191,33 +196,25 @@ def object_bundle_adjustment(
     for edge, lmid in mono_edges:
         edge.compute_error()
         pt_obj, T_obj_cam = edge.vertices()
-        pt_obj = pt_obj.estimate()
+        pt_obj = pt_obj.estimate().reshape(3, 1)
         T_obj_cam = T_obj_cam.estimate().matrix()
-        pt_cam = from_homogeneous_pt(
-            np.linalg.inv(T_obj_cam) @ to_homogeneous_pt(pt_obj)
-        )
+        pt_cam = from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))
         if edge.chi2() > 5.991 or np.isinf(1.0 / pt_cam[2] ** 2):
             num_outliers += 1
             landmarks_to_remove.add(lmid)
     for edge, lmid in stereo_edges:
         edge.compute_error()
         pt_obj, T_obj_cam = edge.vertices()
-        pt_obj = pt_obj.estimate()
+        pt_obj = pt_obj.estimate().reshape(3, 1)
         T_obj_cam = T_obj_cam.estimate().matrix()
-        pt_cam = from_homogeneous_pt(
-            np.linalg.inv(T_obj_cam) @ to_homogeneous_pt(pt_obj)
-        )
+        pt_cam = from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))
         if edge.chi2() > 7.815 or np.isinf(1.0 / pt_cam[2] ** 2):
             num_outliers += 1
             landmarks_to_remove.add(lmid)
     # update landmark positions of objects (w.r.t. to object) and object poses over time
     for landmark_idx, vertex_idx in landmark_mapping.items():
-        # print("Updating point from ")
-        # print(object_track.landmarks[landmark_idx].pt_3d)
         updated_point = optimizer.vertex(vertex_idx).estimate().reshape(3, 1)
         object_track.landmarks[landmark_idx].pt_3d = updated_point.copy()
-        # print("to ")
-        # print(object_track.landmarks[landmark_idx].pt_3d)
     LOGGER.debug("Removing %d landmarks", len(landmarks_to_remove))
     for lmid in landmarks_to_remove:
         object_track.landmarks.pop(lmid)
@@ -225,9 +222,5 @@ def object_bundle_adjustment(
         T_obj_cam = optimizer.vertex(vertex_idx).estimate().matrix()
         T_world_cam = all_poses[img_id]
         T_world_obj = T_world_cam @ np.linalg.inv(T_obj_cam)
-        # print("Updating pose from")
-        # print(object_track.poses[timecam_id[0]])
         object_track.poses[img_id] = T_world_obj.copy()
-        # print("to")
-        # print(object_track.poses[timecam_id[0]])
     return object_track

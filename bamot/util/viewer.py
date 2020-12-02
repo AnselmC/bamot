@@ -3,16 +3,15 @@ import queue
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import cv2
 import numpy as np
 import open3d as o3d
 from bamot.core.base_types import (Feature, Match, ObjectTrack, StereoImage,
                                    TrackId)
-from bamot.util.cv import (from_homogeneous_arr, from_homogeneous_pt,
-                           get_corners_from_vector, to_homogeneous_arr,
-                           to_homogeneous_pt)
+from bamot.util.cv import (from_homogeneous, get_corners_from_vector,
+                           to_homogeneous)
 from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
@@ -160,6 +159,7 @@ def _update_gt_visualization(
 
 def _update_track_visualization(
     all_track_geometries,
+    all_geometries,
     object_tracks,
     visualizer,
     show_online_trajs,
@@ -196,9 +196,7 @@ def _update_track_visualization(
         for i, (img_id, pose_world_obj) in enumerate(track.poses.items()):
             center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
             for lm in track.landmarks.values():
-                pt_world = from_homogeneous_pt(
-                    pose_world_obj @ to_homogeneous_pt(lm.pt_3d)
-                )
+                pt_world = from_homogeneous(pose_world_obj @ to_homogeneous(lm.pt_3d))
                 center += pt_world
                 if i == len(track.poses) - 1 and np.isfinite(pt_world).all():
                     points.append(pt_world)
@@ -236,7 +234,7 @@ def _update_track_visualization(
             online_point = track.locations.get(img_id)
             if online_point is not None:
                 path_points_online.append(
-                    from_homogeneous_pt(online_point)
+                    from_homogeneous(online_point)
                     .reshape(
                         3,
                     )
@@ -283,21 +281,39 @@ def _update_track_visualization(
         if all_track_geometries.get(ido) is None:
             visualizer.add_geometry(track_geometries.pt_cloud)
             visualizer.add_geometry(track_geometries.bbox)
-            if len(path_lines_online) >= 1:
+            all_geometries.add(track_geometries.pt_cloud)
+            all_geometries.add(track_geometries.bbox)
+            if (
+                len(path_lines_online) >= 1
+                and track_geometries.online_trajectory not in all_geometries
+            ):
                 visualizer.add_geometry(track_geometries.online_trajectory)
-            if len(path_lines_offline) >= 1:
+                all_geometries.add(track_geometries.online_trajectory)
+            if (
+                len(path_lines_offline) >= 1
+                and track_geometries.offline_trajectory not in all_geometries
+            ):
                 visualizer.add_geometry(track_geometries.offline_trajectory)
+                all_geometries.add(track_geometries.offline_trajectory)
             all_track_geometries[ido] = track_geometries
         else:
             visualizer.update_geometry(track_geometries.pt_cloud)
-            if len(path_lines_offline) >= 1:
-                visualizer.add_geometry(track_geometries.offline_trajectory)
-            else:
-                visualizer.update_geometry(track_geometries.offline_trajectory)
-            if len(path_lines_online) >= 1:
+            if (
+                len(path_lines_online) >= 1
+                and track_geometries.online_trajectory not in all_geometries
+            ):
                 visualizer.add_geometry(track_geometries.online_trajectory)
+                all_geometries.add(track_geometries.online_trajectory)
             else:
                 visualizer.update_geometry(track_geometries.online_trajectory)
+            if (
+                len(path_lines_offline) >= 1
+                and track_geometries.offline_trajectory not in all_geometries
+            ):
+                visualizer.add_geometry(track_geometries.offline_trajectory)
+                all_geometries.add(track_geometries.offline_trajectory)
+            else:
+                visualizer.update_geometry(track_geometries.offline_trajectory)
             visualizer.update_geometry(track_geometries.bbox)
 
     for ido in inactive_tracks:
@@ -308,6 +324,13 @@ def _update_track_visualization(
             visualizer.remove_geometry(track_geometry.bbox)
             visualizer.remove_geometry(track_geometry.offline_trajectory)
             visualizer.remove_geometry(track_geometry.online_trajectory)
+
+            all_geometries.remove(track_geometry.pt_cloud)
+            all_geometries.remove(track_geometry.bbox)
+            if track_geometry.offline_trajectory in all_geometries:
+                all_geometries.remove(track_geometry.offline_trajectory)
+            if track_geometry.online_trajectory in all_geometries:
+                all_geometries.remove(track_geometry.online_trajectory)
             del all_track_geometries[ido]
 
 
@@ -350,6 +373,7 @@ def _update_ego_visualization(gt_poses, visualizer, ego_geometries, current_img_
 def _update_geometries(
     all_track_geometries: Dict[TrackId, TrackGeometries],
     all_gt_track_geometries: Dict[TrackId, TrackGeometries],
+    all_geometries: Set[o3d.geometry.Geometry],
     ego_geometries: EgoGeometries,
     visualizer: o3d.visualization.Visualizer,
     object_tracks: Dict[TrackId, ObjectTrack],
@@ -379,6 +403,7 @@ def _update_geometries(
     # display all track estimates
     _update_track_visualization(
         all_track_geometries=all_track_geometries,
+        all_geometries=all_geometries,
         object_tracks=object_tracks,
         visualizer=visualizer,
         show_online_trajs=show_online_trajs,
@@ -480,6 +505,7 @@ def run(
     object_tracks = {}
     cached_colors = {}
     current_img_id = 0
+    all_geometries = set()
     while not stop_flag.is_set() or not shared_data.empty():
         try:
             new_data = shared_data.get_nowait()
@@ -495,6 +521,7 @@ def run(
             _update_geometries(
                 all_track_geometries=all_track_geometries,
                 all_gt_track_geometries=all_gt_track_geometries,
+                all_geometries=all_geometries,
                 ego_geometries=ego_geometries,
                 visualizer=vis,
                 object_tracks=object_tracks,
@@ -555,7 +582,7 @@ def run(
 def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam: np.ndarray):
     vec = np.array([*row.cam_pos, row.rot_angle, *row.dim_3d]).reshape(7, 1)
     corners_cam = get_corners_from_vector(vec)
-    corners_world = from_homogeneous_arr(T_world_cam @ to_homogeneous_arr(corners_cam))
+    corners_world = from_homogeneous(T_world_cam @ to_homogeneous(corners_cam))
 
     pts = o3d.utility.Vector3dVector(corners_world.T)
     lines = o3d.utility.Vector2iVector(
