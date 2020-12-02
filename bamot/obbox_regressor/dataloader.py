@@ -21,7 +21,7 @@ class BAMOTPointCloudDataset(Dataset):
         super().__init__(**kwargs)
         self._dataframe = dataframe
         self._pointcloud_size = pointcloud_size
-        self._rng = np.random.get_default_rng(42)
+        self._rng = np.random.default_rng(42)
 
     def __len__(self):
         return len(self._dataframe)
@@ -55,11 +55,14 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
         dataset_dir: str,
         train_val_test_ratio: Tuple[int, int, int] = (8, 1, 1),
         track_id_mapping: Dict[int, int] = {},
+        pointcloud_size: int = 1024,
         **kwargs,
     ):
         super().__init__()
         self._dataset_dir = dataset_dir
         self._track_id_mapping = track_id_mapping
+        self._train_val_test_ratio = train_val_test_ratio
+        self._pointcloud_size = pointcloud_size
 
     def setup(self, stage: str):
         all_files = list(
@@ -99,7 +102,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
                 track_id = row.track_id
             row_data = all_gt_data[scene][track_id][img_id]
             target_vector = np.array(
-                [row_data.cam_pos, row_data.angle, row_data.dim_3d]
+                [row_data.cam_pos, row_data.rot_angle, row_data.dim_3d]
             ).reshape(-1)
             target_vectors.append(target_vector)
         dataset["target"] = target_vectors
@@ -111,15 +114,16 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
             size * (self._train_val_test_ratio[2] / sum(self._train_val_test_ratio))
         )
         train_size = size - val_size - test_size
-        train_idxs, val_idxs, test_idxs = random_split(
-            range(size),
+        self._dataset = {}
+        (
+            self._dataset["train"],
+            self._dataset["val"],
+            self._dataset["test"],
+        ) = random_split(
+            BAMOTPointCloudDataset(dataset, pointcloud_size=self._pointcloud_size),
             [train_size, val_size, test_size],
             generator=torch.Generator().manual_seed(42),
         )
-        self._dataset = {}
-        self._dataset["train"] = BAMOTPointCloudDataset(dataset.loc[train_idxs])
-        self._dataset["test"] = BAMOTPointCloudDataset(dataset.loc[test_idxs])
-        self._dataset["val"] = BAMOTPointCloudDataset(dataset.loc[val_idxs])
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
