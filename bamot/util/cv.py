@@ -4,7 +4,6 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
-import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
 import cv2
 import numpy as np
 from bamot.config import CONFIG as config
@@ -17,6 +16,7 @@ if TYPE_CHECKING:
     import tensorflow as tf
 
 if config.FEATURE_MATCHER != "orb":
+    import bamot.thirdparty.SuperPoint.superpoint.match_features_demo as sp
     import tensorflow as tf
 
     tf.get_logger().setLevel(logging.ERROR)  # surpress TF1 -> TF2 warnings
