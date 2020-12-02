@@ -1,7 +1,7 @@
 import argparse
 
 import pytorch_lightning as pl
-from bamot.obbox_regressor.data.dataloader import BAMOTPointCloudDataModule
+from bamot.obbox_regressor.dataloader import BAMOTPointCloudDataModule
 from bamot.obbox_regressor.model import OBBoxRegressor
 from pytorch_lightning.loggers import WandbLogger
 
