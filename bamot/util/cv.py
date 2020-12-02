@@ -10,6 +10,7 @@ import numpy as np
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
                                    Landmark, Match)
+from g2o import AngleAxis
 from PIL import Image, ImageDraw
 
 if TYPE_CHECKING:
@@ -27,6 +28,35 @@ if config.FEATURE_MATCHER != "orb":
         MODEL = LOADED.signatures["serving_default"]
 
 LOGGER = logging.getLogger("UTIL:CV")
+
+
+def get_corners_from_vector(vec: np.ndarray) -> np.ndarray:
+    x, y, z, theta, height, width, length = vec.reshape(7, 1)
+    translation = np.array([x, y, z]).reshape(3, 1)
+    x_corners = length * [
+        0.5,
+        0.5,
+        -0.5,
+        -0.5,
+        0.5,
+        0.5,
+        -0.5,
+        -0.5,
+    ]
+    y_corners = height * [0, 0, 0, 0, -1, -1, -1, -1]
+    z_corners = width * [
+        0.5,
+        -0.5,
+        -0.5,
+        0.5,
+        0.5,
+        -0.5,
+        -0.5,
+        0.5,
+    ]
+    corners = np.array([x_corners, y_corners, z_corners])
+    rot = AngleAxis(theta, np.array([0, 1, 0])).rotation_matrix()
+    return (rot @ corners) + translation
 
 
 def get_convex_hull_from_mask(obj_mask):
@@ -133,8 +163,27 @@ def mask_img(
     return masked_img.astype(np.uint8)
 
 
+def to_homogeneous_arr(arr: np.ndarray) -> np.ndarray:
+    if len(arr) != 3:
+        raise RuntimeError(f"Array must be 3D to convert to 4D, but is {len(arr)}D")
+    return np.vstack([arr, np.ones(len(arr.T)).reshape(1, -1)])
+
+
+def from_homogeneous_arr(arr: np.ndarray) -> np.ndarray:
+    if len(arr) != 4:
+        raise RuntimeError(f"Array must be 4D to convert to 3D, but is {len(arr)}D")
+    return arr[:-1, :] / arr[-1, :]
+
+
 def to_homogeneous_pt(pt: np.ndarray) -> np.ndarray:
-    pt_hom = np.array([*pt.reshape(-1,), 1]).reshape(-1, 1)
+    pt_hom = np.array(
+        [
+            *pt.reshape(
+                -1,
+            ),
+            1,
+        ]
+    ).reshape(-1, 1)
     return pt_hom
 
 

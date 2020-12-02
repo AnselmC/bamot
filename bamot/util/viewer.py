@@ -10,7 +10,9 @@ import numpy as np
 import open3d as o3d
 from bamot.core.base_types import (Feature, Match, ObjectTrack, StereoImage,
                                    TrackId)
-from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
+from bamot.util.cv import (from_homogeneous_arr, from_homogeneous_pt,
+                           get_corners_from_vector, to_homogeneous_arr,
+                           to_homogeneous_pt)
 from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
@@ -551,19 +553,11 @@ def run(
 
 
 def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam: np.ndarray):
-    world_pos = row.world_pos
-    # whl
-    h, w, l = row.dim_3d
-    rot_cam = row.rot_3d
-    x_corners = [l / 2, l / 2, -l / 2, -l / 2, l / 2, l / 2, -l / 2, -l / 2]
-    y_corners = [0, 0, 0, 0, -h, -h, -h, -h]
-    z_corners = [w / 2, -w / 2, -w / 2, w / 2, w / 2, -w / 2, -w / 2, w / 2]
+    vec = np.array([*row.cam_pos, row.rot_angle, *row.dim_3d]).reshape(7, 1)
+    corners_cam = get_corners_from_vector(vec)
+    corners_world = from_homogeneous_arr(T_world_cam @ to_homogeneous_arr(corners_cam))
 
-    corners = np.array([x_corners, y_corners, z_corners])
-
-    corners = (T_world_cam[:3, :3] @ rot_cam @ corners) + world_pos
-
-    pts = o3d.utility.Vector3dVector(corners.T)
+    pts = o3d.utility.Vector3dVector(corners_world.T)
     lines = o3d.utility.Vector2iVector(
         [
             [0, 1],

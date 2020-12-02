@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import tqdm
 from bamot.config import CONFIG as cfg
+from bamot.util.cv import get_corners_from_vector
 from bamot.util.kitti import (LabelDataRow, get_gt_poses_from_kitti,
                               get_label_data_from_kitti)
 
@@ -55,32 +56,8 @@ def main(base_dir):
 
 
 def _generate_point_cloud(row: LabelDataRow, num_points: int = 500) -> np.ndarray:
-    rng = np.random.default_rng(42)
-    height, width, length = row.dim_3d
-    rot_cam = row.rot_3d
-    x_corners = [
-        length / 2,
-        length / 2,
-        -length / 2,
-        -length / 2,
-        length / 2,
-        length / 2,
-        -length / 2,
-        -length / 2,
-    ]
-    y_corners = [0, 0, 0, 0, -height, -height, -height, -height]
-    z_corners = [
-        width / 2,
-        -width / 2,
-        -width / 2,
-        width / 2,
-        width / 2,
-        -width / 2,
-        -width / 2,
-        width / 2,
-    ]
-    corners = np.array([x_corners, y_corners, z_corners])
-    corners = rot_cam @ corners
+    vec = np.array([*row.cam_pos, row.rot_angle, *row.dim_3d]).reshape(7, 1)
+    corners = get_corners_from_vector(vec)
 
     max_x = corners[0].max() * 1.2
     max_y = corners[1].max() * 1.2
@@ -102,6 +79,7 @@ def _generate_point_cloud(row: LabelDataRow, num_points: int = 500) -> np.ndarra
     if row.trunc_lvl:
         num_points //= row.trunc_lvl
 
+    rng = np.random.default_rng(42)
     x_coord = rng.uniform(min_x, max_x, num_points)
     y_coord = rng.uniform(min_y, max_y, num_points)
     z_coord = rng.uniform(min_z, max_z, num_points)

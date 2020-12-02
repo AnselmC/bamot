@@ -12,7 +12,6 @@ from bamot.core.base_types import (CameraParameters, ImageId, ObjectDetection,
                                    StereoCamera, StereoImage,
                                    StereoObjectDetection, TrackId)
 from bamot.util.cv import from_homogeneous_pt, to_homogeneous_pt
-from g2o import AngleAxis
 
 LOGGER = logging.getLogger("Util:Kitti")
 
@@ -25,7 +24,6 @@ class LabelDataRow(NamedTuple):
     bbox2d: Tuple[float, float, float, float]
     object_class: str
     dim_3d: Tuple[float, float, float]
-    rot_3d: np.ndarray
     rot_angle: float
 
 
@@ -137,7 +135,6 @@ def get_label_data_from_kitti(
                 (3, 1)
             )  # in camera coordinates
             rot_angle = float(cols[16])  # in camera coordinates
-            rot_3d = AngleAxis(rot_angle, np.array([0, 1, 0])).rotation_matrix()
             T_w_cam2 = poses[frame]
             location_world = from_homogeneous_pt(
                 T_w_cam2 @ to_homogeneous_pt(location_cam2)
@@ -150,14 +147,13 @@ def get_label_data_from_kitti(
                     label_data[track_id] = {}
 
             label_row = LabelDataRow(
-                world_pos=location_world.tolist(),
-                cam_pos=location_cam2.tolist(),
+                world_pos=location_world.reshape(-1).tolist(),
+                cam_pos=location_cam2.reshape(-1).tolist(),
                 occ_lvl=occlusion_level,
                 trunc_lvl=truncation_level,
                 object_class=object_class,
                 bbox2d=bbox,
                 dim_3d=dim_3d,
-                rot_3d=rot_3d,
                 rot_angle=rot_angle,
             )
             if indexed_by_image_id:
