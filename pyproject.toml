@@ -24,6 +24,7 @@ pytorch_lightning = "^1.0.8"
 lmdb = "^1.0.0"
 msgpack-numpy = "^0.4.7"
 wandb = "^0.10.11"
+ninja = "^1.10.0"
 
 [tool.poetry.dev-dependencies]
 black = "^19.10b0"
