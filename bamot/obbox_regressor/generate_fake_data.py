@@ -50,6 +50,7 @@ def main(base_dir):
                 num_poses=num_poses,
                 num_other_tracks=num_other_tracks,
                 img_id=img_ids,
+                scene=scenes,
             )
         )
         df.to_csv(out_fname, index=False)
