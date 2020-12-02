@@ -21,6 +21,8 @@ tqdm = "^4.48.2"
 scipy = "^1.5.4"
 pycocotools = "^2.0.2"
 pytorch_lightning = "^1.0.8"
+lmdb = "^1.0.0"
+msgpack-numpy = "^0.4.7"
 
 [tool.poetry.dev-dependencies]
 black = "^19.10b0"

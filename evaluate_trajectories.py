@@ -224,10 +224,17 @@ if __name__ == "__main__":
 
     print("Matching GT tracks to estimated tracks")
     if not args.track_ids_match:
-        track_mapping, unmatched_gt_track_ids = _associate_gt_to_est(
-            est_trajectories_world_offline, label_data
-        )
+        print("Track ids do not match, associating tracks")
+        if est_trajectories_world_online:
+            track_mapping, unmatched_gt_track_ids = _associate_gt_to_est(
+                est_trajectories_world_online, label_data
+            )
+        else:
+            track_mapping, unmatched_gt_track_ids = _associate_gt_to_est(
+                est_trajectories_world_offline, label_data
+            )
     else:
+        print("Estimated track ids match GT")
         track_mapping = dict(zip(label_data.keys(), label_data.keys()))
         unmatched_gt_track_ids = set()
     if args.save:

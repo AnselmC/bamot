@@ -26,6 +26,7 @@ class LabelDataRow(NamedTuple):
     object_class: str
     dim_3d: Tuple[float, float, float]
     rot_3d: np.ndarray
+    rot_angle: float
 
 
 LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
@@ -157,6 +158,7 @@ def get_label_data_from_kitti(
                 bbox2d=bbox,
                 dim_3d=dim_3d,
                 rot_3d=rot_3d,
+                rot_angle=rot_angle,
             )
             if indexed_by_image_id:
                 label_data[frame][track_id] = label_row

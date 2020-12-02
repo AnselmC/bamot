@@ -670,6 +670,14 @@ version = "1.4.3"
 
 [[package]]
 category = "main"
+description = "Universal Python binding for the LMDB 'Lightning' Database"
+name = "lmdb"
+optional = false
+python-versions = "*"
+version = "1.0.0"
+
+[[package]]
+category = "main"
 description = "Python implementation of Markdown."
 name = "markdown"
 optional = false
@@ -756,6 +764,26 @@ name = "more-itertools"
 optional = false
 python-versions = ">=3.5"
 version = "8.6.0"
+
+[[package]]
+category = "main"
+description = "MessagePack (de)serializer."
+name = "msgpack"
+optional = false
+python-versions = "*"
+version = "1.0.0"
+
+[[package]]
+category = "main"
+description = "Numpy data serialization using msgpack"
+name = "msgpack-numpy"
+optional = false
+python-versions = "*"
+version = "0.4.7.1"
+
+[package.dependencies]
+msgpack = ">=0.5.2"
+numpy = ">=1.9.0"
 
 [[package]]
 category = "main"
@@ -1122,7 +1150,7 @@ six = ">=1.9"
 [[package]]
 category = "main"
 description = "Run a subprocess in a pseudo terminal"
-marker = "sys_platform != \"win32\" or os_name != \"nt\" or python_version >= \"3.3\" and sys_platform != \"win32\""
+marker = "python_version >= \"3.3\" and sys_platform != \"win32\" or sys_platform != \"win32\" or os_name != \"nt\" or python_version >= \"3.3\" and sys_platform != \"win32\" and (python_version >= \"3.3\" and sys_platform != \"win32\" or sys_platform != \"win32\")"
 name = "ptyprocess"
 optional = false
 python-versions = "*"
@@ -1747,7 +1775,7 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["pytest (>=3.5,<3.7.3 || >3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
 [metadata]
-content-hash = "4a2f680cd6a30736e4ff305195cd95b019b9e3e47f7e2fd50a0ca10527cef6a7"
+content-hash = "75cdca76463f1228bffb88ef88888c9ad2ca71bf047ef7d722b3f9da52768b2d"
 python-versions = "^3.7"
 
 [metadata.files]
@@ -2194,6 +2222,31 @@ lazy-object-proxy = [
     {file = "lazy_object_proxy-1.4.3-cp38-cp38-win32.whl", hash = "sha256:5541cada25cd173702dbd99f8e22434105456314462326f06dba3e180f203dfd"},
     {file = "lazy_object_proxy-1.4.3-cp38-cp38-win_amd64.whl", hash = "sha256:59f79fef100b09564bc2df42ea2d8d21a64fdcda64979c0fa3db7bdaabaf6239"},
 ]
+lmdb = [
+    {file = "lmdb-1.0.0-cp27-cp27m-win32.whl", hash = "sha256:0d7e8aa64cd22bca91f1d1c28be1db729050eb334d258f5fc33b37cd4d66439a"},
+    {file = "lmdb-1.0.0-cp27-cp27m-win_amd64.whl", hash = "sha256:fc54252b81e78b18505058d5bb059a3bace4e13382731241a1716be76643bd88"},
+    {file = "lmdb-1.0.0-cp34-cp34m-win32.whl", hash = "sha256:e9ea3e93c4810203adbb286805d3149a7a6864655bd7cdd297117a6f8e99fb3b"},
+    {file = "lmdb-1.0.0-cp35-cp35m-win32.whl", hash = "sha256:7392091858b250ed74e27dd2ae37d0d69cbdbb94e04d181fad2c0e4b6b0008c8"},
+    {file = "lmdb-1.0.0-cp35-cp35m-win_amd64.whl", hash = "sha256:87bbeec74c62f675bd0c80ff507c83b16b62fb6de0f6b8af8c8c4432ff82958e"},
+    {file = "lmdb-1.0.0-cp36-cp36m-win32.whl", hash = "sha256:841c68d7b08ec7045d398c33fef38d8d2bb43cfc877d5bab4c5e96bffdc39b06"},
+    {file = "lmdb-1.0.0-cp36-cp36m-win_amd64.whl", hash = "sha256:2f93cf30e0030eab8bb7e9410e719807b7202c18cac8de3511fc1ff4938ced76"},
+    {file = "lmdb-1.0.0-cp37-cp37m-win32.whl", hash = "sha256:9fee62a82f5c229f9591f8b846fe6c12f55d77c714afaeb3937e2362e4fe36ae"},
+    {file = "lmdb-1.0.0-cp37-cp37m-win_amd64.whl", hash = "sha256:d009ed9c6f4f180ed22b0d130bc02ff0b890db418df2070d25a8e03229e81128"},
+    {file = "lmdb-1.0.0-cp38-cp38-win32.whl", hash = "sha256:9eaa442bf8586d049f881fe354c5c8feb453126be46fcf600af43217504402e7"},
+    {file = "lmdb-1.0.0-cp38-cp38-win_amd64.whl", hash = "sha256:0829e579ec12f90e3ed3563e0e976a35831bb013a6a30008db45f6319193d93b"},
+    {file = "lmdb-1.0.0-py2.7-win-amd64.egg", hash = "sha256:619e5a59ed877c3f70f1ff8813013063e0e6e6d4b8c18228f48ec13b9d199da6"},
+    {file = "lmdb-1.0.0-py2.7-win32.egg", hash = "sha256:f158cc731e458f37d54102c4fbd02d0931338c3974e56b38f9de042337d51db2"},
+    {file = "lmdb-1.0.0-py3.4-win32.egg", hash = "sha256:95052969ada039967aa98cfaa76c3aae668dbda5f6765bf16ba9f0a0988b1317"},
+    {file = "lmdb-1.0.0-py3.5-win-amd64.egg", hash = "sha256:82e6b4757328f424ba6df22f3dd8ea6eb8e040766376f844a3bdf42d42a91761"},
+    {file = "lmdb-1.0.0-py3.5-win32.egg", hash = "sha256:4dcaa227812b9ae6e36fafacfffd704b31d3c96b0998bfb49f457f10215a2a07"},
+    {file = "lmdb-1.0.0-py3.6-win-amd64.egg", hash = "sha256:b376fdf702c58cffcf27920f166d3b252625acef8f341579469b5d658348fb06"},
+    {file = "lmdb-1.0.0-py3.6-win32.egg", hash = "sha256:6d4a2b9a72088d160753382c319324cbfd1fdd9ffd86a1ef5de5ee28b6f7a4cf"},
+    {file = "lmdb-1.0.0-py3.7-win-amd64.egg", hash = "sha256:8f6162323194dab90a711b9854da20e79af23126ed5afbea27980350d1983031"},
+    {file = "lmdb-1.0.0-py3.7-win32.egg", hash = "sha256:7eda1bd8bf119931b2e0cfc92be20ea5d6ffb4b29769c8556faf0d7221804681"},
+    {file = "lmdb-1.0.0-py3.8-win-amd64.egg", hash = "sha256:d5255d9b3c17bd5877ba67558f744e442d9d9ed5983580e379297b42b9fee9d7"},
+    {file = "lmdb-1.0.0-py3.8-win32.egg", hash = "sha256:c9d6e6b04067157b0fd89f2bb460788026426f89a649c5dbf5b9b23012110753"},
+    {file = "lmdb-1.0.0.tar.gz", hash = "sha256:4136ffdf0aad61da86d1402808029d002a771b2a9ccc9b39c6bcafa7847c21b6"},
+]
 markdown = [
     {file = "Markdown-3.3.3-py3-none-any.whl", hash = "sha256:c109c15b7dc20a9ac454c9e6025927d44460b85bd039da028d85e2b6d0bcc328"},
     {file = "Markdown-3.3.3.tar.gz", hash = "sha256:5d9f2b5ca24bc4c7a390d22323ca4bad200368612b5aaa7796babf971d2b2f18"},
@@ -2279,6 +2332,30 @@ mistune = [
 more-itertools = [
     {file = "more-itertools-8.6.0.tar.gz", hash = "sha256:b3a9005928e5bed54076e6e549c792b306fddfe72b2d1d22dd63d42d5d3899cf"},
     {file = "more_itertools-8.6.0-py3-none-any.whl", hash = "sha256:8e1a2a43b2f2727425f2b5839587ae37093f19153dc26c0927d1048ff6557330"},
+]
+msgpack = [
+    {file = "msgpack-1.0.0-cp35-cp35m-manylinux1_i686.whl", hash = "sha256:cec8bf10981ed70998d98431cd814db0ecf3384e6b113366e7f36af71a0fca08"},
+    {file = "msgpack-1.0.0-cp35-cp35m-manylinux1_x86_64.whl", hash = "sha256:aa5c057eab4f40ec47ea6f5a9825846be2ff6bf34102c560bad5cad5a677c5be"},
+    {file = "msgpack-1.0.0-cp36-cp36m-macosx_10_13_x86_64.whl", hash = "sha256:4233b7f86c1208190c78a525cd3828ca1623359ef48f78a6fea4b91bb995775a"},
+    {file = "msgpack-1.0.0-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:b3758dfd3423e358bbb18a7cccd1c74228dffa7a697e5be6cb9535de625c0dbf"},
+    {file = "msgpack-1.0.0-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:25b3bc3190f3d9d965b818123b7752c5dfb953f0d774b454fd206c18fe384fb8"},
+    {file = "msgpack-1.0.0-cp36-cp36m-win32.whl", hash = "sha256:e7bbdd8e2b277b77782f3ce34734b0dfde6cbe94ddb74de8d733d603c7f9e2b1"},
+    {file = "msgpack-1.0.0-cp36-cp36m-win_amd64.whl", hash = "sha256:5dba6d074fac9b24f29aaf1d2d032306c27f04187651511257e7831733293ec2"},
+    {file = "msgpack-1.0.0-cp37-cp37m-macosx_10_13_x86_64.whl", hash = "sha256:908944e3f038bca67fcfedb7845c4a257c7749bf9818632586b53bcf06ba4b97"},
+    {file = "msgpack-1.0.0-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:db685187a415f51d6b937257474ca72199f393dad89534ebbdd7d7a3b000080e"},
+    {file = "msgpack-1.0.0-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:ea41c9219c597f1d2bf6b374d951d310d58684b5de9dc4bd2976db9e1e22c140"},
+    {file = "msgpack-1.0.0-cp37-cp37m-win32.whl", hash = "sha256:e35b051077fc2f3ce12e7c6a34cf309680c63a842db3a0616ea6ed25ad20d272"},
+    {file = "msgpack-1.0.0-cp37-cp37m-win_amd64.whl", hash = "sha256:5bea44181fc8e18eed1d0cd76e355073f00ce232ff9653a0ae88cb7d9e643322"},
+    {file = "msgpack-1.0.0-cp38-cp38-macosx_10_13_x86_64.whl", hash = "sha256:c901e8058dd6653307906c5f157f26ed09eb94a850dddd989621098d347926ab"},
+    {file = "msgpack-1.0.0-cp38-cp38-manylinux1_i686.whl", hash = "sha256:271b489499a43af001a2e42f42d876bb98ccaa7e20512ff37ca78c8e12e68f84"},
+    {file = "msgpack-1.0.0-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:7a22c965588baeb07242cb561b63f309db27a07382825fc98aecaf0827c1538e"},
+    {file = "msgpack-1.0.0-cp38-cp38-win32.whl", hash = "sha256:002a0d813e1f7b60da599bdf969e632074f9eec1b96cbed8fb0973a63160a408"},
+    {file = "msgpack-1.0.0-cp38-cp38-win_amd64.whl", hash = "sha256:39c54fdebf5fa4dda733369012c59e7d085ebdfe35b6cf648f09d16708f1be5d"},
+    {file = "msgpack-1.0.0.tar.gz", hash = "sha256:9534d5cc480d4aff720233411a1f765be90885750b07df772380b34c10ecb5c0"},
+]
+msgpack-numpy = [
+    {file = "msgpack-numpy-0.4.7.1.tar.gz", hash = "sha256:7eaf51acf82d7c467d21aa71df94e1c051b2055e54b755442051b474fa7cf5e1"},
+    {file = "msgpack_numpy-0.4.7.1-py2.py3-none-any.whl", hash = "sha256:50d9e456d034ead6de53d9596a64bac4c9b0e15a682c4dce0efc556dc9d786fe"},
 ]
 multiprocess = [
     {file = "multiprocess-0.70.11.1-cp27-cp27m-macosx_10_8_x86_64.whl", hash = "sha256:8f0d0640642acc654fe2fb5cb529ebbe116468a1dd1544d484db6e79033767c8"},

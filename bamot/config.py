@@ -89,7 +89,9 @@ else:
     __user_config: Dict[str, Any] = {}
 
 __kitti_path_default = Path(
-    __user_config.get("kitti_path", "./data/KITTI/tracking/training")
+    __user_config.get(
+        "kitti_path", (Path(__file__).parent.parent / "data/KITTI/tracking/training")
+    )
 ).absolute()
 
 __preprocessed_path_default = __kitti_path_default / "preprocessed"
