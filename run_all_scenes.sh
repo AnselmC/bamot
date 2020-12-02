@@ -3,12 +3,13 @@ if ! git diff-index --quiet HEAD; then
 	echo "Git tree is dirty"
 	exit
 fi
-while getopts ":f:t:c:s:e:" arg; do
+while getopts ":f:t:c:s:e:g:" arg; do
 	case $arg in
-	t) tags=$OPTARG ;;
-	c) config=$OPTARG ;;
-	s) start=$OPTARG ;;
-	e) end=$OPTARG ;;
+        t) tags=$OPTARG ;;
+        c) config=$OPTARG ;;
+        s) start=$OPTARG ;;
+        e) end=$OPTARG ;;
+        g) use_gt=$OPTARG ;;
 	esac
 done
 
@@ -25,7 +26,15 @@ if [ -z $end ]; then
 fi
 
 for scene in $(seq $start $end); do
-	CONFIG_FILE=$config \
-	SCENE=$scene \
-	python run_kitti_gt_mot.py -s $scene -v INFO -c --no-viewer --tags $tags
+    if [ $use_gt = 1 ]; then
+        echo "Using GT";
+        CONFIG_FILE=$config \
+        SCENE=$scene \
+        python run_kitti_gt_mot.py -s $scene -v INFO -c --no-viewer --tags $tags --use-gt
+    else
+        echo "Not using GT";
+        CONFIG_FILE=$config \
+        SCENE=$scene \
+        python run_kitti_gt_mot.py -s $scene -v INFO -c --no-viewer --tags $tags
+    fi
 done
