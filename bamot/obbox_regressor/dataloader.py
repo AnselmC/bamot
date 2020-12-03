@@ -36,7 +36,7 @@ class BAMOTPointCloudDataset(Dataset):
                 replace=len(pointcloud) < self._pointcloud_size,
                 axis=1,
             )
-        return pointcloud
+        return pointcloud.T
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         row = self._dataframe.iloc[idx]
@@ -44,7 +44,7 @@ class BAMOTPointCloudDataset(Dataset):
         num_poses = row.num_poses
         num_other_tracks = row.num_other_tracks
         feature_vector = torch.Tensor(
-            np.array([num_poses, num_other_tracks]).reshape(-1)
+            np.array([num_poses, num_other_tracks])
         )
         target_vector = torch.Tensor(row.target.tolist())
         # read pointcloud and convert to tensor

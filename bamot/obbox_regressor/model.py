@@ -16,7 +16,7 @@ import wandb as wb
 class OBBoxRegressor(pl.LightningModule):
     def __init__(
         self,
-        learning_rate: float = 2e-5,
+        learning_rate: float = 2e-7,
         num_points: int = 1024,
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
@@ -26,9 +26,7 @@ class OBBoxRegressor(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-        self._backbone = nn.Sequential(
-            PointNet2SemSegSSG(hparams={"model.use_xyz": True}), nn.Flatten()
-        )
+        self._backbone = nn.Sequential(PointNet2SemSegSSG(hparams={"model.use_xyz": True}), nn.Flatten())
         dim_backbone = 13 * num_points + dim_feature_vector
         self._regressor = nn.Sequential(
             nn.Linear(dim_backbone, 128),
@@ -40,7 +38,9 @@ class OBBoxRegressor(pl.LightningModule):
         self._gt_color = get_color(normalized=True, as_tuple=True)
 
     def forward(self, pointcloud, feature_vector):
+        # pointcloude shape: B x N x 3
         x = self._backbone(pointcloud)
+        # stack feature vector + flattened output from pointnet2
         stacked = torch.cat((x, feature_vector), 1)
         out = self._regressor(stacked)
         return out
@@ -58,7 +58,7 @@ class OBBoxRegressor(pl.LightningModule):
     def _get_angle_loss(
         self, angle: torch.Tensor, target_angle: torch.Tensor
     ) -> torch.Tensor:
-        scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]))
+        scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]).cuda())
         return F.smooth_l1_loss(scaled_angle, target_angle)
 
     def _get_losses(self, y: torch.Tensor, target: torch.Tensor) -> Tuple[torch.Tensor]:
@@ -99,15 +99,15 @@ class OBBoxRegressor(pl.LightningModule):
         total_loss = loc_loss + angle_loss + size_loss
         self.log("loss_valid", total_loss)
         # log first pointcloud + GT box + Est Box from batch
-        gt_corners = get_corners_from_vector(target[0].numpy())
-        est_corners = get_corners_from_vector(y[0].numpy())
+        gt_corners = get_corners_from_vector(target[0].cpu().numpy())
+        est_corners = get_corners_from_vector(y[0].cpu().numpy())
         # visualize_pointcloud_and_obb(pointcloud[0].numpy(), [gt_corners, est_corners])
         wb.log(
             {
                 "point_scene": wb.Object3D(
                     {
                         "type": "lidar/beta",
-                        "points": pointcloud[0].numpy().T,
+                        "points": pointcloud[0].cpu().numpy(),
                         "boxes": np.array(
                             [
                                 {
