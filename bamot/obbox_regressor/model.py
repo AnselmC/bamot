@@ -4,10 +4,9 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from bamot.thirdparty.pointnet2.pointnet2.models.pointnet2_ssg_sem import \
-    PointNet2SemSegSSG
 from bamot.util.cv import get_corners_from_vector
 from bamot.util.misc import get_color
+from bamot.util.viewer import visualize_pointcloud_and_obb
 from torch.nn import functional as F
 
 import wandb as wb
@@ -26,8 +25,20 @@ class OBBoxRegressor(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-        self._backbone = nn.Sequential(PointNet2SemSegSSG(hparams={"model.use_xyz": True}), nn.Flatten())
-        dim_backbone = 13 * num_points + dim_feature_vector
+        # pointnet2 not available for CPU, but need to be able to run for sanity check of pipeline
+        if torch.cuda.is_available():
+            from bamot.thirdparty.pointnet2.pointnet2.models.pointnet2_ssg_sem import \
+                PointNet2SemSegSSG
+
+            self._backbone = nn.Sequential(
+                PointNet2SemSegSSG(hparams={"model.use_xyz": True}), nn.Flatten()
+            )
+            # feature vector has length 13
+            dim_backbone = 13 * num_points + dim_feature_vector
+        else:
+            self._backbone = nn.Flatten()
+            # x,y,z coordinates
+            dim_backbone = 3 * num_points + dim_feature_vector
         self._regressor = nn.Sequential(
             nn.Linear(dim_backbone, 128),
             nn.ReLU(),
