@@ -82,18 +82,12 @@ def object_bundle_adjustment(
                 const_motion_edge.set_vertex(1, prev_cam)
                 const_motion_edge.set_vertex(2, pose_vertex)
                 info = np.diag(
-                    np.hstack(
-                        [
-                            np.repeat(trans_weight, 3),
-                            np.repeat(rot_weight, 3),
-                        ]
-                    )
+                    np.hstack([np.repeat(trans_weight, 3), np.repeat(rot_weight, 3),])
                 )
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
-                # TODO: what to set as delta?
-                robust_kernel = g2o.RobustKernelHuber()
-                const_motion_edge.set_robust_kernel(robust_kernel)
+                # robust_kernel = g2o.RobustKernelHuber()
+                # const_motion_edge.set_robust_kernel(robust_kernel)
                 optimizer.add_edge(const_motion_edge)
                 prev_prev_cam = prev_cam
                 prev_cam = pose_vertex
@@ -113,11 +107,7 @@ def object_bundle_adjustment(
         point_vertex.set_id(landmark_id)
         landmark_mapping[idx] = landmark_id
         point_vertex.set_marginalized(True)
-        point_vertex.set_estimate(
-            landmark.pt_3d.reshape(
-                3,
-            )
-        )
+        point_vertex.set_estimate(landmark.pt_3d.reshape(3,))
         landmark_id += 2
         optimizer.add_vertex(point_vertex)
         num_landmarks += 1
@@ -131,13 +121,13 @@ def object_bundle_adjustment(
             if measurement.shape == (3,):
                 edge = g2o.EdgeProjectP2SC()
                 info = np.identity(3)
-                delta = 7.815
+                delta = 1.5
                 stereo_edges.append((edge, idx))
 
             else:
                 edge = g2o.EdgeProjectP2MC()
                 info = np.identity(2)
-                delta = 5.991
+                delta = 1
                 mono_edges.append((edge, idx))
 
             edge.set_vertex(0, point_vertex)
@@ -172,7 +162,7 @@ def object_bundle_adjustment(
             / from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))[-1]
             ** 2
         )
-        if edge.chi2() > 5.991:  # or not np.isfinite(pczi):
+        if edge.chi2() > 5.991 or not np.isfinite(pczi):
             edge.set_level(1)
             num_outliers += 1
         edge.set_robust_kernel(None)
