@@ -27,13 +27,14 @@ class BAMOTPointCloudDataset(Dataset):
         return len(self._dataframe)
 
     def _load_and_process_pointcloud(self, pointcloud_fname):
-        pointcloud = np.load(pointcloud_fname).reshape(-1, 3).astype(np.float32)
-        if len(pointcloud) != self._pointcloud_size:
+        pointcloud = np.load(pointcloud_fname).reshape(3, -1).astype(np.float32)
+        if len(pointcloud.T) != self._pointcloud_size:
             # randomly drop or repeat points
             pointcloud = self._rng.choice(
                 pointcloud,
                 size=self._pointcloud_size,
                 replace=len(pointcloud) < self._pointcloud_size,
+                axis=1,
             )
         return pointcloud
 

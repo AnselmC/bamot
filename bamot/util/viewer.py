@@ -8,10 +8,8 @@ from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Union
 import cv2
 import numpy as np
 import open3d as o3d
-from bamot.core.base_types import (Feature, Match, ObjectTrack, StereoImage,
-                                   TrackId)
-from bamot.util.cv import (from_homogeneous, get_corners_from_vector,
-                           to_homogeneous)
+from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage, TrackId
+from bamot.util.cv import from_homogeneous, get_corners_from_vector, to_homogeneous
 from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
@@ -584,7 +582,11 @@ def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam: np.ndarray)
     corners_cam = get_corners_from_vector(vec)
     corners_world = from_homogeneous(T_world_cam @ to_homogeneous(corners_cam))
 
-    pts = o3d.utility.Vector3dVector(corners_world.T)
+    return _get_points_and_lines_from_corners(corners_world)
+
+
+def _get_points_and_lines_from_corners(corners: np.ndarray):
+    pts = o3d.utility.Vector3dVector(corners.T)
     lines = o3d.utility.Vector2iVector(
         [
             [0, 1],
@@ -602,3 +604,26 @@ def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam: np.ndarray)
         ]
     )
     return pts, lines
+
+
+def visualize_pointcloud_and_obb(
+    pointcloud: np.ndarray, corners: Union[List[np.ndarray], np.ndarray]
+):
+    geoms = []
+    pcl = o3d.geometry.PointCloud()
+    pcl.points = o3d.utility.Vector3dVector(pointcloud.T)
+    geoms.append(pcl)
+    if isinstance(corners, list):
+        for c in corners:
+            obb = o3d.geometry.LineSet()
+            pts, lines = _get_points_and_lines_from_corners(c)
+            obb.lines = lines
+            obb.points = pts
+            geoms.append(obb)
+    else:
+        obb = o3d.geometry.LineSet()
+        pts, lines = _get_points_and_lines_from_corners(corners)
+        obb.lines = lines
+        obb.points = pts
+        geoms.append(obb)
+    o3d.visualization.draw_geometries(geoms)

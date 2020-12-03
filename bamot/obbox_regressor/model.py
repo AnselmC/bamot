@@ -80,11 +80,11 @@ class OBBoxRegressor(pl.LightningModule):
         # size: B x N x 7
         y = self(pointcloud, feature_vector)
         loc_loss, angle_loss, size_loss = self._get_losses(y, target)
-        self.log("loc_loss_train", loc_loss)
-        self.log("angle_loss_train", angle_loss)
-        self.log("size_loss_train", size_loss)
+        self.log("loc_loss_train", loc_loss, on_epoch=True)
+        self.log("angle_loss_train", angle_loss, on_epoch=True)
+        self.log("size_loss_train", size_loss, on_epoch=True)
         total_loss = loc_loss + angle_loss + size_loss
-        self.log("loss_train", total_loss)
+        self.log("loss_train", total_loss, on_epoch=True)
         return total_loss
 
     def validation_step(self, batch, batch_idx):
@@ -98,35 +98,34 @@ class OBBoxRegressor(pl.LightningModule):
         self.log("size_loss_valid", size_loss)
         total_loss = loc_loss + angle_loss + size_loss
         self.log("loss_valid", total_loss)
-        # TODO: current error: no json serializable
         # log first pointcloud + GT box + Est Box from batch
-        # gt_corners = get_corners_from_vector(target[0].numpy())
-        # est_corners = get_corners_from_vector(y[0].numpy())
-        # self.log(
-        #    "estimated_obbox",
-        #    {
-        #        "point_scene": wb.Object3D(
-        #            {
-        #                "type": "lidar/beta",
-        #                "points": pointcloud[0],
-        #                "boxes": np.array(
-        #                    [
-        #                        {
-        #                            "corners": gt_corners,
-        #                            "label": "GT OBBox",
-        #                            "color": self._gt_color,
-        #                        },
-        #                        {
-        #                            "corners": est_corners,
-        #                            "label": "EST OBBox",
-        #                            "color": self._est_color,
-        #                        },
-        #                    ]
-        #                ),
-        #            }
-        #        )
-        #    },
-        # )
+        gt_corners = get_corners_from_vector(target[0].numpy())
+        est_corners = get_corners_from_vector(y[0].numpy())
+        # visualize_pointcloud_and_obb(pointcloud[0].numpy(), [gt_corners, est_corners])
+        wb.log(
+            {
+                "point_scene": wb.Object3D(
+                    {
+                        "type": "lidar/beta",
+                        "points": pointcloud[0].numpy().T,
+                        "boxes": np.array(
+                            [
+                                {
+                                    "corners": gt_corners.T.tolist(),
+                                    "label": "GT OBBox",
+                                    "color": self._gt_color,
+                                },
+                                {
+                                    "corners": est_corners.T.tolist(),
+                                    "label": "EST OBBox",
+                                    "color": self._est_color,
+                                },
+                            ]
+                        ),
+                    }
+                )
+            },
+        )
 
     def test_step(self, batch, batch_idx):
         pointcloud = batch["pointcloud"]

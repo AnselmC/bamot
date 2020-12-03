@@ -56,17 +56,17 @@ def main(base_dir):
         df.to_csv(out_fname, index=False)
 
 
-def _generate_point_cloud(row: LabelDataRow, num_points: int = 500) -> np.ndarray:
+def _generate_point_cloud(row: LabelDataRow, num_points: int = 1000) -> np.ndarray:
     vec = np.array([*row.cam_pos, row.rot_angle, *row.dim_3d]).reshape(7, 1)
     corners = get_corners_from_vector(vec)
 
-    max_x = corners[0].max() * 1.2
-    max_y = corners[1].max() * 1.2
-    max_z = corners[2].max() * 1.2
+    max_x = corners[0].max()
+    max_y = corners[1].max()
+    max_z = corners[2].max()
 
-    min_x = corners[0].min() * 1.2
-    min_y = corners[1].min() * 1.2
-    min_z = corners[2].min() * 1.2
+    min_x = corners[0].min()
+    min_y = corners[1].min()
+    min_z = corners[2].min()
 
     # reduce points for pedestrians
     if row.object_class == "pedestrian":
