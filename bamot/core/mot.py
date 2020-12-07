@@ -668,7 +668,9 @@ def _compute_estimated_trajectories(
         online_trajectory_cam = {}
         for img_id, pose_world_obj in track.poses.items():
             Tr_world_cam = all_poses[img_id]
-            object_center = track.pcl_centers[img_id]
+            object_center = track.pcl_centers.get(img_id)
+            if object_center is None:
+                continue
             object_center_world_offline = pose_world_obj @ to_homogeneous(object_center)
             object_center_cam_offline = (
                 np.linalg.inv(Tr_world_cam) @ object_center_world_offline
