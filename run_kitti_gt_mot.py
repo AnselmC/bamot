@@ -302,6 +302,7 @@ if __name__ == "__main__":
     while not shared_data.empty():
         shared_data.get()
         shared_data.task_done()
+        time.sleep(0.5)
     shared_data.join()
     LOGGER.info("No more frames - terminating processes")
     returned = returned_data.get()

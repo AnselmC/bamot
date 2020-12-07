@@ -182,7 +182,7 @@ def object_bundle_adjustment(
             / from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))[-1]
             ** 2
         )
-        if edge.chi2() > 5.991 or not np.isfinite(pczi):
+        if edge.chi2() > 1 or not np.isfinite(pczi):
             edge.set_level(1)
             num_outliers += 1
         edge.set_robust_kernel(None)
@@ -192,7 +192,7 @@ def object_bundle_adjustment(
         pt_obj = pt_obj.estimate().reshape(3, 1)
         T_obj_cam = T_obj_cam.estimate().matrix()
         pt_cam = from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))
-        if edge.chi2() > 7.815 or np.isinf(1.0 / pt_cam[2] ** 2):
+        if edge.chi2() > 2 or np.isinf(1.0 / pt_cam[2] ** 2):
             edge.set_level(1)
             num_outliers += 1
         edge.set_robust_kernel(None)
@@ -209,7 +209,7 @@ def object_bundle_adjustment(
         pt_obj = pt_obj.estimate().reshape(3, 1)
         T_obj_cam = T_obj_cam.estimate().matrix()
         pt_cam = from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))
-        if edge.chi2() > 5.991 or np.isinf(1.0 / pt_cam[2] ** 2):
+        if edge.chi2() > 1 or np.isinf(1.0 / pt_cam[2] ** 2):
             num_outliers += 1
             landmarks_to_remove.add(lmid)
     for edge, lmid in stereo_edges:
@@ -218,7 +218,7 @@ def object_bundle_adjustment(
         pt_obj = pt_obj.estimate().reshape(3, 1)
         T_obj_cam = T_obj_cam.estimate().matrix()
         pt_cam = from_homogeneous(np.linalg.inv(T_obj_cam) @ to_homogeneous(pt_obj))
-        if edge.chi2() > 7.815 or np.isinf(1.0 / pt_cam[2] ** 2):
+        if edge.chi2() > 2 or np.isinf(1.0 / pt_cam[2] ** 2):
             num_outliers += 1
             landmarks_to_remove.add(lmid)
     # update landmark positions of objects (w.r.t. to object) and object poses over time

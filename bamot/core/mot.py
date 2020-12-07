@@ -27,13 +27,14 @@ from bamot.util.misc import get_mad, timer
 LOGGER = logging.getLogger("CORE:MOT")
 
 
-def _remove_outlier_landmarks(landmarks, cls, track_logger):
-    if landmarks:
+def _remove_outlier_landmarks(landmarks, matched_landmarks, cls, track_logger):
+    if matched_landmarks:
         landmarks_to_remove = []
-        points = []
-        for landmark in landmarks.values():
-            points.append(landmark.pt_3d)
-        points = np.array(points)
+        points = np.array(matched_landmarks)
+
+        # for landmark in landmarks.values():
+        #    points.append(landmark.pt_3d)
+        # points = np.array(points)
         cluster_median_center = np.median(points, axis=0)
         for lid, lm in landmarks.items():
             if not config.USING_MEDIAN_CLUSTER:
@@ -72,9 +73,11 @@ def _valid_motion(Tr_rel, obj_cls, badly_tracked_frames):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
     LOGGER.debug("Current translation: %.2f", float(curr_translation))
     LOGGER.debug("Max. allowed translation: %.2f", max_speed / config.FRAME_RATE)
-    return curr_translation < (badly_tracked_frames + 1) * 0.25 * (
-        max_speed / config.FRAME_RATE
+    valid_motion = curr_translation < (
+        (badly_tracked_frames + 1) * 0.5 * (max_speed / config.FRAME_RATE)
     )
+    LOGGER.debug("Valid motion: %s", valid_motion)
+    return valid_motion
 
 
 def _localize_object(
@@ -162,6 +165,8 @@ def _add_new_landmarks_and_observations(
     for left_feature_idx, right_feature_idx in stereo_matches:
         stereo_match_dict[left_feature_idx] = right_feature_idx
 
+    matched_landmarks = []
+
     # add new observations to existing landmarks
     for features_idx, landmark_idx in track_matches:
         feature = left_features[features_idx]
@@ -187,6 +192,7 @@ def _add_new_landmarks_and_observations(
         obs = Observation(
             descriptor=feature.descriptor, pt_2d=feature_pt, img_id=img_id
         )
+        matched_landmarks.append(pt_obj)
         already_added_features.append(features_idx)
         landmarks[landmark_mapping[landmark_idx]].observations.append(obs)
     logger.debug("Added %d observations", len(already_added_features))
@@ -231,6 +237,7 @@ def _add_new_landmarks_and_observations(
         obs = Observation(
             descriptor=left_feature.descriptor, pt_2d=feature_pt, img_id=img_id
         )
+        matched_landmarks.append(pt_3d_obj)
         landmark = Landmark(pt_3d_obj, [obs])
         landmarks[landmark_id] = landmark
         created_landmarks += 1
@@ -238,7 +245,7 @@ def _add_new_landmarks_and_observations(
     for match in bad_matches:
         stereo_matches.remove(match)
     logger.debug("Created %d landmarks", created_landmarks)
-    return landmarks
+    return landmarks, matched_landmarks
 
 
 def _get_median_descriptor(observations: List[Observation], norm: int,) -> np.ndarray:
@@ -266,7 +273,6 @@ def _get_median_descriptor(observations: List[Observation], norm: int,) -> np.nd
 def _get_features_from_landmarks(
     landmarks: Dict[int, Landmark]
 ) -> Tuple[List[Feature], Dict[int, int]]:
-    # todo: refactor --> very slow, probably due to median descriptor
     features = []
     landmark_mapping = {}
     idx = 0
@@ -392,7 +398,7 @@ def run(
         T_world_obj = T_world_cam @ T_cam_obj
         # add new landmark observations from track matches
         # add new landmarks from stereo matches
-        track.landmarks = _add_new_landmarks_and_observations(
+        track.landmarks, matched_landmarks = _add_new_landmarks_and_observations(
             landmarks=copy.deepcopy(track.landmarks),
             track_matches=track_matches,
             landmark_mapping=lm_mapping,
@@ -416,7 +422,9 @@ def run(
                 median_translation=median_translation,
             )
         # remove outlier landmarks
-        _remove_outlier_landmarks(track.landmarks, track.cls, track_logger)
+        _remove_outlier_landmarks(
+            track.landmarks, matched_landmarks, track.cls, track_logger
+        )
         # settings min_landmarks to 0 disables robust initialization
         if (
             len(track.poses) == 1
@@ -511,22 +519,23 @@ def run(
 
 def _estimate_next_pose(track: ObjectTrack, img_id: ImageId) -> np.ndarray:
     available_poses = list(track.poses.keys())  # sorted by default
+    # return track.poses[available_poses[-1]]
     if len(available_poses) >= 2:
         num_frames = min(int(config.SLIDING_WINDOW_BA), len(track.poses))
         T_world_obj1 = g2o.Isometry3d(track.poses[available_poses[-1]])
         LOGGER.debug("Previous pose:\n%s", T_world_obj1.matrix())
         T_world_obj0 = g2o.Isometry3d(track.poses[available_poses[-num_frames]])
-        rel_translation = (
-            T_world_obj1.translation() - T_world_obj0.translation()
-        ) / num_frames
+        rel_translation = (T_world_obj1.translation() - T_world_obj0.translation()) / (
+            num_frames
+        )
         LOGGER.debug("Relative translation:\n%s", rel_translation)
         T_world_new = g2o.Isometry3d(
-            T_world_obj1.rotation(), T_world_obj1.translation() + 2 * rel_translation
+            T_world_obj1.rotation(), T_world_obj1.translation() + 1 * rel_translation
         )
         LOGGER.debug("Estimated new pose:\n%s", T_world_new.matrix())
         return T_world_new.matrix()
     else:
-        return track.poses[available_poses[0]]
+        return track.poses[available_poses[-1]]
 
 
 @timer
