@@ -9,6 +9,8 @@ from bamot.util.cv import from_homogeneous, to_homogeneous
 
 LOGGER = logging.getLogger("CORE:OPTIMIZATION")
 
+EmptyTuple = (None, None)
+
 
 def get_obs_count(img_id, track):
     num_obs = 0
@@ -33,7 +35,7 @@ def object_bundle_adjustment(
     optimizer.set_algorithm(algorithm)
     added_poses: Dict[ImageId, int] = {}
     pose_id = 0  # even numbers
-    prev_cam, prev_prev_cam = None, None
+    prev_cam, prev_prev_cam = EmptyTuple, EmptyTuple
     const_motion_edges = []
     frames = list(object_track.poses.keys())
     max_speed = (
@@ -50,16 +52,22 @@ def object_bundle_adjustment(
         if num_obs < 5:
             # no associated landmarks, skip pose
             # reset prev and prev_prev_cam
-            prev_cam, prev_prev_cam = None, None
+            prev_cam, prev_prev_cam = EmptyTuple, EmptyTuple
             continue
         T_world_obj = object_track.poses[img_id]
         T_world_cam = all_poses[img_id]
-        params = stereo_cam.left
+        cam_params = stereo_cam.left
         T_obj_cam = np.linalg.inv(T_world_obj) @ T_world_cam
+        pose_cam_params = g2o.ParameterSE3Offset()
+        pose_cam_params.set_offset(g2o.Isometry3d(T_world_cam))
+        pose_cam_params.set_id(img_id)
+        optimizer.add_parameter(pose_cam_params)
         pose = g2o.Isometry3d(T_obj_cam)
         sba_cam = g2o.SBACam(pose.orientation(), pose.position())
         baseline = stereo_cam.T_left_right[0, 3]
-        sba_cam.set_cam(params.fx, params.fy, params.cx, params.cy, baseline)
+        sba_cam.set_cam(
+            cam_params.fx, cam_params.fy, cam_params.cx, cam_params.cy, baseline
+        )
         pose_vertex = g2o.VertexCam()
         pose_vertex.set_id(pose_id)
         pose_vertex.set_estimate(sba_cam)
@@ -72,17 +80,25 @@ def object_bundle_adjustment(
             )
             rot_weight = rot_weight * num_obs
             trans_weight = trans_weight * num_obs * trans_func(median_translation)
-            if prev_prev_cam is None:
-                prev_prev_cam = pose_vertex
-            elif prev_cam is None:
-                prev_cam = pose_vertex
+            if prev_prev_cam == EmptyTuple:
+                prev_prev_cam = (pose_vertex, img_id)
+            elif prev_cam == EmptyTuple:
+                prev_cam = (pose_vertex, img_id)
             else:
                 const_motion_edge = g2o.EdgeSBALinearMotion()
-                const_motion_edge.set_vertex(0, prev_prev_cam)
-                const_motion_edge.set_vertex(1, prev_cam)
+                const_motion_edge.set_vertex(0, prev_prev_cam[0])
+                const_motion_edge.set_vertex(1, prev_cam[0])
                 const_motion_edge.set_vertex(2, pose_vertex)
+                const_motion_edge.set_parameter_id(0, prev_prev_cam[1])
+                const_motion_edge.set_parameter_id(1, prev_cam[1])
+                const_motion_edge.set_parameter_id(2, img_id)
                 info = np.diag(
-                    np.hstack([np.repeat(trans_weight, 3), np.repeat(rot_weight, 3),])
+                    np.hstack(
+                        [
+                            np.repeat(trans_weight, 3),
+                            np.repeat(rot_weight, 3),
+                        ]
+                    )
                 )
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
@@ -90,7 +106,7 @@ def object_bundle_adjustment(
                 # const_motion_edge.set_robust_kernel(robust_kernel)
                 optimizer.add_edge(const_motion_edge)
                 prev_prev_cam = prev_cam
-                prev_cam = pose_vertex
+                prev_cam = (pose_vertex, img_id)
         added_poses[img_id] = pose_id
         pose_id += 2
         optimizer.add_vertex(pose_vertex)
@@ -107,7 +123,11 @@ def object_bundle_adjustment(
         point_vertex.set_id(landmark_id)
         landmark_mapping[idx] = landmark_id
         point_vertex.set_marginalized(True)
-        point_vertex.set_estimate(landmark.pt_3d.reshape(3,))
+        point_vertex.set_estimate(
+            landmark.pt_3d.reshape(
+                3,
+            )
+        )
         landmark_id += 2
         optimizer.add_vertex(point_vertex)
         num_landmarks += 1
