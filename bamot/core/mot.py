@@ -662,13 +662,13 @@ def _compute_estimated_trajectories(
     online_trajectories_world = {}
     online_trajectories_cam = {}
     for track_id, track in object_tracks.items():
-        object_center = get_center_of_landmarks(track.landmarks.values())
         offline_trajectory_world = {}
         offline_trajectory_cam = {}
         online_trajectory_world = {}
         online_trajectory_cam = {}
         for img_id, pose_world_obj in track.poses.items():
             Tr_world_cam = all_poses[img_id]
+            object_center = track.pcl_centers[img_id]
             object_center_world_offline = pose_world_obj @ to_homogeneous(object_center)
             object_center_cam_offline = (
                 np.linalg.inv(Tr_world_cam) @ object_center_world_offline
@@ -681,11 +681,11 @@ def _compute_estimated_trajectories(
             )
         for img_id, object_center_world_online in track.locations.items():
             Tr_world_cam = all_poses[img_id]
-            object_center_cam_online = (
-                np.linalg.inv(Tr_world_cam) @ object_center_world_online
+            object_center_cam_online = np.linalg.inv(Tr_world_cam) @ to_homogeneous(
+                object_center_world_online
             )
             online_trajectory_world[int(img_id)] = tuple(
-                from_homogeneous(object_center_world_online).tolist()
+                object_center_world_online.tolist()
             )
             online_trajectory_cam[int(img_id)] = tuple(
                 from_homogeneous(object_center_cam_online).tolist()
