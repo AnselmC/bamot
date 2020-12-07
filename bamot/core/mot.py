@@ -9,6 +9,7 @@ from threading import Event
 from typing import Dict, Iterable, List, Tuple
 
 import cv2
+import g2o
 import numpy as np
 import pathos
 from bamot.config import CONFIG as config
@@ -66,10 +67,14 @@ def get_median_translation(object_track):
     return np.median(translations)
 
 
-def _valid_motion(Tr_rel, obj_cls):
+def _valid_motion(Tr_rel, obj_cls, badly_tracked_frames):
     curr_translation = np.linalg.norm(Tr_rel[:3, 3])
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
-    return curr_translation < max_speed / config.FRAME_RATE
+    LOGGER.debug("Current translation: %.2f", float(curr_translation))
+    LOGGER.debug("Max. allowed translation: %.2f", max_speed / config.FRAME_RATE)
+    return curr_translation < (badly_tracked_frames + 1) * 0.25 * (
+        max_speed / config.FRAME_RATE
+    )
 
 
 def _localize_object(
@@ -115,7 +120,8 @@ def _localize_object(
     )
     num_inliers = len(inliers) if inliers is not None else 0
     inlier_ratio = num_inliers / len(track_matches)
-    if successful and inlier_ratio > 0.4:
+    logger.debug("Inlier ratio for PnP: %.2f", inlier_ratio)
+    if successful and inlier_ratio > 0.25:
         logger.debug("Optimization successful! Found %d inliers", len(inliers))
         logger.debug("Running optimization with inliers...")
         successful, rvec, tvec = cv2.solvePnP(
@@ -235,10 +241,7 @@ def _add_new_landmarks_and_observations(
     return landmarks
 
 
-def _get_median_descriptor(
-    observations: List[Observation],
-    norm: int,
-) -> np.ndarray:
+def _get_median_descriptor(observations: List[Observation], norm: int,) -> np.ndarray:
     subset = observations[-config.SLIDING_WINDOW_DESCRIPTORS :]
     distances = np.zeros((len(subset), len(subset)))
     for i, obs in enumerate(subset):
@@ -336,20 +339,7 @@ def run(
         track_matches = feature_matcher.match_features(left_features, features)
         track_logger.debug("%d track matches", len(track_matches))
         # localize object
-        T_world_obj1 = track.poses[list(track.poses.keys())[-1]]  # sorted by default
-        # add motion if at least two poses are present
-        if len(track.poses) >= 2:
-            try:
-                T_world_obj0 = track.poses[list(track.poses.keys())[-2]]
-            except KeyError as e:
-                raise e
-            T_rel_prev = np.linalg.inv(T_world_obj0) @ T_world_obj1
-            track_logger.debug("Adding const motion")
-            T_world_obj = T_world_obj1 @ T_rel_prev  # constant motion assumption
-        else:
-            track_logger.debug("Not adding const motion")
-            T_rel_prev = None
-            T_world_obj = T_world_obj1
+        T_world_obj = _estimate_next_pose(track, img_id)
         T_world_cam = current_cam_pose
         T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
         enough_track_matches = len(track_matches) >= 5
@@ -369,16 +359,20 @@ def run(
             )
 
             if successful:
-                if T_rel_prev is not None:
-                    T_world_obj2 = T_world_cam @ T_cam_obj_pnp
-                    T_rel = np.linalg.inv(T_world_obj1) @ T_world_obj2
-                    valid_motion = _valid_motion(T_rel, track.cls)
+                if len(track.poses) >= 2:
+                    T_world_obj_prev = track.poses[list(track.poses.keys())[-2]]
+                    T_world_obj_pnp = T_world_cam @ T_cam_obj_pnp
+                    T_rel = np.linalg.inv(T_world_obj_prev) @ T_world_obj_pnp
+                    valid_motion = _valid_motion(
+                        T_rel, track.cls, track.badly_tracked_frames
+                    )
+                    LOGGER.debug("Median translation: %.2f", median_translation)
                     if valid_motion:
                         T_cam_obj = T_cam_obj_pnp
         if not (enough_track_matches and successful and valid_motion):
-            if track_matches:
-                track_logger.debug("Clearing track matches")
-                track_matches.clear()
+            # if track_matches:
+            #    track_logger.debug("Clearing track matches")
+            #    track_matches.clear()
             track_logger.debug("Enough matches: %s", enough_track_matches)
             if enough_track_matches:
                 track_logger.debug("PnP successful: %s", successful)
@@ -390,12 +384,12 @@ def run(
             ):
                 track_logger.debug("Clearing landmarks")
                 track.landmarks.clear()
+                track_matches.clear()
                 track.badly_tracked_frames = 0
             else:
                 track.badly_tracked_frames += 1
 
         T_world_obj = T_world_cam @ T_cam_obj
-        track.poses[img_id] = T_world_obj
         # add new landmark observations from track matches
         # add new landmarks from stereo matches
         track.landmarks = _add_new_landmarks_and_observations(
@@ -431,8 +425,13 @@ def run(
         ):
             track.active = False
         if track.landmarks:
-            track.locations[img_id] = track.poses[img_id] @ to_homogeneous(
-                get_center_of_landmarks(track.landmarks.values())
+            track.poses[img_id] = T_world_obj
+            track.pcl_centers[img_id] = get_center_of_landmarks(
+                track.landmarks.values()
+            )
+            track.locations[img_id] = from_homogeneous(
+                track.poses[img_id]
+                @ to_homogeneous(get_center_of_landmarks(track.landmarks.values()))
             )
         return track, left_features, right_features, stereo_matches
 
@@ -463,12 +462,12 @@ def run(
         # add track_ids to ba slots
         for track_id in track_ids:
             slot_idx, _ = sorted(
-                [(idx, size) for idx, size in slot_sizes.items()],
-                key=lambda x: x[1],
+                [(idx, size) for idx, size in slot_sizes.items()], key=lambda x: x[1],
             )[0]
             ba_slots[slot_idx].add(track_id)
             slot_sizes[slot_idx] += 1
         tracks_to_run_ba = ba_slots[img_id % config.BA_EVERY_N_STEPS]
+        LOGGER.debug("BA slots: %s", ba_slots)
         try:
             (
                 object_tracks,
@@ -510,6 +509,26 @@ def run(
     )
 
 
+def _estimate_next_pose(track: ObjectTrack, img_id: ImageId) -> np.ndarray:
+    available_poses = list(track.poses.keys())  # sorted by default
+    if len(available_poses) >= 2:
+        num_frames = min(int(config.SLIDING_WINDOW_BA), len(track.poses))
+        T_world_obj1 = g2o.Isometry3d(track.poses[available_poses[-1]])
+        LOGGER.debug("Previous pose:\n%s", T_world_obj1.matrix())
+        T_world_obj0 = g2o.Isometry3d(track.poses[available_poses[-num_frames]])
+        rel_translation = (
+            T_world_obj1.translation() - T_world_obj0.translation()
+        ) / num_frames
+        LOGGER.debug("Relative translation:\n%s", rel_translation)
+        T_world_new = g2o.Isometry3d(
+            T_world_obj1.rotation(), T_world_obj1.translation() + 2 * rel_translation
+        )
+        LOGGER.debug("Estimated new pose:\n%s", T_world_new.matrix())
+        return T_world_new.matrix()
+    else:
+        return track.poses[available_poses[0]]
+
+
 @timer
 def step(
     new_detections: List[StereoObjectDetection],
@@ -543,34 +562,26 @@ def step(
         if object_tracks.get(match.track_index) is None:
             LOGGER.debug("Added track with index %d", match.track_index)
             object_tracks[match.track_index] = ObjectTrack(
-                landmarks={},
-                poses={img_id: current_cam_pose},
-                locations={},
                 cls=new_detections[match.detection_index].left.cls,
+                poses={img_id: current_cam_pose},
             )
     # per match, match features
     active_tracks = []
     matched_detections = []
     LOGGER.debug("%d matches with object tracks", len(matches))
 
-    def _add_constant_motion(track, img_id):
-        T_world_obj1 = track.poses[list(track.poses.keys())[-1]]  # sorted by default
-        if len(track.poses) >= 2:
-            try:
-                T_world_obj0 = track.poses[list(track.poses.keys())[-2]]
-            except KeyError as e:
-                raise e
-            T_rel_prev = np.linalg.inv(T_world_obj0) @ T_world_obj1
-            if _valid_motion(T_rel_prev, track.cls):
-                T_world_obj = T_world_obj1 @ T_rel_prev  # constant motion assumption
-            else:
-                T_world_obj = T_world_obj1
-        else:
-            T_world_obj = T_world_obj1
-        track.poses[img_id] = T_world_obj
+    def _add_constant_motion_to_track(track: ObjectTrack, img_id: ImageId):
+        if not track.poses:
+            return track
+        T_world_obj = _estimate_next_pose(track, img_id)
         if track.landmarks:
-            track.locations[img_id] = track.poses[img_id] @ to_homogeneous(
-                get_center_of_landmarks(track.landmarks.values())
+            track.poses[img_id] = T_world_obj
+            track.pcl_centers[img_id] = get_center_of_landmarks(
+                track.landmarks.values()
+            )
+            track.locations[img_id] = from_homogeneous(
+                track.poses[img_id]
+                @ to_homogeneous(get_center_of_landmarks(track.landmarks.values()))
             )
         return track
 
@@ -582,7 +593,9 @@ def step(
             track = object_tracks[track_id]
             track.fully_visible = False
             unmatched_futures_to_track_index[
-                executor.apipe(_add_constant_motion, track=track, img_id=img_id)
+                executor.apipe(
+                    _add_constant_motion_to_track, track=track, img_id=img_id
+                )
             ] = track_id
         for match in matches:
             detection = new_detections[match.detection_index]

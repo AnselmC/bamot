@@ -1,6 +1,6 @@
 """Contains data structures used throughout bamot.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
@@ -11,7 +11,6 @@ TrackId = int
 ImageId = int  # image number/index
 CamId = int  # either 0 (left) or 1 (right)
 TimeCamId = Tuple[ImageId, CamId]
-
 
 FeatureTrack = Dict[ObjectId, FeatureId]
 
@@ -93,12 +92,19 @@ class Landmark:
 
 @dataclass
 class ObjectTrack:
-    landmarks: Dict[int, Landmark]  # need to be referenced in constant time by id
-    poses: Dict[ImageId, np.ndarray]  # changing poses over time w.r.t. world
-    locations: Dict[
-        ImageId, np.ndarray
-    ]  # "online" locations (only used for eval) w.r.t. world
     cls: str
+    landmarks: Dict[int, Landmark] = field(
+        default_factory=dict
+    )  # need to be referenced in constant time by id
+    poses: Dict[ImageId, np.ndarray] = field(
+        default_factory=dict
+    )  # changing poses over time w.r.t. world
+    locations: Dict[ImageId, np.ndarray] = field(
+        default_factory=dict
+    )  # "online" locations (only used for eval) w.r.t. world
+    pcl_centers: Dict[ImageId, np.ndarray] = field(
+        default_factory=dict
+    )  # w.r.t. object
     fully_visible: bool = True
     active: bool = True
     badly_tracked_frames: int = 0

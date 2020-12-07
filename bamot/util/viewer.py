@@ -8,8 +8,10 @@ from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Union
 import cv2
 import numpy as np
 import open3d as o3d
-from bamot.core.base_types import Feature, Match, ObjectTrack, StereoImage, TrackId
-from bamot.util.cv import from_homogeneous, get_corners_from_vector, to_homogeneous
+from bamot.core.base_types import (Feature, Match, ObjectTrack, StereoImage,
+                                   TrackId)
+from bamot.util.cv import (from_homogeneous, get_corners_from_vector,
+                           to_homogeneous)
 from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
@@ -192,13 +194,17 @@ def _update_track_visualization(
         darker_color = np.clip(darker_color, 0, 1)
         track_size = 0
         for i, (img_id, pose_world_obj) in enumerate(track.poses.items()):
-            center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
-            for lm in track.landmarks.values():
-                pt_world = from_homogeneous(pose_world_obj @ to_homogeneous(lm.pt_3d))
-                center += pt_world
-                if i == len(track.poses) - 1 and np.isfinite(pt_world).all():
-                    points.append(pt_world)
-            if i == len(track.poses) - 1 and len(points) > 3:
+            # center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
+            if i == len(track.poses) - 1:
+                for lm in track.landmarks.values():
+                    pt_world = from_homogeneous(
+                        pose_world_obj @ to_homogeneous(lm.pt_3d)
+                    )
+                    # Ecenter += pt_world
+                    if i == len(track.poses) - 1 and np.isfinite(pt_world).all():
+                        points.append(pt_world)
+                if len(points) < 3:
+                    continue
                 tmp_pt_cloud = o3d.geometry.PointCloud()
                 tmp_pt_cloud.points = o3d.utility.Vector3dVector(points)
                 try:
@@ -223,21 +229,18 @@ def _update_track_visualization(
                 except RuntimeError:
                     # happens when points are too close to each other
                     pass
-            if track.landmarks:
-                center /= len(track.landmarks)
-            offline_point = center.reshape(
-                3,
-            ).tolist()
-            path_points_offline.append(offline_point)
+            # if track.landmarks:
+            #    center /= len(track.landmarks)
+            # offline_point = center.reshape(3,).tolist()
+            offline_point = track.pcl_centers.get(img_id)
+            if offline_point is not None:
+                pt_world = from_homogeneous(
+                    pose_world_obj @ to_homogeneous(offline_point)
+                )
+                path_points_offline.append(pt_world)
             online_point = track.locations.get(img_id)
             if online_point is not None:
-                path_points_online.append(
-                    from_homogeneous(online_point)
-                    .reshape(
-                        3,
-                    )
-                    .tolist()
-                )
+                path_points_online.append(online_point.reshape(3,).tolist())
             if i == len(track.poses) - 1:
                 track_size = len(points)
         path_lines_offline = [[i, i + 1] for i in range(len(path_points_offline) - 1)]
@@ -480,13 +483,7 @@ def run(
     view_control.set_constant_z_far(150)
     view_control.set_constant_z_near(-10)
     opts = vis.get_render_option()
-    opts.background_color = np.array(
-        [
-            0.0,
-            0.0,
-            0.0,
-        ]
-    )
+    opts.background_color = np.array([0.0, 0.0, 0.0,])
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
     all_track_geometries: Dict[int, TrackGeometries] = {}
@@ -609,21 +606,27 @@ def _get_points_and_lines_from_corners(corners: np.ndarray):
 def visualize_pointcloud_and_obb(
     pointcloud: np.ndarray, corners: Union[List[np.ndarray], np.ndarray]
 ):
-    geoms = []
+    vis = o3d.visualization.Visualizer()
+    vis.create_window("MOT", top=0, left=1440)
+    opts = vis.get_render_option()
+    opts.background_color = np.array([0.0, 0.0, 0.0,])
     pcl = o3d.geometry.PointCloud()
     pcl.points = o3d.utility.Vector3dVector(pointcloud.T)
-    geoms.append(pcl)
+    vis.add_geometry(pcl)
     if isinstance(corners, list):
         for c in corners:
             obb = o3d.geometry.LineSet()
             pts, lines = _get_points_and_lines_from_corners(c)
             obb.lines = lines
             obb.points = pts
-            geoms.append(obb)
+            obb.paint_uniform_color(Colors.WHITE)
+            vis.add_geometry(obb)
     else:
         obb = o3d.geometry.LineSet()
         pts, lines = _get_points_and_lines_from_corners(corners)
         obb.lines = lines
         obb.points = pts
-        geoms.append(obb)
-    o3d.visualization.draw_geometries(geoms)
+        obb.paint_uniform_color(Colors.WHITE)
+        vis.add_geometry(obb)
+    vis.run()
+    vis.destroy_window()
