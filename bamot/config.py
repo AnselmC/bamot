@@ -44,6 +44,7 @@ class Config:
 __config_file_default = Path(".").parent / os.environ.get(
     "CONFIG_FILE", default="config.yaml"
 )
+__max_bad_frames_default = os.environ.get("MAX_BAD_FRAMES", default=3)
 __const_motion_weight_default = os.environ.get("CONST_MOTION_WEIGHT", default=1)
 __const_motion_weights_default = [
     float(
@@ -122,7 +123,7 @@ CONFIG = Config(
         "sliding_window_ba", __sliding_window_ba_default
     ),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
-    MAX_BAD_FRAMES=__user_config.get("max_bad_frames", 3),
+    MAX_BAD_FRAMES=__user_config.get("max_bad_frames", __max_bad_frames_default),
     MAX_SPEED_CAR=__user_config.get("max_speed_car", __max_speed_car_default),
     MAX_SPEED_PED=__user_config.get("max_speed_ped", __max_speed_ped_default),
     FRAME_RATE=__user_config.get("frame_rate", __frame_rate_default),
