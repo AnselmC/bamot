@@ -120,7 +120,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
         )
         train_size = size - val_size - test_size
         # shuffle dataframe first
-        df = df.sample(frac=1, random_state=42)
+        dataset = dataset.sample(frac=1, random_state=42)
         self._dataset = {}
         self._dataset["train"] = dataset.iloc[:train_size]
         self._dataset["val"] = dataset.iloc[train_size : train_size + val_size]
