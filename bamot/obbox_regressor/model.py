@@ -59,18 +59,18 @@ class OBBoxRegressor(pl.LightningModule):
     def _get_location_loss(
         self, loc: torch.Tensor, target_loc: torch.Tensor
     ) -> torch.Tensor:
-        return F.smooth_l1_loss(loc, target_loc)
+        return F.mse_loss(loc, target_loc)
 
     def _get_size_loss(
         self, size: torch.Tensor, target_size: torch.Tensor
     ) -> torch.Tensor:
-        return F.smooth_l1_loss(size, target_size)
+        return F.mse_loss(size, target_size)
 
     def _get_angle_loss(
         self, angle: torch.Tensor, target_angle: torch.Tensor
     ) -> torch.Tensor:
         scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]).cuda())
-        return F.smooth_l1_loss(scaled_angle, target_angle)
+        return F.mse_loss(scaled_angle, target_angle)
 
     def _get_losses(self, y: torch.Tensor, target: torch.Tensor) -> Tuple[torch.Tensor]:
         loc = y[:, :3]
@@ -78,7 +78,7 @@ class OBBoxRegressor(pl.LightningModule):
         angle = y[:, 3:4]
         target_angle = target[:, 3:4]
         size = y[:, 4:]
-        target_size = y[:, 4:]
+        target_size = target[:, 4:]
         loc_loss = self._get_location_loss(loc, target_loc)
         angle_loss = self._get_angle_loss(angle, target_angle)
         size_loss = self._get_size_loss(size, target_size)
