@@ -35,10 +35,12 @@ class OBBoxRegressor(pl.LightningModule):
             )
             # feature vector has length 13
             dim_backbone = 13 * num_points + dim_feature_vector
+            self._device = "cuda"
         else:
             self._backbone = nn.Flatten()
             # x,y,z coordinates
             dim_backbone = 3 * num_points + dim_feature_vector
+            self._device = "cpu"
         self._regressor = nn.Sequential(
             nn.Linear(dim_backbone, 128),
             nn.ReLU(),
@@ -69,7 +71,7 @@ class OBBoxRegressor(pl.LightningModule):
     def _get_angle_loss(
         self, angle: torch.Tensor, target_angle: torch.Tensor
     ) -> torch.Tensor:
-        scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]).cuda())
+        scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]).to(self._device))
         return F.mse_loss(scaled_angle, target_angle)
 
     def _get_losses(self, y: torch.Tensor, target: torch.Tensor) -> Tuple[torch.Tensor]:

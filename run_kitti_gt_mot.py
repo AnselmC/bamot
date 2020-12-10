@@ -225,6 +225,7 @@ if __name__ == "__main__":
     LOGGER.info(30 * "+")
     LOGGER.info("STARTING BAMOT with GT KITTI data")
     LOGGER.info("SCENE: %s", scene)
+    LOGGER.info("USING GT: %s", args.use_gt)
     LOGGER.info("VERBOSITY LEVEL: %s", args.verbosity)
     LOGGER.info("USING MULTI-PROCESS: %s", args.multiprocessing)
     LOGGER.info("CONFIG:\n%s", json.dumps(get_config_dict(), indent=4))
