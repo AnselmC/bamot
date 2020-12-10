@@ -13,10 +13,7 @@ from torch.utils.data import DataLoader, Dataset, random_split
 
 class BAMOTPointCloudDataset(Dataset):
     def __init__(
-        self,
-        dataframe: pd.DataFrame,
-        pointcloud_size: int,
-        **kwargs,
+        self, dataframe: pd.DataFrame, pointcloud_size: int, **kwargs,
     ):
         super().__init__(**kwargs)
         self._dataframe = dataframe
@@ -43,9 +40,7 @@ class BAMOTPointCloudDataset(Dataset):
         ptc_fname = row.pointcloud_fname
         num_poses = row.num_poses
         num_other_tracks = row.num_other_tracks
-        feature_vector = torch.Tensor(
-            np.array([num_poses, num_other_tracks])
-        )
+        feature_vector = torch.Tensor(np.array([num_poses, num_other_tracks]))
         target_vector = torch.Tensor(row.target.tolist())
         # read pointcloud and convert to tensor
         pointcloud = torch.Tensor(self._load_and_process_pointcloud(ptc_fname))
