@@ -27,10 +27,10 @@ from bamot.util.misc import get_mad, timer
 LOGGER = logging.getLogger("CORE:MOT")
 
 
-def _remove_outlier_landmarks(landmarks, matched_landmarks, cls, track_logger):
-    if matched_landmarks:
+def _remove_outlier_landmarks(landmarks, current_landmarks, cls, track_logger):
+    if current_landmarks:
         landmarks_to_remove = []
-        points = np.array(matched_landmarks)
+        points = np.array(current_landmarks)
 
         # for landmark in landmarks.values():
         #    points.append(landmark.pt_3d)
@@ -54,6 +54,7 @@ def _remove_outlier_landmarks(landmarks, matched_landmarks, cls, track_logger):
         track_logger.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
         for lid in landmarks_to_remove:
             landmarks.pop(lid)
+        return cluster_median_center
 
 
 def get_median_translation(object_track):
@@ -165,7 +166,7 @@ def _add_new_landmarks_and_observations(
     for left_feature_idx, right_feature_idx in stereo_matches:
         stereo_match_dict[left_feature_idx] = right_feature_idx
 
-    matched_landmarks = []
+    current_landmarks = []
 
     # add new observations to existing landmarks
     for features_idx, landmark_idx in track_matches:
@@ -192,7 +193,7 @@ def _add_new_landmarks_and_observations(
         obs = Observation(
             descriptor=feature.descriptor, pt_2d=feature_pt, img_id=img_id
         )
-        matched_landmarks.append(pt_obj)
+        current_landmarks.append(pt_obj)
         already_added_features.append(features_idx)
         landmarks[landmark_mapping[landmark_idx]].observations.append(obs)
     logger.debug("Added %d observations", len(already_added_features))
@@ -237,7 +238,7 @@ def _add_new_landmarks_and_observations(
         obs = Observation(
             descriptor=left_feature.descriptor, pt_2d=feature_pt, img_id=img_id
         )
-        matched_landmarks.append(pt_3d_obj)
+        current_landmarks.append(pt_3d_obj)
         landmark = Landmark(pt_3d_obj, [obs])
         landmarks[landmark_id] = landmark
         created_landmarks += 1
@@ -245,10 +246,13 @@ def _add_new_landmarks_and_observations(
     for match in bad_matches:
         stereo_matches.remove(match)
     logger.debug("Created %d landmarks", created_landmarks)
-    return landmarks, matched_landmarks
+    return landmarks, current_landmarks
 
 
-def _get_median_descriptor(observations: List[Observation], norm: int,) -> np.ndarray:
+def _get_median_descriptor(
+    observations: List[Observation],
+    norm: int,
+) -> np.ndarray:
     subset = observations[-config.SLIDING_WINDOW_DESCRIPTORS :]
     distances = np.zeros((len(subset), len(subset)))
     for i, obs in enumerate(subset):
@@ -398,7 +402,7 @@ def run(
         T_world_obj = T_world_cam @ T_cam_obj
         # add new landmark observations from track matches
         # add new landmarks from stereo matches
-        track.landmarks, matched_landmarks = _add_new_landmarks_and_observations(
+        track.landmarks, current_landmarks = _add_new_landmarks_and_observations(
             landmarks=copy.deepcopy(track.landmarks),
             track_matches=track_matches,
             landmark_mapping=lm_mapping,
@@ -409,6 +413,10 @@ def run(
             img_id=img_id,
             T_cam_obj=T_cam_obj,
             logger=track_logger,
+        )
+        # remove outlier landmarks
+        current_landmark_median = _remove_outlier_landmarks(
+            track.landmarks, current_landmarks, track.cls, track_logger
         )
         # BA optimizes landmark positions w.r.t. object and object position over time
         # -> SLAM optimizes motion of camera
@@ -421,11 +429,30 @@ def run(
                 stereo_cam=stereo_cam,
                 median_translation=median_translation,
             )
-        # remove outlier landmarks
-        _remove_outlier_landmarks(
-            track.landmarks, matched_landmarks, track.cls, track_logger
-        )
-        # settings min_landmarks to 0 disables robust initialization
+        if track.landmarks:
+            track.poses[img_id] = T_world_obj
+        if (
+            len(track.poses) == 1
+            and img_id == list(track.poses.keys())[0]
+            and current_landmark_median is not None
+        ):
+            # re-calculate object frame to be close to object
+            T_world_obj = track.poses[img_id]
+            T_world_obj_old = T_world_obj.copy()
+            median_cluster_world = from_homogeneous(
+                T_world_obj_old @ to_homogeneous(current_landmark_median)
+            )
+            T_world_obj = np.identity(4)
+            T_world_obj[:3, 3] += median_cluster_world.reshape(
+                3,
+            )
+            for lmid in track.landmarks:
+                pt_3d_obj = track.landmarks[lmid].pt_3d
+                pt_3d_world = T_world_obj_old @ to_homogeneous(pt_3d_obj)
+                pt_3d_obj_new = np.linalg.inv(T_world_obj) @ (pt_3d_world)
+                track.landmarks[lmid].pt_3d = from_homogeneous(pt_3d_obj_new)
+
+        # not setting or setting min_landmarks to 0 disables robust initialization
         if (
             len(track.poses) == 1
             and config.MIN_LANDMARKS
@@ -470,7 +497,8 @@ def run(
         # add track_ids to ba slots
         for track_id in track_ids:
             slot_idx, _ = sorted(
-                [(idx, size) for idx, size in slot_sizes.items()], key=lambda x: x[1],
+                [(idx, size) for idx, size in slot_sizes.items()],
+                key=lambda x: x[1],
             )[0]
             ba_slots[slot_idx].add(track_id)
             slot_sizes[slot_idx] += 1
