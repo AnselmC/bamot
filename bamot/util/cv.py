@@ -30,6 +30,10 @@ if config.FEATURE_MATCHER != "orb":
 LOGGER = logging.getLogger("UTIL:CV")
 
 
+class TriangulationError(Exception):
+    pass
+
+
 def get_corners_from_vector(vec: np.ndarray) -> np.ndarray:
     x, y, z, theta, height, width, length = vec.reshape(7, 1)
     translation = np.array([x, y, z]).reshape(3, 1)
@@ -352,3 +356,26 @@ def triangulate(
 def draw_features(img: np.ndarray, features: List[Feature]) -> np.ndarray:
     keypoints = [cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in features]
     return cv2.drawKeypoints(img, keypoints, None)
+
+
+def triangulate_stereo_match(left_feature, right_feature, stereo_cam, T_ref_cam=None):
+    left_pt = np.array([left_feature.u, left_feature.v])
+    right_pt = np.array([right_feature.u, right_feature.v])
+    if not np.allclose(left_feature.v, right_feature.v, atol=1):
+        # match doesn't fullfill epipolar constraint
+        raise TriangulationError("Epipolar constraint violated")
+    vec_left = back_project(stereo_cam.left, left_pt)
+    vec_right = back_project(stereo_cam.right, right_pt)
+    R_left_right = stereo_cam.T_left_right[:3, :3]
+    t_left_right = stereo_cam.T_left_right[:3, 3].reshape(3, 1)
+    try:
+        pt_3d_left_cam = triangulate(vec_left, vec_right, R_left_right, t_left_right)
+    except np.linalg.LinAlgError:
+        raise TriangulationError("Triangulation failed numerically")
+    if pt_3d_left_cam[-1] < 0.5 or np.linalg.norm(pt_3d_left_cam) > config.MAX_DIST:
+        # triangulated point should not be behind camera (or very close) or too far away
+        raise TriangulationError("Too close or too far from camera")
+    if T_ref_cam is not None:
+        return from_homogeneous(T_ref_cam @ to_homogeneous(pt_3d_left_cam))
+    else:
+        return pt_3d_left_cam
