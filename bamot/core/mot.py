@@ -23,6 +23,7 @@ from bamot.util.cv import (TriangulationError, from_homogeneous,
                            get_center_of_landmarks, get_feature_matcher,
                            to_homogeneous, triangulate_stereo_match)
 from bamot.util.misc import get_mad, timer
+from scipy.optimize import linear_sum_assignment
 
 LOGGER = logging.getLogger("CORE:MOT")
 
@@ -547,14 +548,21 @@ def _extract_features(stereo_detection, stereo_image, img_id, track_id):
 def _improve_association(
     detections, tracks, T_world_cam, stereo_cam, stereo_image, img_id
 ):
-    unmatched_detections = []
-    matched_tracks = []
+    unmatched_detections = set()
+    unmatched_tracks = set()
+    matched_tracks = set()
     matches = []
+    possibly_new_tracks = []
     feature_matcher = get_feature_matcher()
+    detection_locations = {}
+    # corroborate 2D tracker matches
+    # TODO: rethink logic
     for detection_idx, stereo_detection in enumerate(detections):
         track_id = stereo_detection.left.track_id
         track = tracks.get(track_id)
+        # 2D tracker wasn't able to associate to existing track
         if track is None or not track.pcl_centers:  # supposedly new track
+            possibly_new_tracks.append(detection_idx)
             matches.append(
                 TrackMatch(track_index=track_id, detection_index=detection_idx,)
             )
@@ -578,29 +586,66 @@ def _improve_association(
         last_img_id = list(track.pcl_centers)[-1]
         prev_location = track.locations[last_img_id]
         median = np.median(pcl, axis=0)
+        detection_locations[detection_idx] = median
         T_rel = np.identity(4)
         T_rel[:3, 3] = (prev_location - median).reshape(3,)
         if _valid_motion(
             T_rel, obj_cls=track.cls, badly_tracked_frames=track.badly_tracked_frames
         ):
             matches.append(
-                TrackMatch(
-                    track_index=stereo_detection.left.track_id,
-                    detection_index=detection_idx,
-                )
+                TrackMatch(track_index=track_id, detection_index=detection_idx,)
             )
-            matched_tracks.append(stereo_detection.left.track_id)
+            matched_tracks.add(track_id)
         else:
-            unmatched_detections.append(stereo_detection)
-    # TODO: add matches from 3D associations
-    # cost_matrix = None
-    # for detection_idx, stereo_detection in enumerate(detections):
-    #    if detection_idx not in unmatched_detections:
-    #        continue
-    #    for track_id, track in object_tracks.items():
-    #        if track_id in matched_tracks:
-    #            continue
-    unmatched_tracks = set(tracks).difference(set(matched_tracks))
+            unmatched_detections.add(detection_idx)
+            unmatched_tracks.add(track_id)
+    # add matches from 3D associations
+    cost_matrix = np.zeros((len(unmatched_detections), len(unmatched_tracks)))
+    i, j = 0, 0
+    index_to_detection = {}
+    index_to_track = {}
+    found_match = False
+    for detection_idx in unmatched_detections:
+        found_match = False
+        for track_id, track in tracks.items():
+            found_match = False
+            if track_id in matched_tracks:
+                continue
+            if not track.pcl_centers:
+                unmatched_tracks.add(track_id)
+                continue
+            last_img_id = list(track.pcl_centers)[-1]
+            prev_location = track.locations[last_img_id]
+            dist = np.linalg.norm(detection_locations[detection_idx] - prev_location)
+            if np.isfinite(dist) and dist < 4.0:
+                found_match = True
+                cost_matrix[i][j] = dist
+                index_to_detection[i] = detection_idx
+                index_to_track[j] = track_id
+                j += 1
+        if found_match:
+            i += 1
+
+    first_indices, second_indices = linear_sum_assignment(cost_matrix, maximize=False)
+
+    for row_idx, col_idx in zip(first_indices, second_indices):
+        edge_weight = cost_matrix[row_idx, col_idx].sum()
+        if np.isfinite(edge_weight) and edge_weight != 0:
+            detection_idx = index_to_detection[row_idx]
+            track_id = index_to_track[col_idx]
+            matches.append(
+                TrackMatch(track_index=track_id, detection_index=detection_idx,)
+            )
+            matched_tracks.add(track_id)
+            if track_id in unmatched_tracks:
+                unmatched_tracks.remove(track_id)
+            unmatched_detections.remove(detection_idx)
+    # create new tracks for unmatched detections
+    for detection_idx in unmatched_detections:
+        matches.append(
+            TrackMatch(track_index=uuid.uuid1().int, detection_index=detection_idx)
+        )
+
     return matches, unmatched_tracks
 
 
@@ -623,6 +668,7 @@ def step(
     all_stereo_matches = []
     LOGGER.debug("Running step for image %d", img_id)
     LOGGER.debug("Current ego pose:\n%s", current_cam_pose)
+    print(object_tracks.keys())
     matches, unmatched_tracks = _improve_association(
         detections=new_detections,
         tracks=object_tracks,
