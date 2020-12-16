@@ -638,14 +638,8 @@ def _improve_association(
 
         track = tracks.get(track_id)
         # 2D tracker wasn't able to associate to existing track --> possibly new track
-        if track is None or not track.active:
-            LOGGER.debug("Track %d is new according to 2D tracker", track_id)
-            unmatched_detections.add(detection_idx)
-            continue
-        # TODO: if no info is available, try to possibly associate detection with existing track
-        # existing track has no landmarks, no 3D info available
-        if not track.locations:
-            LOGGER.debug("Track %d has no locations...", track_id)
+        if track is None:
+            LOGGER.info("Track %d is new according to 2D tracker", track_id)
             unmatched_detections.add(detection_idx)
             continue
 
@@ -685,9 +679,6 @@ def _improve_association(
     for i, detection_idx in enumerate(unmatched_detections):
         for j, track_id in enumerate(unmatched_tracks):
             track = tracks[track_id]
-            if not track.locations or not track.active:
-                # TODO: this shouldn't happen
-                continue
             last_img_id = list(track.locations)[-1]
             prev_location = track.locations[last_img_id]
             dist = np.linalg.norm(detection_locations[detection_idx] - prev_location)
