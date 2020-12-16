@@ -81,8 +81,10 @@ def get_median_translation(object_track):
 
 def _get_max_dist(obj_cls, badly_tracked_frames, dist_from_cam=None):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
-    dist_factor = 1 if dist_from_cam is None else dist_from_cam / 30
-    return (badly_tracked_frames + 1) * dist_factor * (max_speed / config.FRAME_RATE)
+    dist_factor = 1 if dist_from_cam is None else dist_from_cam / 40
+    return (
+        (badly_tracked_frames / 3 + 1) * dist_factor * (max_speed / config.FRAME_RATE)
+    )
 
 
 def _valid_motion(Tr_rel, obj_cls, badly_tracked_frames, dist_from_cam=None):
@@ -568,7 +570,7 @@ def _get_median_of_stereo_pointcloud(
         stereo_detection, stereo_image, img_id, track_id
     )
 
-    stereo_matches = feature_matcher.match_features(left_features, right_features)
+    stereo_matches = feature_matcher.match_features(left_features, right_features,)
     pcl = []
     for left_feature_idx, right_feature_idx in stereo_matches:
         left_feature = left_features[left_feature_idx]
@@ -602,21 +604,25 @@ def _improve_association(
             stereo_detection, stereo_image, img_id, track_id, stereo_cam, T_world_cam
         )
         if median is None:  # no stereo matches, assume 2D association is fine
+            LOGGER.debug("No stereo matches for track %d", track_id)
             matches.append(
                 TrackMatch(track_index=track_id, detection_index=detection_idx)
             )
+            matched_detections.add(detection_idx)
             continue
 
         detection_locations[detection_idx] = median
 
         track = tracks.get(track_id)
-        # 2D tracker wasn't able to associate to existing track
-        if track is None:
+        # 2D tracker wasn't able to associate to existing track --> possibly new track
+        if track is None or not track.active:
+            LOGGER.debug("Track %d is new according to 2D tracker", track_id)
             unmatched_detections.add(detection_idx)
             continue
         # TODO: if no info is available, try to possibly associate detection with existing track
         # existing track has no landmarks, no 3D info available
         if not track.locations:
+            LOGGER.debug("Track %d has no locations...", track_id)
             unmatched_detections.add(detection_idx)
             continue
 
@@ -634,6 +640,7 @@ def _improve_association(
             badly_tracked_frames=track.badly_tracked_frames,
             dist_from_cam=dist_from_cam,
         ):
+            LOGGER.debug("Track %d has valid motion", track_id)
             matches.append(
                 TrackMatch(track_index=track_id, detection_index=detection_idx,)
             )
@@ -641,18 +648,21 @@ def _improve_association(
             matched_detections.add(detection_idx)
         else:
             # association violates 3D info, track is unmatched
+            LOGGER.debug("Track %d has invalid motion", track_id)
             unmatched_detections.add(detection_idx)
 
     # associate unmatched tracks and detections via 3D heuristic
     unmatched_tracks = set(tracks).difference(matched_tracks)
-    LOGGER.debug("%d valid track match(es)", len(matched_tracks))
-    LOGGER.debug("%d unmatched detection(s)", len(unmatched_detections))
-    LOGGER.debug("%d unmatched track(s)", len(unmatched_tracks))
+    LOGGER.debug("%d valid 2D track match(es)", len(matched_tracks))
+    LOGGER.debug(
+        "%d unmatched detection(s) after 2D corroboration", len(unmatched_detections)
+    )
+    LOGGER.debug("%d unmatched track(s) after 2D corroboration", len(unmatched_tracks))
     cost_matrix = np.zeros((len(unmatched_detections), len(unmatched_tracks)))
     for i, detection_idx in enumerate(unmatched_detections):
         for j, track_id in enumerate(unmatched_tracks):
             track = tracks[track_id]
-            if not track.locations:
+            if not track.locations or not track.active:
                 # TODO: this shouldn't happen
                 continue
             last_img_id = list(track.locations)[-1]
@@ -683,10 +693,18 @@ def _improve_association(
     # create new tracks for unmatched detections
     unmatched_tracks = set(tracks).difference(matched_tracks)
     unmatched_detections = set(range(len(detections))).difference(matched_detections)
+    LOGGER.debug("%d valid track match(es) in total", len(matched_tracks))
+    LOGGER.debug(
+        "%d unmatched detection(s) after 3D association", len(unmatched_detections)
+    )
+    LOGGER.debug("%d unmatched track(s) after 3D association ", len(unmatched_tracks))
     for detection_idx in unmatched_detections:
         detection_track_id = detections[detection_idx].left.track_id
+        # if track id already exists, create new track id
         track_id = (
-            detection_track_id if track_id not in tracks.keys() else uuid.uuid1().int
+            detection_track_id
+            if detection_track_id not in tracks.keys()
+            else uuid.uuid1().int
         )
         matches.append(TrackMatch(track_index=track_id, detection_index=detection_idx))
 
@@ -710,7 +728,7 @@ def step(
     all_left_features = []
     all_right_features = []
     all_stereo_matches = []
-    LOGGER.debug("Running step for image %d", img_id)
+    LOGGER.info("Running step for image %d", img_id)
     LOGGER.debug("Current ego pose:\n%s", current_cam_pose)
     matches, unmatched_tracks = _improve_association(
         detections=new_detections,
@@ -796,10 +814,17 @@ def step(
 
         for future, track_index in matched_futures_to_track_index.items():
             track, left_features, right_features, stereo_matches = future.get()
-            object_tracks[track_index] = track
-            all_left_features.append(left_features)
-            all_right_features.append(right_features)
-            all_stereo_matches.append(stereo_matches)
+            if track.locations and (
+                len(track.poses) > 2
+                or (track.poses and len(track.landmarks) > config.MIN_LANDMARKS)
+            ):
+                object_tracks[track_index] = track
+                all_left_features.append(left_features)
+                all_right_features.append(right_features)
+                all_stereo_matches.append(stereo_matches)
+            else:
+                if track_index in object_tracks:
+                    del object_tracks[track_index]
 
     # Set old tracks inactive
     old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
