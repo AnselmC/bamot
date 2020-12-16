@@ -49,9 +49,6 @@ def _remove_outlier_landmarks(
         landmarks_to_remove = []
         points = np.array(current_landmarks)
 
-        # for landmark in landmarks.values():
-        #    points.append(landmark.pt_3d)
-        # points = np.array(points)
         cluster_median_center = np.median(points, axis=0)
         dist_from_cam = np.linalg.norm(
             from_homogeneous(T_cam_obj @ to_homogeneous(cluster_median_center))
@@ -95,7 +92,7 @@ def get_median_translation(object_track):
 
 def _get_max_dist(obj_cls, badly_tracked_frames, dist_from_cam=None):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
-    dist_factor = 1 if dist_from_cam is None else dist_from_cam / 40
+    dist_factor = 1 if dist_from_cam is None else dist_from_cam / 30
     return (
         (badly_tracked_frames / 3 + 1) * dist_factor * (max_speed / config.FRAME_RATE)
     )
@@ -450,10 +447,11 @@ def run(
                 track.landmarks[lmid].pt_3d = from_homogeneous(pt_3d_obj_new)
 
         # not setting or setting min_landmarks to 0 disables robust initialization
+        min_landmarks = config.MIN_LANDMARKS_CAR if track.cls == "car" else config.MIN_LANDMARKS_PED
         if (
             len(track.poses) == 1
-            and config.MIN_LANDMARKS
-            and len(track.landmarks) < config.MIN_LANDMARKS
+            and min_landmarks
+            and len(track.landmarks) < min_landmarks
         ):
             track.active = False
         if track.landmarks:
@@ -468,8 +466,8 @@ def run(
         return track, left_features, right_features, stereo_matches
 
     point_cloud_sizes = {}
-    all_track_ids = set(all_object_tracks).union(set(active_object_tracks))
     for (img_id, stereo_image), new_detections in zip(images, detections):
+        all_track_ids = set(all_object_tracks).union(set(active_object_tracks))
         if config.TRACK_POINT_CLOUD_SIZES:
             for track_id, obj in active_object_tracks.items():
                 point_cloud_size = len(obj.landmarks)
@@ -705,7 +703,9 @@ def _improve_association(
         track_id = list(unmatched_tracks)[col_idx]
         track = tracks[track_id]
         if np.isfinite(dist) and dist < _get_max_dist(
-            obj_cls=track.cls, badly_tracked_frames=track.badly_tracked_frames
+            obj_cls=track.cls,
+            badly_tracked_frames=track.badly_tracked_frames,
+            dist_from_cam=track.dist_from_cam,
         ):
             detection_idx = list(unmatched_detections)[row_idx]
             matches.append(
@@ -726,7 +726,7 @@ def _improve_association(
         # if track id already exists, create new track id
         track_id = (
             detection_track_id
-            if detection_track_id not in all_track_ids
+            if detection_track_id not in all_track_ids.union(matched_tracks)
             else uuid.uuid1().int
         )
         matches.append(TrackMatch(track_index=track_id, detection_index=detection_idx))

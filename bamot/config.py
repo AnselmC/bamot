@@ -25,12 +25,13 @@ class Config:
     FRAME_RATE: int
     MAX_SPEED_CAR: float
     MAX_SPEED_PED: float
+    MIN_LANDMARKS_CAR: int
+    MIN_LANDMARKS_PED: int
     BA_EVERY_N_STEPS: int
     BA_NORMALIZE_TRANS_ERROR: bool
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST: int
     TRACK_POINT_CLOUD_SIZES: bool = False
     CONFIG_FILE: Optional[str] = None
-    MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
     CLUSTER_RADIUS_CAR: Optional[float] = None
     CLUSTER_RADIUS_PED: Optional[float] = None
@@ -72,6 +73,7 @@ __ba_normalize_trans_error = bool(
 __keep_track_for_n_frames_after_lost_default = int(
     os.environ.get("KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST", default=1)
 )
+__min_landmarks_default = int(os.environ.get("MIN_LANDMARKS", default=1))
 
 __max_speed_car_default = float(
     os.environ.get("MAX_SPEED_CAR", default=40)
@@ -126,6 +128,12 @@ CONFIG = Config(
     MAX_BAD_FRAMES=__user_config.get("max_bad_frames", __max_bad_frames_default),
     MAX_SPEED_CAR=__user_config.get("max_speed_car", __max_speed_car_default),
     MAX_SPEED_PED=__user_config.get("max_speed_ped", __max_speed_ped_default),
+    MIN_LANDMARKS_PED=__user_config.get(
+        "min_landmarks_ped", __user_config.get("min_landmarks", __min_landmarks_default)
+    ),
+    MIN_LANDMARKS_CAR=__user_config.get(
+        "min_landmarks_car", __user_config.get("min_landmarks", __min_landmarks_default)
+    ),
     FRAME_RATE=__user_config.get("frame_rate", __frame_rate_default),
     TRACK_POINT_CLOUD_SIZES=__user_config.get(
         "track_point_cloud_sizes", __track_point_cloud_sizes_default
@@ -158,9 +166,6 @@ if CONFIG.USING_CONSTANT_MOTION:
     CONFIG.CONSTANT_MOTION_WEIGHTS_PED = __user_config.get(
         "const_motion_weights_ped", _default_weight
     )
-
-if __user_config.get("min_landmarks"):
-    CONFIG.MIN_LANDMARKS = __user_config.get("min_landmarks")
 
 if CONFIG.FEATURE_MATCHER == "superpoint":
     CONFIG.SUPERPOINT_WEIGHTS_PATH = __user_config.get(
