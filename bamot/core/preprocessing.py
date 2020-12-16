@@ -149,6 +149,14 @@ def preprocess_frame(
                 color = colors[left_obj.track_id]
                 _draw_contours(left_obj.mask, raw_left_image, color)
                 _draw_contours(right_obj.mask, raw_right_image, color)
+                left_keypoints = [
+                    cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in left_obj.features
+                ]
+                right_keypoints = [
+                    cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in right_obj.features
+                ]
+                cv2.drawKeypoints(raw_left_image, left_keypoints, raw_left_image)
+                cv2.drawKeypoints(raw_right_image, right_keypoints, raw_right_image)
             stereo_object_detections.append(StereoObjectDetection(left_obj, right_obj))
     if use_right_tracks:
         unmatched = set(range(len(right_object_detections))).difference(matched)
@@ -188,6 +196,19 @@ def preprocess_frame(
                         color = colors[obj.track_id]
                         _draw_contours(obj_mask, raw_right_image, color)
                         _draw_contours(other_obj_mask, raw_left_image, color)
+                        left_keypoints = [
+                            cv2.KeyPoint(x=f.u, y=f.v, _size=1)
+                            for f in left_obj.features
+                        ]
+                        right_keypoints = [
+                            cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in obj.features
+                        ]
+                        cv2.drawKeypoints(
+                            raw_left_image, left_keypoints, raw_left_image
+                        )
+                        cv2.drawKeypoints(
+                            raw_right_image, right_keypoints, raw_right_image
+                        )
             else:
                 left_mask[obj_mask] = 0
                 if use_unmatched:
@@ -208,6 +229,19 @@ def preprocess_frame(
                         color = colors[obj.track_id]
                         _draw_contours(obj_mask, raw_left_image, color)
                         _draw_contours(other_obj_mask, raw_right_image, color)
+                        left_keypoints = [
+                            cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in obj.features
+                        ]
+                        right_keypoints = [
+                            cv2.KeyPoint(x=f.u, y=f.v, _size=1)
+                            for f in right_obj.features
+                        ]
+                        cv2.drawKeypoints(
+                            raw_left_image, left_keypoints, raw_left_image
+                        )
+                        cv2.drawKeypoints(
+                            raw_right_image, right_keypoints, raw_right_image
+                        )
 
     left_mask = left_mask == 0
     right_mask = right_mask == 0
