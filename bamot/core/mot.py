@@ -6,7 +6,7 @@ import queue
 import time
 import uuid
 from threading import Event
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 import cv2
 import g2o
@@ -26,6 +26,20 @@ from bamot.util.misc import get_mad, timer
 from scipy.optimize import linear_sum_assignment
 
 LOGGER = logging.getLogger("CORE:MOT")
+
+
+def _add_constant_motion_to_track(track: ObjectTrack, img_id: ImageId):
+    if not track.poses:
+        return track
+    T_world_obj = _estimate_next_pose(track)
+    if track.landmarks:
+        track.poses[img_id] = T_world_obj
+        track.pcl_centers[img_id] = get_center_of_landmarks(track.landmarks.values())
+        track.locations[img_id] = from_homogeneous(
+            track.poses[img_id]
+            @ to_homogeneous(get_center_of_landmarks(track.landmarks.values()))
+        )
+    return track
 
 
 def _remove_outlier_landmarks(
@@ -298,7 +312,8 @@ def run(
     next_step: Event,
     continuous: bool,
 ):
-    object_tracks: Dict[int, ObjectTrack] = {}
+    active_object_tracks: Dict[int, ObjectTrack] = {}
+    all_object_tracks: Dict[int, ObjectTrack] = {}
     ba_slots: Tuple[set] = tuple(set() for _ in range(config.BA_EVERY_N_STEPS))
     LOGGER.info("Starting MOT run")
 
@@ -453,9 +468,10 @@ def run(
         return track, left_features, right_features, stereo_matches
 
     point_cloud_sizes = {}
+    all_track_ids = set(all_object_tracks).union(set(active_object_tracks))
     for (img_id, stereo_image), new_detections in zip(images, detections):
         if config.TRACK_POINT_CLOUD_SIZES:
-            for track_id, obj in object_tracks.items():
+            for track_id, obj in active_object_tracks.items():
                 point_cloud_size = len(obj.landmarks)
                 if point_cloud_sizes.get(track_id):
                     point_cloud_sizes[track_id].append(point_cloud_size)
@@ -469,7 +485,7 @@ def run(
         all_poses = slam_data.get()
         slam_data.task_done()
         current_pose = all_poses[img_id]
-        track_ids = [obj.left.track_id for obj in new_detections]
+        active_track_ids = list(active_object_tracks)
 
         # clear slots
         slot_sizes = {}
@@ -477,7 +493,7 @@ def run(
             slot.clear()
             slot_sizes[idx] = 0
         # add track_ids to ba slots
-        for track_id in track_ids:
+        for track_id in active_track_ids:
             slot_idx, _ = sorted(list(slot_sizes.items()), key=lambda x: x[1],)[0]
             ba_slots[slot_idx].add(track_id)
             slot_sizes[slot_idx] += 1
@@ -485,27 +501,33 @@ def run(
         LOGGER.debug("BA slots: %s", ba_slots)
         try:
             (
-                object_tracks,
+                active_object_tracks,
                 all_left_features,
                 all_right_features,
                 all_stereo_matches,
+                old_tracks,
             ) = step(
                 new_detections=new_detections,
                 stereo_image=stereo_image,
-                object_tracks=copy.deepcopy(object_tracks),
+                object_tracks=copy.deepcopy(active_object_tracks),
                 process_match=_process_match,
                 stereo_cam=stereo_cam,
                 img_id=img_id,
                 current_cam_pose=current_pose,
                 all_poses=all_poses,
                 tracks_to_run_ba=tracks_to_run_ba,
+                all_track_ids=all_track_ids,
             )
         except Exception as exc:
             LOGGER.exception("Unexpected error: %s", exc)
             break
+        for track_id in old_tracks:
+            all_object_tracks[track_id] = copy.deepcopy(active_object_tracks[track_id])
+            del active_object_tracks[track_id]
+
         shared_data.put(
             {
-                "object_tracks": copy.deepcopy(object_tracks),
+                "object_tracks": copy.deepcopy(active_object_tracks),
                 "stereo_image": stereo_image,
                 "all_left_features": all_left_features,
                 "all_right_features": all_right_features,
@@ -516,9 +538,10 @@ def run(
         )
     stop_flag.set()
     shared_data.put({})
+    all_object_tracks.update(active_object_tracks)
     returned_data.put(
         dict(
-            trajectories=_compute_estimated_trajectories(object_tracks, all_poses),
+            trajectories=_compute_estimated_trajectories(all_object_tracks, all_poses),
             point_cloud_sizes=point_cloud_sizes,
         ),
     )
@@ -588,7 +611,7 @@ def _get_median_of_stereo_pointcloud(
 
 
 def _improve_association(
-    detections, tracks, T_world_cam, stereo_cam, stereo_image, img_id
+    detections, tracks, T_world_cam, stereo_cam, stereo_image, img_id, all_track_ids
 ):
     unmatched_detections = set()
     matched_detections = set()
@@ -703,7 +726,7 @@ def _improve_association(
         # if track id already exists, create new track id
         track_id = (
             detection_track_id
-            if detection_track_id not in tracks.keys()
+            if detection_track_id not in all_track_ids
             else uuid.uuid1().int
         )
         matches.append(TrackMatch(track_index=track_id, detection_index=detection_idx))
@@ -722,6 +745,7 @@ def step(
     img_id: ImageId,
     current_cam_pose: np.ndarray,
     tracks_to_run_ba: List[TrackId],
+    all_track_ids: Set[TrackId],
 ) -> Tuple[
     Dict[int, ObjectTrack], List[List[Feature]], List[List[Feature]], List[List[Match]]
 ]:
@@ -737,16 +761,8 @@ def step(
         stereo_cam=stereo_cam,
         stereo_image=stereo_image,
         img_id=img_id,
+        all_track_ids=all_track_ids,
     )
-    # matches = [
-    #    TrackMatch(track_index=track_idx, detection_index=detection_idx)
-    #    for detection_idx, track_idx in enumerate(
-    #        map(lambda x: x.left.track_id, new_detections)
-    #    )
-    # ]
-    # unmatched_tracks = set(object_tracks.keys()).difference(
-    #    set([x.left.track_id for x in new_detections])
-    # )
     for match in matches:
         # if new track ids are present, the tracks need to be added to the object_tracks
         if object_tracks.get(match.track_index) is None:
@@ -758,21 +774,6 @@ def step(
     # per match, match features
     active_tracks = []
     LOGGER.debug("%d matches with object tracks", len(matches))
-
-    def _add_constant_motion_to_track(track: ObjectTrack, img_id: ImageId):
-        if not track.poses:
-            return track
-        T_world_obj = _estimate_next_pose(track)
-        if track.landmarks:
-            track.poses[img_id] = T_world_obj
-            track.pcl_centers[img_id] = get_center_of_landmarks(
-                track.landmarks.values()
-            )
-            track.locations[img_id] = from_homogeneous(
-                track.poses[img_id]
-                @ to_homogeneous(get_center_of_landmarks(track.landmarks.values()))
-            )
-        return track
 
     # TODO: currently disabled bc slower than single threaded and single process
     with pathos.threading.ThreadPool(nodes=len(matches) if False else 1) as executor:
@@ -814,30 +815,31 @@ def step(
 
         for future, track_index in matched_futures_to_track_index.items():
             track, left_features, right_features, stereo_matches = future.get()
-            if track.locations and (
-                len(track.poses) > 2
-                or (track.poses and len(track.landmarks) > config.MIN_LANDMARKS)
-            ):
-                object_tracks[track_index] = track
-                all_left_features.append(left_features)
-                all_right_features.append(right_features)
-                all_stereo_matches.append(stereo_matches)
-            else:
-                if track_index in object_tracks:
-                    del object_tracks[track_index]
+            object_tracks[track_index] = track
+            all_left_features.append(left_features)
+            all_right_features.append(right_features)
+            all_stereo_matches.append(stereo_matches)
 
     # Set old tracks inactive
-    old_tracks = set(object_tracks.keys()).difference(set(active_tracks))
+    inactive_tracks = set(object_tracks.keys()).difference(set(active_tracks))
+    old_tracks = set()
     num_deactivated = 0
-    for track_id in old_tracks:
+    for track_id in inactive_tracks:
         track = object_tracks[track_id]
         if (img_id - track.last_seen) > config.KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST:
             track.active = False
             num_deactivated += 1
+            old_tracks.add(track_id)
     LOGGER.debug("Deactivated %d tracks", num_deactivated)
     LOGGER.debug("Finished step %d", img_id)
     LOGGER.debug("=" * 90)
-    return object_tracks, all_left_features, all_right_features, all_stereo_matches
+    return (
+        object_tracks,
+        all_left_features,
+        all_right_features,
+        all_stereo_matches,
+        old_tracks,
+    )
 
 
 def _compute_estimated_trajectories(

@@ -169,10 +169,10 @@ def _update_track_visualization(
 ):
     # display current track estimates
     inactive_tracks = []
-    for ido, track in object_tracks.items():
-        if not track.active:
+    for ido in all_track_geometries:
+        if ido not in object_tracks:
             inactive_tracks.append(ido)
-            continue
+    for ido, track in object_tracks.items():
         track_geometries = all_track_geometries.get(
             ido,
             TrackGeometries(
