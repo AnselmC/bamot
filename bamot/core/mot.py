@@ -42,14 +42,16 @@ def _remove_outlier_landmarks(
         dist_from_cam = np.linalg.norm(
             from_homogeneous(T_cam_obj @ to_homogeneous(cluster_median_center))
         )
-        dist_factor = 1 + dist_from_cam / 30
+        dist_factor = 1 + max(0, dist_from_cam - 15) / 30
         for lid, lm in landmarks.items():
             if not config.USING_MEDIAN_CLUSTER:
-                cluster_size = (
-                    config.CLUSTER_SIZE_CAR if cls == "car" else config.CLUSTER_SIZE_PED
+                cluster_radius = (
+                    config.CLUSTER_RADIUS_CAR
+                    if cls == "car"
+                    else config.CLUSTER_RADIUS_PED
                 )
                 if np.linalg.norm(lm.pt_3d - cluster_median_center) > (
-                    dist_factor * cluster_size / 2
+                    dist_factor * cluster_radius
                 ):
                     landmarks_to_remove.append(lid)
             else:

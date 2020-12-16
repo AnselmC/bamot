@@ -32,8 +32,8 @@ class Config:
     CONFIG_FILE: Optional[str] = None
     MIN_LANDMARKS: Optional[int] = None
     MAD_SCALE_FACTOR: Optional[float] = None
-    CLUSTER_SIZE_CAR: Optional[float] = None
-    CLUSTER_SIZE_PED: Optional[float] = None
+    CLUSTER_RADIUS_CAR: Optional[float] = None
+    CLUSTER_RADIUS_PED: Optional[float] = None
     CONSTANT_MOTION_WEIGHTS_CAR: Optional[float] = None
     CONSTANT_MOTION_WEIGHTS_PED: Optional[float] = None
     SUPERPOINT_WEIGHTS_PATH: Optional[str] = None
@@ -59,7 +59,7 @@ __const_motion_weights_default = [
 __track_point_cloud_sizes_default = bool(
     os.environ.get("TRACK_POINT_CLOUD_SIZES", default=False)
 )
-__cluster_size_default = float(os.environ.get("CLUSTER_SIZE", default=8))
+__cluster_radius_default = float(os.environ.get("CLUSTER_RADIUS", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
 __using_mad_default = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion_default = bool(os.environ.get("USING_CONST_MOTION", default=True))
@@ -144,9 +144,9 @@ if CONFIG.USING_MEDIAN_CLUSTER:
         "mad_scale_factor", __mad_scale_factor_default
     )
 else:
-    _default_size = __user_config.get("cluster_size", __cluster_size_default)
-    CONFIG.CLUSTER_SIZE_CAR = __user_config.get("cluster_size_car", _default_size)
-    CONFIG.CLUSTER_SIZE_PED = __user_config.get("cluster_size_ped", _default_size)
+    _default_radius = __user_config.get("cluster_radius", __cluster_radius_default)
+    CONFIG.CLUSTER_RADIUS_CAR = __user_config.get("cluster_radius_car", _default_radius)
+    CONFIG.CLUSTER_RADIUS_PED = __user_config.get("cluster_radius_ped", _default_radius)
 
 if CONFIG.USING_CONSTANT_MOTION:
     _default_weight = __user_config.get(
