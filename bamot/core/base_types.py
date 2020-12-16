@@ -109,6 +109,7 @@ class ObjectTrack:
     active: bool = True
     badly_tracked_frames: int = 0
     last_seen: int = -1
+    dist_from_cam: float = 0
 
 
 @dataclass

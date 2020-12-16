@@ -61,7 +61,7 @@ def _remove_outlier_landmarks(
         track_logger.debug("Removing %d outlier landmarks", len(landmarks_to_remove))
         for lid in landmarks_to_remove:
             landmarks.pop(lid)
-        return cluster_median_center
+        return cluster_median_center, dist_from_cam
 
 
 def get_median_translation(object_track):
@@ -77,7 +77,7 @@ def get_median_translation(object_track):
     return np.median(translations)
 
 
-def _get_max_dist(obj_cls, badly_tracked_frames, dist_from_cam):
+def _get_max_dist(obj_cls, badly_tracked_frames, dist_from_cam=None):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
     dist_factor = 1 if dist_from_cam is None else dist_from_cam / 30
     return (badly_tracked_frames + 1) * dist_factor * (max_speed / config.FRAME_RATE)
@@ -349,7 +349,10 @@ def run(
                     T_world_obj_pnp = T_world_cam @ T_cam_obj_pnp
                     T_rel = np.linalg.inv(T_world_obj_prev) @ T_world_obj_pnp
                     valid_motion = _valid_motion(
-                        T_rel, track.cls, track.badly_tracked_frames
+                        T_rel,
+                        track.cls,
+                        track.badly_tracked_frames,
+                        dist_from_cam=track.dist_from_cam,
                     )
                     LOGGER.debug("Median translation: %.2f", median_translation)
                     if valid_motion:
@@ -390,13 +393,15 @@ def run(
             logger=track_logger,
         )
         # remove outlier landmarks
-        current_landmark_median = _remove_outlier_landmarks(
-            track.landmarks, current_landmarks, track.cls, track_logger, T_cam_obj
-        )
+        if current_landmarks:
+            current_landmark_median, dist_from_cam = _remove_outlier_landmarks(
+                track.landmarks, current_landmarks, track.cls, track_logger, T_cam_obj
+            )
+            track.dist_from_cam = dist_from_cam
         # BA optimizes landmark positions w.r.t. object and object position over time
         # -> SLAM optimizes motion of camera
         # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
-        if len(track.poses) > 3 and len(track.landmarks) > 0 and run_ba:
+        if len(track.poses) > 3 and track.landmarks and run_ba:
             track_logger.debug("Running BA")
             track = object_bundle_adjustment(
                 object_track=copy.deepcopy(track),
@@ -409,7 +414,7 @@ def run(
         if (
             len(track.poses) == 1
             and img_id == list(track.poses.keys())[0]
-            and current_landmark_median is not None
+            and track.landmarks
         ):
             # re-calculate object frame to be close to object
             T_world_obj = track.poses[img_id]
@@ -573,6 +578,8 @@ def _get_median_of_stereo_pointcloud(
             pcl.append(pt_world)
         except TriangulationError:
             pass
+    if not pcl:  # no stereo matches
+        return None
     return np.median(pcl, axis=0)
 
 
@@ -592,9 +599,12 @@ def _improve_association(
         median = _get_median_of_stereo_pointcloud(
             stereo_detection, stereo_image, img_id, track_id, stereo_cam, T_world_cam
         )
-        dist_from_cam = np.linalg.norm(
-            from_homogeneous(np.linalg.inv(T_world_cam) @ to_homogeneous(median))
-        )
+        if median is None:  # no stereo matches, assume 2D association is fine
+            matches.append(
+                TrackMatch(track_index=track_id, detection_index=detection_idx)
+            )
+            continue
+
         detection_locations[detection_idx] = median
 
         track = tracks.get(track_id)
@@ -605,9 +615,6 @@ def _improve_association(
         # TODO: if no info is available, try to possibly associate detection with existing track
         # existing track has no landmarks, no 3D info available
         if not track.locations:
-            # matches.append(
-            #    TrackMatch(track_index=track_id, detection_index=detection_idx,)
-            # )
             unmatched_detections.add(detection_idx)
             continue
 
@@ -616,6 +623,9 @@ def _improve_association(
         T_rel = np.identity(4)
         T_rel[:3, 3] = (prev_location - median).reshape(3,)
         # association makes sense in 3D --> add to matches
+        dist_from_cam = np.linalg.norm(
+            from_homogeneous(np.linalg.inv(T_world_cam) @ to_homogeneous(median))
+        )
         if _valid_motion(
             T_rel,
             obj_cls=track.cls,
