@@ -745,7 +745,7 @@ def step(
     all_left_features = []
     all_right_features = []
     all_stereo_matches = []
-    LOGGER.info("Running step for image %d", img_id)
+    LOGGER.debug("Running step for image %d", img_id)
     LOGGER.debug("Current ego pose:\n%s", current_cam_pose)
     matches, unmatched_tracks = _improve_association(
         detections=new_detections,
@@ -786,7 +786,6 @@ def step(
             track.last_seen = img_id
             track.fully_visible = new_detections[match.detection_index]
             run_ba = match.track_index in tracks_to_run_ba
-            active_tracks.append(match.track_index)
             matched_futures_to_track_index[
                 executor.apipe(
                     process_match,
@@ -814,13 +813,13 @@ def step(
             all_stereo_matches.append(stereo_matches)
 
     # Set old tracks inactive
-    inactive_tracks = set(object_tracks.keys()).difference(set(active_tracks))
     old_tracks = set()
     num_deactivated = 0
-    for track_id in inactive_tracks:
-        track = object_tracks[track_id]
-        if (img_id - track.last_seen) > config.KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST:
-            track.active = False
+    for track_id, track in object_tracks.items():
+        if (
+            not track.active
+            or (img_id - track.last_seen) > config.KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST
+        ):
             num_deactivated += 1
             old_tracks.add(track_id)
     LOGGER.debug("Deactivated %d tracks", num_deactivated)

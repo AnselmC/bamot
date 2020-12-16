@@ -79,7 +79,7 @@ __max_speed_car_default = float(
     os.environ.get("MAX_SPEED_CAR", default=40)
 )  # about 140 km/h
 __max_speed_ped_default = float(
-    os.environ.get("MAX_SPEED_PED", default=4)
+    os.environ.get("MAX_SPEED_PED", default=8)
 )  # about 14 m/h
 
 __frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
