@@ -77,9 +77,11 @@ def _set_min_max_ax(ax, gt_traj):
 
 def _associate_gt_to_est(est_world, gt_label_data):
     mot_metrics = MOTMetrics()
-    cost_matrix = np.zeros((max(est_world.keys()) + 1, max(gt_label_data.keys()) + 1))
-    for track_id_est, est_traj in est_world.items():
-        for track_id_gt, track_data in gt_label_data.items():
+    cost_matrix = np.zeros((len(est_world), len(gt_label_data)))
+    gt_track_id_mapping = {}
+    est_track_id_mapping = {}
+    for i, (track_id_est, est_traj) in enumerate(est_world.items()):
+        for j, (track_id_gt, track_data) in enumerate(gt_label_data.items()):
             # find overlapping img_ids
             overlapping_img_ids = set(est_traj.keys()).intersection(track_data.keys())
             errors = []
@@ -93,15 +95,19 @@ def _associate_gt_to_est(est_world, gt_label_data):
                 score = 1 / np.median(errors)
             else:
                 score = 0
-            cost_matrix[track_id_est][track_id_gt] = score
-    track_ids_est, track_ids_gt = linear_sum_assignment(cost_matrix, maximize=True)
+            est_track_id_mapping[i] = track_id_est
+            gt_track_id_mapping[j] = track_id_gt
+            cost_matrix[i][j] = score
+    est_indices, gt_indices = linear_sum_assignment(cost_matrix, maximize=True)
     track_id_mapping = {}
     matched_est = set()
     matched_gt = set()
-    for track_id_est, track_id_gt in zip(track_ids_est, track_ids_gt):
-        weight = cost_matrix[track_id_est][track_id_gt].sum()
+    for est_idx, gt_idx in zip(est_indices, gt_indices):
+        weight = cost_matrix[est_idx][gt_idx].sum()
         if not np.isfinite(weight) or weight == 0:
             continue  # invalid match
+        track_id_est = est_track_id_mapping[est_idx]
+        track_id_gt = gt_track_id_mapping[gt_idx]
         matched_est.add(track_id_est)
         matched_gt.add(track_id_gt)
         track_id_mapping[int(track_id_gt)] = int(track_id_est)
