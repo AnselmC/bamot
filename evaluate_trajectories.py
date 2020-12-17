@@ -92,7 +92,9 @@ def _associate_gt_to_est(est_world, gt_label_data):
                 if np.isfinite(error):
                     errors.append(error)
             if errors:
-                score = 1 / np.median(errors)
+                score = 1 / np.median(errors) + len(overlapping_img_ids) / len(
+                    track_data
+                )
             else:
                 score = 0
             est_track_id_mapping[i] = track_id_est
@@ -264,7 +266,7 @@ if __name__ == "__main__":
     print("Matching GT tracks to estimated tracks")
     if not args.track_ids_match:
         print("Track ids do not match, associating tracks")
-        if est_trajectories_world_offline:  # use online if available
+        if est_trajectories_world_offline:  # use offline if available
             track_mapping, mot_metrics = _associate_gt_to_est(
                 est_trajectories_world_offline, label_data
             )
@@ -516,6 +518,9 @@ if __name__ == "__main__":
         track_mapping_file = save_dir / "track_mapping.json"
         with open(track_mapping_file, "w") as fp:
             json.dump(track_mapping, fp, sort_keys=True, indent=4)
+        mot_metrics_file = save_dir / "mot_metrics.json"
+        with open(mot_metrics_file, "w") as fp:
+            json.dump(mot_metrics.__dict__, fp, indent=4)
         eval_file = save_dir / "evaluation.csv"
         with open(eval_file.as_posix(), "w") as fp:
             columns = [

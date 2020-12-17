@@ -1,4 +1,5 @@
 import argparse
+import json
 import warnings
 from itertools import cycle
 from pathlib import Path
@@ -8,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
+from evaluate_trajectories import MOTMetrics
 
 warnings.filterwarnings("ignore")
 
@@ -403,12 +405,23 @@ if __name__ == "__main__":
     args = parser.parse_args()
     src_dir = Path(args.input)
     df = None
+    full_mot_metrics = MOTMetrics()
     for scene_dir in src_dir.iterdir():
         if scene_dir.is_file():
             continue
         eval_file = scene_dir / "evaluation.csv"
         if not eval_file.exists():
             continue
+        mot_metrics_file = scene_dir / "mot_metrics.json"
+        with open(mot_metrics_file, "r") as fp:
+            scene_mot_metrics = MOTMetrics(**json.load(fp))
+        full_mot_metrics.mostly_lost += scene_mot_metrics.mostly_lost
+        full_mot_metrics.mostly_tracked += scene_mot_metrics.mostly_tracked
+        full_mot_metrics.partly_tracked += scene_mot_metrics.partly_tracked
+        full_mot_metrics.true_positives += scene_mot_metrics.true_positives
+        full_mot_metrics.false_positives += scene_mot_metrics.false_positives
+        full_mot_metrics.false_negatives += scene_mot_metrics.false_negatives
+
         scene_df = pd.read_csv(eval_file.as_posix())
         # for backward compatibility
         scene_df.rename(
@@ -434,6 +447,18 @@ if __name__ == "__main__":
     _create_report(df, dst_dir, args.save)
     _plt_hist(df, dst_dir, args.save)
     _plt_hist_no_outliers(df, dst_dir, args.save)
+    full_mot_metrics.precision = full_mot_metrics.true_positives / (
+        full_mot_metrics.true_positives + full_mot_metrics.false_positives
+    )
+    full_mot_metrics.recall = full_mot_metrics.true_positives / (
+        full_mot_metrics.true_positives + full_mot_metrics.false_negatives
+    )
+    full_mot_metrics.f1 = (2 * full_mot_metrics.precision * full_mot_metrics.recall) / (
+        full_mot_metrics.precision + full_mot_metrics.recall
+    )
+    full_mot_metrics_fname = dst_dir / "mot_metrics.json"
+    with open(full_mot_metrics_fname, "w") as fp:
+        json.dump(full_mot_metrics.__dict__, fp, indent=4)
     # _plt_error_by_dist(df, dst_dir, args.save)
     # histogram of errors w/o outliers
     # errors vs distance
