@@ -522,7 +522,12 @@ def run(
             LOGGER.exception("Unexpected error: %s", exc)
             break
         for track_id in old_tracks:
-            all_object_tracks[track_id] = copy.deepcopy(active_object_tracks[track_id])
+            # only store tracks that weren't immediately deemed false positives
+            track = active_object_tracks[track_id]
+            if len(track.poses) > 1:
+                all_object_tracks[track_id] = copy.deepcopy(
+                    track
+                )
             del active_object_tracks[track_id]
 
         shared_data.put(
