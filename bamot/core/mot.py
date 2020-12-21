@@ -113,7 +113,7 @@ def _localize_object(
     landmarks: Dict[int, Landmark],
     T_cam_obj: np.ndarray,
     camera_params: CameraParameters,
-    logger: logging.Logger,
+    logger: logging.Logger = logging.getLogger(),
     num_iterations: int = 2000,
     reprojection_error: float = 1.0,
 ) -> Tuple[np.ndarray, bool]:
@@ -307,7 +307,7 @@ def run(
     returned_data: queue.Queue,
     stop_flag: Event,
     next_step: Event,
-    continuous: bool,
+    continuous_until_img_id: int,
 ):
     active_object_tracks: Dict[int, ObjectTrack] = {}
     all_object_tracks: Dict[int, ObjectTrack] = {}
@@ -326,7 +326,7 @@ def run(
         run_ba,
     ):
         track.active = True
-        track_logger = logging.getLogger(f"CORE:MOT:{track_id}")
+        track_logger = logging.getLogger(f"CORE:MOT:Track {track_id}")
         track_logger.debug("Image: %d", img_id)
         feature_matcher = get_feature_matcher()
         left_features, right_features = _extract_features(
@@ -373,7 +373,11 @@ def run(
                     LOGGER.debug("Median translation: %.2f", median_translation)
                     if valid_motion:
                         T_cam_obj = T_cam_obj_pnp
-        if not (enough_track_matches and successful and valid_motion):
+        if not (
+            (enough_track_matches or len(track.poses) == 1)
+            and successful
+            and valid_motion
+        ):
             # if track_matches:
             #    track_logger.debug("Clearing track matches")
             #    track_matches.clear()
@@ -382,16 +386,13 @@ def run(
                 track_logger.debug("PnP successful: %s", successful)
                 if successful:
                     track_logger.debug("Valid motion: %s", valid_motion)
-            if (
-                track.badly_tracked_frames > config.MAX_BAD_FRAMES
-                and enough_stereo_matches
-            ):
-                track_logger.debug("Clearing landmarks")
-                track.landmarks.clear()
-                track_matches.clear()
-                track.badly_tracked_frames = 0
-            else:
-                track.badly_tracked_frames += 1
+            track.badly_tracked_frames += 1
+            print(len(track.poses))
+            track_logger.info(
+                "Increased badly tracked frames to %d", track.badly_tracked_frames
+            )
+        else:
+            track.badly_tracked_frames = 0
 
         T_world_obj = T_world_cam @ T_cam_obj
         # add new landmark observations from track matches
@@ -468,6 +469,7 @@ def run(
         return track, left_features, right_features, stereo_matches
 
     point_cloud_sizes = {}
+    track_id_mapping = {}
     for (img_id, stereo_image), new_detections in zip(images, detections):
         all_track_ids = set(all_object_tracks).union(set(active_object_tracks))
         if config.TRACK_POINT_CLOUD_SIZES:
@@ -479,8 +481,9 @@ def run(
                     point_cloud_sizes[track_id] = [point_cloud_size]
         if stop_flag.is_set():
             break
-        while not continuous and not next_step.is_set():
-            time.sleep(0.05)
+        if img_id > continuous_until_img_id and continuous_until_img_id != -1:
+            while not next_step.is_set():
+                time.sleep(0.05)
         next_step.clear()
         all_poses = slam_data.get()
         slam_data.task_done()
@@ -517,6 +520,7 @@ def run(
                 all_poses=all_poses,
                 tracks_to_run_ba=tracks_to_run_ba,
                 all_track_ids=all_track_ids,
+                track_id_mapping=track_id_mapping
             )
         except Exception as exc:
             LOGGER.exception("Unexpected error: %s", exc)
@@ -525,9 +529,7 @@ def run(
             # only store tracks that weren't immediately deemed false positives
             track = active_object_tracks[track_id]
             if len(track.poses) > 1:
-                all_object_tracks[track_id] = copy.deepcopy(
-                    track
-                )
+                all_object_tracks[track_id] = copy.deepcopy(track)
             del active_object_tracks[track_id]
 
         shared_data.put(
@@ -611,31 +613,40 @@ def _get_median_of_stereo_pointcloud(
         except TriangulationError:
             pass
     if not pcl:  # no stereo matches
-        return None
-    return np.median(pcl, axis=0)
+        return None, None
+    return np.median(pcl, axis=0), left_features
 
 
 def _improve_association(
-    detections, tracks, T_world_cam, stereo_cam, stereo_image, img_id, all_track_ids
+    detections,
+    tracks,
+    T_world_cam,
+    stereo_cam,
+    stereo_image,
+    img_id,
+    all_track_ids,
+    track_id_mapping,
 ):
     unmatched_detections = set()
     matched_detections = set()
     matched_tracks = set()
     matches = []
     detection_locations = {}
+    features_per_detection = {}
     # corroborate 2D tracker matches
     LOGGER.debug("%d detection(s) in image %d", len(detections), img_id)
     for detection_idx, stereo_detection in enumerate(detections):
         # get new 3D info from stereo_matches
         track_id = stereo_detection.left.track_id
-        median = _get_median_of_stereo_pointcloud(
+        if track_id in track_id_mapping:
+            track_id = track_id_mapping[track_id]
+        median, left_features = _get_median_of_stereo_pointcloud(
             stereo_detection, stereo_image, img_id, track_id, stereo_cam, T_world_cam
         )
+        features_per_detection[detection_idx] = left_features
         if median is None:  # no stereo matches, assume 2D association is fine
-            LOGGER.debug("No stereo matches for track %d", track_id)
-            matches.append(
-                TrackMatch(track_index=track_id, detection_index=detection_idx)
-            )
+            LOGGER.info("No stereo matches for track %d", track_id)
+            matches.append(TrackMatch(track_id=track_id, detection_id=detection_idx))
             matched_detections.add(detection_idx)
             continue
 
@@ -644,7 +655,7 @@ def _improve_association(
         track = tracks.get(track_id)
         # 2D tracker wasn't able to associate to existing track --> possibly new track
         if track is None:
-            LOGGER.info("Track %d is new according to 2D tracker", track_id)
+            LOGGER.debug("Track %d is new according to 2D tracker", track_id)
             unmatched_detections.add(detection_idx)
             continue
 
@@ -653,19 +664,17 @@ def _improve_association(
         T_rel = np.identity(4)
         T_rel[:3, 3] = (prev_location - median).reshape(3,)
         # association makes sense in 3D --> add to matches
-        dist_from_cam = np.linalg.norm(
-            from_homogeneous(np.linalg.inv(T_world_cam) @ to_homogeneous(median))
-        )
+        # dist_from_cam = np.linalg.norm(
+        #    from_homogeneous(np.linalg.inv(T_world_cam) @ to_homogeneous(median))
+        # )
         if _valid_motion(
             T_rel,
             obj_cls=track.cls,
             badly_tracked_frames=track.badly_tracked_frames,
-            dist_from_cam=dist_from_cam,
+            dist_from_cam=track.dist_from_cam,
         ):
             LOGGER.debug("Track %d has valid motion", track_id)
-            matches.append(
-                TrackMatch(track_index=track_id, detection_index=detection_idx,)
-            )
+            matches.append(TrackMatch(track_id=track_id, detection_id=detection_idx,))
             matched_tracks.add(track_id)
             matched_detections.add(detection_idx)
         else:
@@ -681,14 +690,35 @@ def _improve_association(
     )
     LOGGER.debug("%d unmatched track(s) after 2D corroboration", len(unmatched_tracks))
     cost_matrix = np.zeros((len(unmatched_detections), len(unmatched_tracks)))
+    feature_matcher = get_feature_matcher()
     for i, detection_idx in enumerate(unmatched_detections):
+        left_features = features_per_detection[detection_idx]
         for j, track_id in enumerate(unmatched_tracks):
             track = tracks[track_id]
             last_img_id = list(track.locations)[-1]
             prev_location = track.locations[last_img_id]
             dist = np.linalg.norm(detection_locations[detection_idx] - prev_location)
+            features, lm_mapping = _get_features_from_landmarks(track.landmarks)
+            track_matches = feature_matcher.match_features(left_features, features)
+            # T_world_obj = _estimate_next_pose(track)
+            # T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
+            # T_cam_obj, success = _localize_object(
+            #    left_features,
+            #    track_matches,
+            #    lm_mapping,
+            #    track.landmarks,
+            #    T_cam_obj,
+            #    camera_params=stereo_cam.left,
+            # )
+            matched_features_to_landmarks_ratio = len(track_matches) / len(
+                track.landmarks
+            )
+            matched_features_to_features_ratio = len(track_matches) / len(left_features)
+            matched_ratio = max(
+                matched_features_to_landmarks_ratio, matched_features_to_features_ratio
+            )
 
-            if np.isfinite(dist):
+            if np.isfinite(dist) and matched_ratio > 0.4:
                 cost_matrix[i][j] = 1.0 / dist
 
     first_indices, second_indices = linear_sum_assignment(cost_matrix, maximize=True)
@@ -706,9 +736,7 @@ def _improve_association(
             dist_from_cam=track.dist_from_cam,
         ):
             detection_idx = list(unmatched_detections)[row_idx]
-            matches.append(
-                TrackMatch(track_index=track_id, detection_index=detection_idx,)
-            )
+            matches.append(TrackMatch(track_id=track_id, detection_id=detection_idx,))
             matched_tracks.add(track_id)
             matched_detections.add(detection_idx)
     # create new tracks for unmatched detections
@@ -727,7 +755,9 @@ def _improve_association(
             if detection_track_id not in all_track_ids.union(matched_tracks)
             else uuid.uuid1().int
         )
-        matches.append(TrackMatch(track_index=track_id, detection_index=detection_idx))
+        if track_id != detection_track_id:
+            track_id_mapping[detection_track_id] = track_id
+        matches.append(TrackMatch(track_id=track_id, detection_id=detection_idx))
 
     return matches, unmatched_tracks
 
@@ -744,6 +774,7 @@ def step(
     current_cam_pose: np.ndarray,
     tracks_to_run_ba: List[TrackId],
     all_track_ids: Set[TrackId],
+    track_id_mapping: Dict[TrackId, TrackId],
 ) -> Tuple[
     Dict[int, ObjectTrack], List[List[Feature]], List[List[Feature]], List[List[Match]]
 ]:
@@ -760,59 +791,60 @@ def step(
         stereo_image=stereo_image,
         img_id=img_id,
         all_track_ids=all_track_ids,
+        track_id_mapping=track_id_mapping,
     )
     for match in matches:
         # if new track ids are present, the tracks need to be added to the object_tracks
-        if object_tracks.get(match.track_index) is None:
-            LOGGER.debug("Added track with index %d", match.track_index)
-            object_tracks[match.track_index] = ObjectTrack(
-                cls=new_detections[match.detection_index].left.cls,
+        if object_tracks.get(match.track_id) is None:
+            LOGGER.info("Added track with ID %d", match.track_id)
+            object_tracks[match.track_id] = ObjectTrack(
+                cls=new_detections[match.detection_id].left.cls,
                 poses={img_id: current_cam_pose},
             )
     # per match, match features
-    active_tracks = []
     LOGGER.debug("%d matches with object tracks", len(matches))
 
     # TODO: currently disabled bc slower than single threaded and single process
     with pathos.threading.ThreadPool(nodes=len(matches) if False else 1) as executor:
-        matched_futures_to_track_index = {}
-        unmatched_futures_to_track_index = {}
+        matched_futures_to_track_id = {}
+        unmatched_futures_to_track_id = {}
         for track_id in unmatched_tracks:
             track = object_tracks[track_id]
             track.fully_visible = False
-            unmatched_futures_to_track_index[
+            track.badly_tracked_frames += 1
+            unmatched_futures_to_track_id[
                 executor.apipe(
                     _add_constant_motion_to_track, track=track, img_id=img_id
                 )
             ] = track_id
         for match in matches:
-            detection = new_detections[match.detection_index]
-            track = object_tracks[match.track_index]
+            detection = new_detections[match.detection_id]
+            track = object_tracks[match.track_id]
             track.last_seen = img_id
-            track.fully_visible = new_detections[match.detection_index]
-            run_ba = match.track_index in tracks_to_run_ba
-            matched_futures_to_track_index[
+            track.fully_visible = new_detections[match.detection_id]
+            run_ba = match.track_id in tracks_to_run_ba
+            matched_futures_to_track_id[
                 executor.apipe(
                     process_match,
                     track=track,
                     detection=detection,
                     all_poses=all_poses,
-                    track_id=match.track_index,
+                    track_id=match.track_id,
                     stereo_cam=stereo_cam,
                     img_id=img_id,
                     stereo_image=stereo_image,
                     current_cam_pose=current_cam_pose,
                     run_ba=run_ba,
                 )
-            ] = match.track_index
+            ] = match.track_id
 
-        for future, track_index in unmatched_futures_to_track_index.items():
+        for future, track_id in unmatched_futures_to_track_id.items():
             track = future.get()
-            object_tracks[track_index] = track
+            object_tracks[track_id] = track
 
-        for future, track_index in matched_futures_to_track_index.items():
+        for future, track_id in matched_futures_to_track_id.items():
             track, left_features, right_features, stereo_matches = future.get()
-            object_tracks[track_index] = track
+            object_tracks[track_id] = track
             all_left_features.append(left_features)
             all_right_features.append(right_features)
             all_stereo_matches.append(stereo_matches)

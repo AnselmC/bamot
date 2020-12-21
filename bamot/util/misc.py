@@ -5,7 +5,7 @@ from typing import List
 import numpy as np
 import tqdm
 
-RNG = np.random.default_rng()
+RNG = np.random.default_rng(42)
 Color = np.ndarray
 COLORS: List[Color] = RNG.random((42, 3))
 

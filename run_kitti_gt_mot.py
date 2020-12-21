@@ -143,9 +143,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c",
         "--continuous",
-        action="store_true",
         dest="continuous",
-        help="Whether to run process continuously (default is next step via 'n' keypress).",
+        type=int,
+        help=(
+            "Up to which image id to run viewer continuously. "
+            "If not set, next step can be run via 'n' keypress. "
+            "If set without argument, entire sequence is run continuously."
+        ),
+        nargs="?",
+        const=-1,
+        default=0,
     )
     parser.add_argument(
         "-t",
@@ -261,6 +268,7 @@ if __name__ == "__main__":
     slam_process = process_class(
         target=_fake_slam, args=[slam_data, gt_poses, args.offset], name="Fake SLAM"
     )
+    continue_until_image_id = -1 if args.no_viewer else args.continuous
     mot_process = process_class(
         target=run,
         kwargs={
@@ -272,7 +280,7 @@ if __name__ == "__main__":
             "stop_flag": stop_flag,
             "next_step": next_step,
             "returned_data": returned_data,
-            "continuous": args.continuous or args.no_viewer,
+            "continuous_until_img_id": continue_until_image_id,
         },
         name="BAMOT",
     )

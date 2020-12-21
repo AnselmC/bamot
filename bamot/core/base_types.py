@@ -120,5 +120,5 @@ class StereoObjectDetection:
 
 @dataclass
 class TrackMatch:
-    track_index: int
-    detection_index: int
+    track_id: int
+    detection_id: int
