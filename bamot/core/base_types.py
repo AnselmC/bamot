@@ -93,6 +93,7 @@ class Landmark:
 @dataclass
 class ObjectTrack:
     cls: str
+    masks: Tuple[np.ndarray, np.ndarray]
     landmarks: Dict[int, Landmark] = field(
         default_factory=dict
     )  # need to be referenced in constant time by id

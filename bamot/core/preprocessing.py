@@ -6,17 +6,11 @@ import cv2
 import numpy as np
 from bamot.core.base_types import (ObjectDetection, StereoCamera, StereoImage,
                                    StereoObjectDetection)
-from bamot.util.cv import (dilate_mask, get_convex_hull_from_mask,
-                           get_convex_hull_mask, get_feature_matcher)
+from bamot.util.cv import (dilate_mask, draw_contours,
+                           get_convex_hull_from_mask, get_convex_hull_mask,
+                           get_feature_matcher)
 from scipy.optimize import linear_sum_assignment
 from shapely.geometry import Polygon
-
-
-def _draw_contours(mask, img, color):
-    contours, _ = cv2.findContours(
-        mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
-    )
-    cv2.drawContours(img, contours, -1, color, 3)
 
 
 def match_detections(
@@ -147,8 +141,8 @@ def preprocess_frame(
                 right_obj.track_id = left_obj.track_id
             if colors:
                 color = colors[left_obj.track_id]
-                _draw_contours(left_obj.mask, raw_left_image, color)
-                _draw_contours(right_obj.mask, raw_right_image, color)
+                draw_contours(left_obj.mask, raw_left_image, color)
+                draw_contours(right_obj.mask, raw_right_image, color)
                 left_keypoints = [
                     cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in left_obj.features
                 ]
@@ -194,8 +188,8 @@ def preprocess_frame(
                     )
                     if colors:
                         color = colors[obj.track_id]
-                        _draw_contours(obj_mask, raw_right_image, color)
-                        _draw_contours(other_obj_mask, raw_left_image, color)
+                        draw_contours(obj_mask, raw_right_image, color)
+                        draw_contours(other_obj_mask, raw_left_image, color)
                         left_keypoints = [
                             cv2.KeyPoint(x=f.u, y=f.v, _size=1)
                             for f in left_obj.features
@@ -227,8 +221,8 @@ def preprocess_frame(
                     )
                     if colors:
                         color = colors[obj.track_id]
-                        _draw_contours(obj_mask, raw_left_image, color)
-                        _draw_contours(other_obj_mask, raw_right_image, color)
+                        draw_contours(obj_mask, raw_left_image, color)
+                        draw_contours(other_obj_mask, raw_right_image, color)
                         left_keypoints = [
                             cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in obj.features
                         ]

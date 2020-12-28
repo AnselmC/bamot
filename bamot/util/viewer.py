@@ -10,8 +10,8 @@ import numpy as np
 import open3d as o3d
 from bamot.core.base_types import (Feature, Match, ObjectTrack, StereoImage,
                                    TrackId)
-from bamot.util.cv import (from_homogeneous, get_corners_from_vector,
-                           to_homogeneous)
+from bamot.util.cv import (draw_contours, from_homogeneous,
+                           get_corners_from_vector, to_homogeneous)
 from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
@@ -48,33 +48,31 @@ def _create_camera_lineset():
     return lineset
 
 
-def _draw_matches(
-    left_img: np.ndarray,
-    left_features: List[Feature],
-    right_img: np.ndarray,
-    right_features: List[Feature],
-    stereo_matches: List[Match],
+def _enhance_image(
+    stereo_img: StereoImage,
+    all_left_features: List[Feature],
+    all_right_features: List[Feature],
+    tracks: Dict[TrackId, ObjectTrack],
+    colors,
 ) -> StereoImage:
-    left_keypoints = [cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in left_features]
-    right_keypoints = [cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in right_features]
-    # left is train, right is query?
-    matches = [
-        cv2.DMatch(_queryIdx=leftIdx, _trainIdx=rightIdx, _imgIdx=0, _distance=0)
-        for leftIdx, rightIdx in stereo_matches
-    ]
-    full_img = cv2.drawMatches(
-        left_img,
-        left_keypoints,
-        right_img,
-        right_keypoints,
-        matches,
-        None,
-        flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS,
-    )
-    return StereoImage(
-        left=full_img[:, : full_img.shape[1] // 2],
-        right=full_img[:, full_img.shape[1] // 2 :],
-    )
+    for left_features, right_features in zip(all_left_features, all_right_features):
+        left_keypoints = [cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in left_features]
+        right_keypoints = [cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in right_features]
+        cv2.drawKeypoints(stereo_img.left, left_keypoints, stereo_img.left)
+        cv2.drawKeypoints(stereo_img.right, right_keypoints, stereo_img.right)
+    for track_id, track in tracks.items():
+        draw_contours(
+            track.masks[0],
+            stereo_img.left,
+            tuple((255 * np.flip(colors[track_id])).astype(int).tolist()),
+        )  # opencv expects BGR non-normalized color as tuple
+        draw_contours(
+            track.masks[1],
+            stereo_img.right,
+            tuple((255 * np.flip(colors[track_id])).astype(int).tolist()),
+        )  # opencv expects BGR non-normalized color as tuple
+
+    return stereo_img
 
 
 def get_screen_size():
@@ -183,6 +181,7 @@ def _update_track_visualization(
                 color=cached_colors.get(ido, get_color()),
             ),
         )
+        cached_colors[ido] = track_geometries.color
         # draw path
         path_points_offline = []
         path_points_online = []
@@ -333,6 +332,7 @@ def _update_track_visualization(
             if track_geometry.online_trajectory in all_geometries:
                 all_geometries.remove(track_geometry.online_trajectory)
             del all_track_geometries[ido]
+            del cached_colors[ido]
 
 
 def _update_ego_visualization(gt_poses, visualizer, ego_geometries, current_img_id):
@@ -533,17 +533,13 @@ def run(
                 stereo_image = new_data["stereo_image"]
                 all_left_features = new_data.get("all_left_features", [])
                 all_right_features = new_data.get("all_right_features", [])
-                all_stereo_matches = new_data.get("all_stereo_matches", [])
-                for left_features, right_features, stereo_matches in zip(
-                    all_left_features, all_right_features, all_stereo_matches
-                ):
-                    stereo_image = _draw_matches(
-                        stereo_image.left,
-                        left_features,
-                        stereo_image.right,
-                        right_features,
-                        stereo_matches,
-                    )
+                stereo_image = _enhance_image(
+                    stereo_image,
+                    all_left_features,
+                    all_right_features,
+                    tracks=object_tracks,
+                    colors=cached_colors,
+                )
                 if first_update:
                     img_size = stereo_image.left.shape
                     img_ratio = img_size[1] / img_size[0]
