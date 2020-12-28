@@ -105,10 +105,8 @@ class ObjectTrack:
     pcl_centers: Dict[ImageId, np.ndarray] = field(
         default_factory=dict
     )  # w.r.t. object
-    fully_visible: bool = True
     active: bool = True
     badly_tracked_frames: int = 0
-    last_seen: int = -1
     dist_from_cam: float = 0
 
 
