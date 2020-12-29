@@ -74,13 +74,16 @@ def project(params: CameraParameters, pt_3d: np.ndarray):
     ).reshape(2, 1)
 
 
-def get_center_of_landmarks(landmarks: List[Landmark]):
+def get_center_of_landmarks(landmarks: List[Landmark], reduction: str = "mean"):
     center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
     if not landmarks:
         return center
-    for lm in landmarks:
-        center += lm.pt_3d
-    return center / len(landmarks)
+    if reduction == "mean":
+        return np.mean([lm.pt_3d for lm in landmarks], axis=0)
+    elif reduction == "median":
+        return np.median([lm.pt_3d for lm in landmarks], axis=0)
+    else:
+        raise ValueError("Unknown reduction: %s", reduction)
 
 
 def fullfills_epipolar_constraint(
