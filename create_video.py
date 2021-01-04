@@ -47,9 +47,9 @@ def main(args):
         print("Creating detections video...done")
     else:
         print("Using existing detections video...")
-    # create video of recording
-    recording_path = Path(args.recording) / "out.avi"
-    print("Creating video of recording...")
+    # create video of recordings
+    recording_path_3d = Path(args.recording) / "out_3d.avi"
+    print("Creating video of 3D recording...")
     subprocess.run(
         [
             "ffmpeg",
@@ -58,20 +58,45 @@ def main(args):
             "-pattern_type",
             "glob",
             "-i",
-            (Path(args.recording) / "*.png").as_posix(),
+            (Path(args.recording) / "3d" / "*.png").as_posix(),
             "-vcodec",
             "libx264",
             "-pix_fmt",
             "yuv420p",
             "-vf",
             "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-            recording_path.as_posix(),
+            recording_path_3d.as_posix(),
         ],
         capture_output=False,
         check=True,
     )
-    print("Creating video of recording...done")
-    print(f"Saved at {recording_path.as_posix()}")
+    print("Creating video of 3D recording...done")
+    print(f"Saved at {recording_path_3d.as_posix()}")
+
+    recording_path_2d = Path(args.recording) / "out_2d.avi"
+    print("Creating video of 2D recording...")
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-r",
+            str(config.FRAME_RATE),
+            "-pattern_type",
+            "glob",
+            "-i",
+            (Path(args.recording) / "2d" / "*.png").as_posix(),
+            "-vcodec",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-vf",
+            "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            recording_path_2d.as_posix(),
+        ],
+        capture_output=False,
+        check=True,
+    )
+    print("Creating video of 2D recording...done")
+    print(f"Saved at {recording_path_2d.as_posix()}")
     # stack videos
     print("Stacking all videos...")
     output_path = Path(args.recording) / "out_stacked.mp4"
@@ -81,9 +106,11 @@ def main(args):
             "-i",
             detections_video_path.as_posix(),
             "-i",
-            recording_path.as_posix(),
+            recording_path_2d.as_posix(),
+            "-i",
+            recording_path_3d.as_posix(),
             "-filter_complex",
-            "[1][0]scale2ref=iw:iw*(main_h/main_w)[2nd][ref];[ref][2nd]vstack=inputs=2",
+            "[2][0]scale2ref=iw:iw*(main_h/main_w)[2nd][ref];[ref][1][2nd]vstack=inputs=3",
             output_path.as_posix(),
         ],
         capture_output=False,
