@@ -21,7 +21,6 @@ class Config:
     NUM_FEATURES: str
     SLIDING_WINDOW_BA: int
     SLIDING_WINDOW_DESCRIPTORS: int
-    MAX_BAD_FRAMES: int
     FRAME_RATE: int
     MAX_SPEED_CAR: float
     MAX_SPEED_PED: float
@@ -45,7 +44,6 @@ class Config:
 __config_file_default = Path(".").parent / os.environ.get(
     "CONFIG_FILE", default="config.yaml"
 )
-__max_bad_frames_default = os.environ.get("MAX_BAD_FRAMES", default=3)
 __const_motion_weight_default = os.environ.get("CONST_MOTION_WEIGHT", default=1)
 __const_motion_weights_default = [
     float(
@@ -114,7 +112,7 @@ CONFIG = Config(
         "detections_path",
         (__kitti_path_default / "preprocessed_est" / "mot").as_posix(),
     ),
-    MAX_DIST=__user_config.get("max_dist", 150),
+    MAX_DIST=__user_config.get("max_dist", 65),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),
     NUM_FEATURES=__user_config.get("num_features", 8000),
     BA_EVERY_N_STEPS=__user_config.get("ba_every_n_steps", __ba_every_n_steps_default),
@@ -125,7 +123,6 @@ CONFIG = Config(
         "sliding_window_ba", __sliding_window_ba_default
     ),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
-    MAX_BAD_FRAMES=__user_config.get("max_bad_frames", __max_bad_frames_default),
     MAX_SPEED_CAR=__user_config.get("max_speed_car", __max_speed_car_default),
     MAX_SPEED_PED=__user_config.get("max_speed_ped", __max_speed_ped_default),
     MIN_LANDMARKS_PED=__user_config.get(

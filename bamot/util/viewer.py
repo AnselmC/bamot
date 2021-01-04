@@ -61,16 +61,35 @@ def _enhance_image(
         cv2.drawKeypoints(stereo_img.left, left_keypoints, stereo_img.left)
         cv2.drawKeypoints(stereo_img.right, right_keypoints, stereo_img.right)
     for track_id, track in tracks.items():
-        draw_contours(
-            track.masks[0],
+        if track.masks is None:
+            continue
+        # opencv expects BGR non-normalized color as tuple
+        clr = tuple((255 * np.flip(colors[track_id])).astype(int).tolist())
+        draw_contours(track.masks[0], stereo_img.left, clr)
+        y, x = map(min, np.where(track.masks[0] != 0))
+        shortend_track_id = (
+            (str(track_id)[:3] + "..") if len(str(track_id)) > 5 else str(track_id)
+        )
+        stereo_img.left = cv2.putText(
             stereo_img.left,
-            tuple((255 * np.flip(colors[track_id])).astype(int).tolist()),
-        )  # opencv expects BGR non-normalized color as tuple
-        draw_contours(
-            track.masks[1],
+            shortend_track_id,
+            (x, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            clr,
+            3,
+        )
+        draw_contours(track.masks[1], stereo_img.right, clr)
+        y, x = map(min, np.where(track.masks[1] != 0))
+        stereo_img.right = cv2.putText(
             stereo_img.right,
-            tuple((255 * np.flip(colors[track_id])).astype(int).tolist()),
-        )  # opencv expects BGR non-normalized color as tuple
+            shortend_track_id,
+            (x, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            clr,
+            3,
+        )
 
     return stereo_img
 
@@ -453,8 +472,11 @@ def run(
     track_ids_match: bool = False,
 ):
     if save_path:
-        if not save_path.exists():
-            save_path.mkdir(parents=True)
+        save_path.mkdir(parents=True, exist_ok=True)
+        save_path_3d = save_path / "3d"
+        save_path_2d = save_path / "2d"
+        save_path_3d.mkdir(exist_ok=True)
+        save_path_2d.mkdir(exist_ok=True)
     vis = o3d.visualization.VisualizerWithKeyCallback()
     show_gt = Boolean(show_gt)
     show_offline_trajs = Boolean(trajs in ["both", "offline"])
@@ -552,7 +574,11 @@ def run(
                 if save_path is not None and recording:
                     LOGGER.debug("Saving image: %s", counter)
                     vis.capture_screen_image(
-                        (save_path / f"{counter:06}.png").as_posix(), False
+                        (save_path_3d / f"{counter:06}.png").as_posix(), False
+                    )
+                    cv2.imwrite(
+                        (save_path_2d / f"{counter:06}.png").as_posix(),
+                        stereo_image.left,
                     )
                     counter += 1
 
