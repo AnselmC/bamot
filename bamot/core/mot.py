@@ -239,7 +239,7 @@ def _add_new_landmarks_and_observations(
         current_landmarks.append(pt_obj)
         already_added_features.append(features_idx)
         landmarks[landmark_mapping[landmark_idx]].observations.append(obs)
-    logger.debug("Added %d observations", len(already_added_features))
+    logger.info("Added %d observations", len(already_added_features))
 
     # add new landmarks
     created_landmarks = 0
@@ -274,7 +274,7 @@ def _add_new_landmarks_and_observations(
 
     for match in bad_matches:
         stereo_matches.remove(match)
-    logger.debug("Created %d landmarks", created_landmarks)
+    logger.info("Created %d landmarks", created_landmarks)
     return landmarks, current_landmarks
 
 
@@ -459,7 +459,7 @@ def run(
         # -> SLAM optimizes motion of camera
         # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
         if len(track.poses) > 3 and track.landmarks and run_ba:
-            track_logger.debug("Running BA")
+            track_logger.info("Running BA")
             track = object_bundle_adjustment(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
@@ -561,7 +561,7 @@ def run(
             ba_slots[slot_idx].add(track_id)
             slot_sizes[slot_idx] += 1
         tracks_to_run_ba = ba_slots[img_id % config.BA_EVERY_N_STEPS]
-        LOGGER.debug("BA slots: %s", ba_slots)
+        LOGGER.info("BA slots: %s", ba_slots)
         try:
             (
                 active_object_tracks,
@@ -814,6 +814,7 @@ def _improve_association(
             match_ratio = max(track_match_ratio, feature_match_ratio)
             if match_ratio < 0.2:
                 # not similar enough
+                LOGGER.info("Not similar enough: %f", match_ratio)
                 continue
             T_world_obj = _estimate_next_pose(track)
             T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
