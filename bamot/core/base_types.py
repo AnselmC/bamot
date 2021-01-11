@@ -11,6 +11,7 @@ TrackId = int
 ImageId = int  # image number/index
 CamId = int  # either 0 (left) or 1 (right)
 TimeCamId = Tuple[ImageId, CamId]
+Location = Tuple[float, float, float]
 
 FeatureTrack = Dict[ObjectId, FeatureId]
 
@@ -57,11 +58,6 @@ class Camera(NamedTuple):
 
 
 Match = Tuple[FeatureId, FeatureId]
-
-
-@dataclass
-class MatchData:
-    matches: List[Match]
 
 
 class FeatureMatcher(NamedTuple):
@@ -115,6 +111,7 @@ class ObjectTrack:
 class StereoObjectDetection:
     left: ObjectDetection
     right: ObjectDetection
+    stereo_matches: Optional[List[Match]] = None
 
 
 @dataclass

@@ -329,9 +329,17 @@ def match_features(
     ]
 
 
-def project_landmarks(landmarks: List[Landmark]):
-    # TODO for object associations
-    pass
+def is_in_view(
+    landmarks: List[Landmark], T_cam_obj: np.ndarray, params: CameraParameters
+):
+    # constant if all landmarks in view
+    for landmark in landmarks.values():
+        pt_3d_cam = from_homogeneous(T_cam_obj @ to_homogeneous(landmark.pt_3d))
+        x, y = project(params, pt_3d_cam)
+        if x > 0 and y > 0 and x < 2 * params.cx and y < 2 * params.cy:
+            # at least one landmark is in view
+            return True
+    return False
 
 
 def triangulate(
@@ -382,6 +390,8 @@ def triangulate_stereo_match(left_feature, right_feature, stereo_cam, T_ref_cam=
         return from_homogeneous(T_ref_cam @ to_homogeneous(pt_3d_left_cam))
     else:
         return pt_3d_left_cam
+
+
 def draw_contours(mask, img, color):
     contours, _ = cv2.findContours(
         mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
