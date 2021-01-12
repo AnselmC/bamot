@@ -27,6 +27,7 @@ def object_bundle_adjustment(
     stereo_cam: StereoCamera,
     median_translation: float,
     max_iterations: int = 10,
+    full_ba: bool = False,
 ) -> ObjectTrack:
     # setup optimizer
     optimizer = g2o.SparseOptimizer()
@@ -47,7 +48,7 @@ def object_bundle_adjustment(
     else:
         trans_func = lambda x: 1
 
-    for img_id in frames[-config.SLIDING_WINDOW_BA :]:
+    for img_id in frames[-config.SLIDING_WINDOW_BA :] if not full_ba else frames:
         num_obs = get_obs_count(img_id, object_track)
         if num_obs < 5:
             # no associated landmarks, skip pose
@@ -93,12 +94,7 @@ def object_bundle_adjustment(
                 const_motion_edge.set_parameter_id(1, prev_cam[1])
                 const_motion_edge.set_parameter_id(2, img_id)
                 info = np.diag(
-                    np.hstack(
-                        [
-                            np.repeat(trans_weight, 3),
-                            np.repeat(rot_weight, 3),
-                        ]
-                    )
+                    np.hstack([np.repeat(trans_weight, 3), np.repeat(rot_weight, 3),])
                 )
                 const_motion_edge.set_information(info)
                 const_motion_edges.append(const_motion_edge)
@@ -123,11 +119,7 @@ def object_bundle_adjustment(
         point_vertex.set_id(landmark_id)
         landmark_mapping[idx] = landmark_id
         point_vertex.set_marginalized(True)
-        point_vertex.set_estimate(
-            landmark.pt_3d.reshape(
-                3,
-            )
-        )
+        point_vertex.set_estimate(landmark.pt_3d.reshape(3,))
         landmark_id += 2
         optimizer.add_vertex(point_vertex)
         num_landmarks += 1

@@ -75,7 +75,7 @@ def _set_min_max_ax(ax, gt_traj):
     )
 
 
-def _associate_gt_to_est(est_world, gt_label_data):
+def associate_gt_to_est(est_world, gt_label_data):
     mot_metrics = MOTMetrics()
     cost_matrix = np.zeros((len(est_world), len(gt_label_data)))
     gt_track_id_mapping = {}
@@ -267,11 +267,11 @@ if __name__ == "__main__":
     if not args.track_ids_match:
         print("Track ids do not match, associating tracks")
         if est_trajectories_world_offline:  # use offline if available
-            track_mapping, mot_metrics = _associate_gt_to_est(
+            track_mapping, mot_metrics = associate_gt_to_est(
                 est_trajectories_world_offline, label_data
             )
         else:
-            track_mapping, mot_metrics = _associate_gt_to_est(
+            track_mapping, mot_metrics = associate_gt_to_est(
                 est_trajectories_world_online, label_data
             )
     else:

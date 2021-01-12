@@ -143,6 +143,26 @@ def preprocess_frame(
                 color = colors[left_obj.track_id]
                 draw_contours(left_obj.mask, raw_left_image, color)
                 draw_contours(right_obj.mask, raw_right_image, color)
+                y, x = map(min, np.where(left_obj.mask != 0))
+                raw_left_image = cv2.putText(
+                    raw_left_image,
+                    str(left_obj.track_id),
+                    (x, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    color,
+                    3,
+                )
+                y, x = map(min, np.where(right_obj.mask != 0))
+                raw_right_image = cv2.putText(
+                    raw_right_image,
+                    str(left_obj.track_id),
+                    (x, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    color,
+                    3,
+                )
                 left_keypoints = [
                     cv2.KeyPoint(x=f.u, y=f.v, _size=1) for f in left_obj.features
                 ]

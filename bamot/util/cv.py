@@ -330,15 +330,21 @@ def match_features(
 
 
 def is_in_view(
-    landmarks: List[Landmark], T_cam_obj: np.ndarray, params: CameraParameters
+    landmarks: List[Landmark],
+    T_cam_obj: np.ndarray,
+    params: CameraParameters,
+    min_landmarks: int = 1,
 ):
     # constant if all landmarks in view
+    num_in_view = 0
     for landmark in landmarks.values():
         pt_3d_cam = from_homogeneous(T_cam_obj @ to_homogeneous(landmark.pt_3d))
         x, y = project(params, pt_3d_cam)
         if x > 0 and y > 0 and x < 2 * params.cx and y < 2 * params.cy:
-            # at least one landmark is in view
-            return True
+            num_in_view += 1
+            if num_in_view == min_landmarks:
+                # at least one landmark is in view
+                return True
     return False
 
 

@@ -315,6 +315,7 @@ if __name__ == "__main__":
     shared_data.join()
     LOGGER.info("No more frames - terminating processes")
     returned = returned_data.get()
+    track_id_to_class_mapping = returned["track_id_to_class_mapping"]
     point_cloud_sizes = returned["point_cloud_sizes"]
     offline_trajectories, online_trajectories = returned["trajectories"]
     (
@@ -368,6 +369,9 @@ if __name__ == "__main__":
     LOGGER.info(
         "Saved estimated object track trajectories to %s", out_path,
     )
+    track_id_to_class_mapping_path = out_path / "track_id_to_class.json"
+    with open(track_id_to_class_mapping_path, "w") as fp:
+        json.dump(track_id_to_class_mapping, fp, indent=4, sort_keys=True)
 
     if config.TRACK_POINT_CLOUD_SIZES and point_cloud_sizes:
         point_cloud_size_summary_file = out_path / "pcl.json"

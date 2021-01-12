@@ -29,6 +29,8 @@ class Config:
     BA_EVERY_N_STEPS: int
     BA_NORMALIZE_TRANS_ERROR: bool
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST: int
+    TRUST_2D: bool
+    FINAL_FULL_BA: bool = False
     TRACK_POINT_CLOUD_SIZES: bool = False
     CONFIG_FILE: Optional[str] = None
     MAD_SCALE_FACTOR: Optional[float] = None
@@ -58,6 +60,7 @@ __const_motion_weights_default = [
 __track_point_cloud_sizes_default = bool(
     os.environ.get("TRACK_POINT_CLOUD_SIZES", default=False)
 )
+__final_full_ba_default = bool(os.environ.get("FINAL_FULL_BA", default=False))
 __cluster_radius_default = float(os.environ.get("CLUSTER_RADIUS", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
 __using_mad_default = bool(os.environ.get("USING_MAD", default=False))
@@ -81,6 +84,8 @@ __max_speed_ped_default = float(
 )  # about 14 m/h
 
 __frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
+
+__trust_2d_default = bool(os.environ.get("TRUST_2D", default=True))
 
 
 if __config_file_default.exists():
@@ -122,6 +127,7 @@ CONFIG = Config(
     SLIDING_WINDOW_BA=__user_config.get(
         "sliding_window_ba", __sliding_window_ba_default
     ),
+    TRUST_2D=__user_config.get("trust_2d", __trust_2d_default),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_SPEED_CAR=__user_config.get("max_speed_car", __max_speed_car_default),
     MAX_SPEED_PED=__user_config.get("max_speed_ped", __max_speed_ped_default),
@@ -135,6 +141,7 @@ CONFIG = Config(
     TRACK_POINT_CLOUD_SIZES=__user_config.get(
         "track_point_cloud_sizes", __track_point_cloud_sizes_default
     ),
+    FINAL_FULL_BA=__user_config.get("final_full_ba", __final_full_ba_default),
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST=__user_config.get(
         "keep_track_for_n_frames_after_lost",
         __keep_track_for_n_frames_after_lost_default,
