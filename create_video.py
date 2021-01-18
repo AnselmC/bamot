@@ -12,41 +12,37 @@ def main(args):
     detections_recordings_path = recordings_path / "detections"
     detections_recordings_path.mkdir(exist_ok=True)
     detections_video_path = detections_recordings_path / (scene + ".avi")
-    if not detections_video_path.exists():  # or args.new_detections:
-        print("Creating detections video...")
-        # create detections video
-        detections_path = (
-            Path(config.EST_DETECTIONS_PATH) / ".." / "slam" / "image_02" / scene
+    print("Creating detections video...")
+    # create detections video
+    detections_path = (
+        Path(config.EST_DETECTIONS_PATH) / ".." / "slam" / "image_02" / scene
+    )
+    detection_images = detections_path / "*.png"
+    print(detection_images.as_posix())
+    if not glob.glob(detection_images.as_posix()):
+        raise RuntimeError(
+            "No processed images, run preprocessing script for detections first"
         )
-        detection_images = detections_path / "*.png"
-        print(detection_images.as_posix())
-        if not glob.glob(detection_images.as_posix()):
-            raise RuntimeError(
-                "No processed images, run preprocessing script for detections first"
-            )
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-r",
-                str(config.FRAME_RATE),
-                "-pattern_type",
-                "glob",
-                "-i",
-                detection_images.as_posix(),
-                "-vcodec",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                "-vf",
-                "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                detections_video_path.as_posix(),
-            ],
-            capture_output=False,
-            check=True,
-        )
-        print("Creating detections video...done")
-    else:
-        print("Using existing detections video...")
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-r",
+            str(config.FRAME_RATE),
+            "-pattern_type",
+            "glob",
+            "-i",
+            detection_images.as_posix(),
+            "-vcodec",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-vf",
+            "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            detections_video_path.as_posix(),
+        ],
+        capture_output=False,
+    )
+    print("Creating detections video...done")
     # create video of recordings
     recording_path_3d = Path(args.recording) / "out_3d.avi"
     print("Creating video of 3D recording...")
@@ -68,7 +64,6 @@ def main(args):
             recording_path_3d.as_posix(),
         ],
         capture_output=False,
-        check=True,
     )
     print("Creating video of 3D recording...done")
     print(f"Saved at {recording_path_3d.as_posix()}")
@@ -93,7 +88,6 @@ def main(args):
             recording_path_2d.as_posix(),
         ],
         capture_output=False,
-        check=True,
     )
     print("Creating video of 2D recording...done")
     print(f"Saved at {recording_path_2d.as_posix()}")
