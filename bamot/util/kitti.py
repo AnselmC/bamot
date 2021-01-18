@@ -66,10 +66,7 @@ def get_image_shape(kitti_path: str, scene: str) -> Tuple[int, int]:
 
 
 def get_image_stream(
-    kitti_path: Path,
-    scene: str,
-    offset: int = 0,
-    with_file_names: bool = False,
+    kitti_path: Path, scene: str, offset: int = 0, with_file_names: bool = False,
 ) -> Iterable[StereoImage]:
     class Stream:
         def __init__(self, generator, length):
@@ -288,6 +285,19 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     return StereoCamera(left_cam, right_cam, T23), T02
 
 
+def get_2d_track_line(
+    img_id: ImageId,
+    track_id: TrackId,
+    mask: np.ndarray,
+    height: int,
+    width: int,
+    obj_cls: int,
+) -> str:
+    obj_id = 2 if "ped" in obj_cls.lower() else 1
+    rle = rletools.encode(mask)
+    return f"{img_id} {track_id} {obj_id} {height} {width} {rle}"
+
+
 def get_estimated_obj_detections(
     kitti_path: Path, scene: str, side: str = "left"
 ) -> Dict[int, List[ObjectDetection]]:
@@ -354,11 +364,7 @@ def get_gt_obj_detections_from_kitti(
 
         if obj_mask.sum() <= 2:
             continue
-        obj_det = ObjectDetection(
-            mask=obj_mask,
-            track_id=track_id,
-            cls=obj_class,
-        )
+        obj_det = ObjectDetection(mask=obj_mask, track_id=track_id, cls=obj_class,)
         obj_detections.append(obj_det)
     return obj_detections
 

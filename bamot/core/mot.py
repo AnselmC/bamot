@@ -598,24 +598,35 @@ def run(
             if source_track_id is not None:
                 del track_id_mapping[source_track_id]
 
-        shared_data.put(
-            {
-                "object_tracks": copy.deepcopy(active_object_tracks),
-                "stereo_image": stereo_image,
-                "all_left_features": all_left_features,
-                "all_right_features": all_right_features,
-                "all_stereo_matches": all_stereo_matches,
+        shared_data.put({
+            "object_tracks": copy.deepcopy(active_object_tracks),
+            "stereo_image": stereo_image,
+            "all_left_features": all_left_features,
+            "all_right_features": all_right_features,
+            "all_stereo_matches": all_stereo_matches,
+            "img_id": img_id,
+            "current_cam_pose": current_pose,
+        })
+        if config.SAVE_UPDATED_2D_TRACK:
+            writer_data.put({
+                "track_ids": [track_id for track_id in active_object_tracks],
                 "img_id": img_id,
-                "current_cam_pose": current_pose,
-            }
-        )
+                "obj_classes": [obj.cls for obj in active_object_tracks.values()],
+                "masks": [obj.masks[0] for obj in active_object_tracks.values()],
+                })
     stop_flag.set()
     shared_data.put({})
+    writer_data.put({})
     all_object_tracks.update(active_object_tracks)
     if config.FINAL_FULL_BA:
-        for track_id,track in all_object_tracks.items():
+        for track_id, track in all_object_tracks.items():
             median_translation = get_median_translation(track)
-            track = object_bundle_adjustment(track, all_poses, stereo_cam, median_translation, max_iterations=20, full_ba=True)
+            track = object_bundle_adjustment(track,
+                                             all_poses,
+                                             stereo_cam,
+                                             median_translation,
+                                             max_iterations=20,
+                                             full_ba=True)
             all_object_tracks[track_id] = track
             
     returned_data.put(

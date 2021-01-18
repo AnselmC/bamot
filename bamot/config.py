@@ -30,6 +30,7 @@ class Config:
     BA_NORMALIZE_TRANS_ERROR: bool
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST: int
     TRUST_2D: bool
+    SAVE_UPDATED_2D_TRACK: bool
     FINAL_FULL_BA: bool = False
     TRACK_POINT_CLOUD_SIZES: bool = False
     CONFIG_FILE: Optional[str] = None
@@ -59,6 +60,9 @@ __const_motion_weights_default = [
 ]
 __track_point_cloud_sizes_default = bool(
     os.environ.get("TRACK_POINT_CLOUD_SIZES", default=False)
+)
+__save_updated_2d_track_default = bool(
+    os.environ.get("SAVE_UPDATED_2D_TRACK", default=False)
 )
 __final_full_ba_default = bool(os.environ.get("FINAL_FULL_BA", default=False))
 __cluster_radius_default = float(os.environ.get("CLUSTER_RADIUS", default=8))
@@ -140,6 +144,9 @@ CONFIG = Config(
     FRAME_RATE=__user_config.get("frame_rate", __frame_rate_default),
     TRACK_POINT_CLOUD_SIZES=__user_config.get(
         "track_point_cloud_sizes", __track_point_cloud_sizes_default
+    ),
+    SAVE_UPDATED_2D_TRACK=__user_config.get(
+        "save_updated_2d_track", __save_updated_2d_track_default
     ),
     FINAL_FULL_BA=__user_config.get("final_full_ba", __final_full_ba_default),
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST=__user_config.get(

@@ -23,9 +23,9 @@ from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.base_types import StereoImage
 from bamot.core.mot import run
-from bamot.util.kitti import (get_cameras_from_kitti, get_detection_stream,
-                              get_gt_poses_from_kitti, get_image_shape,
-                              get_label_data_from_kitti)
+from bamot.util.kitti import (get_2d_track_line, get_cameras_from_kitti,
+                              get_detection_stream, get_gt_poses_from_kitti,
+                              get_image_shape, get_label_data_from_kitti)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
@@ -60,6 +60,41 @@ def _fake_slam(
         slam_data.put(all_poses)
         time.sleep(20 / 1000)  # 20 ms or 50 Hz
     LOGGER.debug("Finished adding fake slam data")
+
+
+def _write_2d_detections(
+    writer_data: Union[queue.Queue, mp.Queue],
+    scene: str,
+    kitti_path: Path,
+    img_shape: Tuple[int, int],
+):
+    path = kitti_path / "improved_2d_tracking"
+    fname = path / scene + ".txt"
+    height, width = img_shape
+    fname.mkdir(exist_ok=True)
+    height, width = img_shape
+    with open(fname, "w") as fp:
+        img_data = writer_data.get(block=True)
+        writer_data.task_done()
+        if not img_data:
+            LOGGER.debug("Finished writing 2d detections")
+            return
+        img_id = img_data["img_id"]
+        LOGGER.debug("Got 2d detection data for image %d", img_id)
+        for i in range(len(img_data["track_ids"])):
+            track_id = img_data["track_ids"][i]
+            mask = img_data["masks"][i]
+            cls = img_data["object_classes"][i]
+            line = get_2d_track_line(
+                img_id=img_id,
+                track_id=track_id,
+                mask=mask,
+                scene=scene,
+                height=height,
+                width=width,
+                obj_cls=cls,
+            )
+            fp.write(line)
 
 
 def _get_image_stream(
@@ -248,6 +283,7 @@ if __name__ == "__main__":
         process_class = threading.Thread
     shared_data = queue_class()
     returned_data = queue_class()
+    writer_data = queue_class()
     slam_data = queue_class()
     stop_flag = flag_class()
     next_step = flag_class()
@@ -268,6 +304,17 @@ if __name__ == "__main__":
     slam_process = process_class(
         target=_fake_slam, args=[slam_data, gt_poses, args.offset], name="Fake SLAM"
     )
+    writer_process = process_class(
+        target=_write_2d_detections,
+        kwargs={
+            "writer_data": writer_data,
+            "scene": scene,
+            "kitti_path": kitti_path,
+            "img_shape": img_shape,
+        },
+        name="2D Detection Writer",
+    )
+
     continue_until_image_id = -1 if args.no_viewer else args.continuous + args.offset
     mot_process = process_class(
         target=run,
@@ -284,9 +331,11 @@ if __name__ == "__main__":
         },
         name="BAMOT",
     )
-    LOGGER.debug("Starting fake SLAM thread")
+    LOGGER.debug("Starting 2d detection writer")
+    writer_process.start()
+    LOGGER.debug("Starting fake SLAM")
     slam_process.start()
-    LOGGER.debug("Starting MOT thread")
+    LOGGER.debug("Starting MOT")
     mot_process.start()
     LOGGER.debug("Starting viewer")
     if args.no_viewer:
@@ -313,6 +362,7 @@ if __name__ == "__main__":
         shared_data.task_done()
         time.sleep(0.5)
     shared_data.join()
+
     LOGGER.info("No more frames - terminating processes")
     returned = returned_data.get()
     track_id_to_class_mapping = returned["track_id_to_class_mapping"]
@@ -411,4 +461,7 @@ if __name__ == "__main__":
         ).stdout.strip()
         json.dump(state, fp, indent=4)
 
+    LOGGER.debug("Joining 2d detection writer")
+    writer_process.join()
+    writer_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT MOT")
