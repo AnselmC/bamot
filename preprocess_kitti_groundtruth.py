@@ -4,6 +4,7 @@ import argparse
 import multiprocessing as mp
 import os
 import pickle
+from collections import defaultdict
 from pathlib import Path
 
 import cv2
@@ -59,7 +60,7 @@ def _process_scene(scene):
             kitti_path, scene, "left"
         )
 
-    colors = {}
+    colors = defaultdict(lambda: get_color(normalized=False, as_tuple=True))
     for idx, (stereo_image, filenames) in tqdm.tqdm(
         enumerate(image_stream),
         total=len(image_stream),
@@ -74,28 +75,13 @@ def _process_scene(scene):
             )
         else:
             left_object_detections = all_left_object_detections.get(idx, [])
-        if not args.no_view:
-            if args.use_right_tracks:
-                for obj in right_object_detections:
-                    if colors.get(obj.track_id) is None:
-                        colors[obj.track_id] = get_color(
-                            normalized=False, as_tuple=True
-                        )
-            else:
-                for obj in left_object_detections:
-                    if colors.get(obj.track_id) is None:
-                        colors[obj.track_id] = get_color(
-                            normalized=False, as_tuple=True
-                        )
         masked_stereo_image_slam, stereo_object_detections = preprocess_frame(
             stereo_image,
-            stereo_cam,
-            use_right_tracks=args.use_right_tracks,
-            use_unmatched=args.use_unmatched,
             left_object_detections=left_object_detections,
             right_object_detections=right_object_detections,
-            colors=colors,
             only_iou=args.only_iou,
+            use_unmatched=args.use_unmatched,
+            colors=colors,
         )
         left_mot_mask = masked_stereo_image_slam.left == 0
         right_mot_mask = masked_stereo_image_slam.right == 0
