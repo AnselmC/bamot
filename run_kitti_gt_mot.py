@@ -268,7 +268,7 @@ if __name__ == "__main__":
     slam_process = process_class(
         target=_fake_slam, args=[slam_data, gt_poses, args.offset], name="Fake SLAM"
     )
-    continue_until_image_id = -1 if args.no_viewer else args.continuous
+    continue_until_image_id = -1 if args.no_viewer else args.continuous + args.offset
     mot_process = process_class(
         target=run,
         kwargs={
