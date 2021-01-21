@@ -29,7 +29,7 @@ class Config:
     BA_EVERY_N_STEPS: int
     BA_NORMALIZE_TRANS_ERROR: bool
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST: int
-    TRUST_2D: bool
+    TRUST_2D: str
     SAVE_UPDATED_2D_TRACK: bool
     FINAL_FULL_BA: bool = False
     TRACK_POINT_CLOUD_SIZES: bool = False
@@ -89,7 +89,7 @@ __max_speed_ped_default = float(
 
 __frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
 
-__trust_2d_default = bool(os.environ.get("TRUST_2D", default=True))
+__trust_2d_default = str(os.environ.get("TRUST_2D", default="yes"))
 
 
 if __config_file_default.exists():
