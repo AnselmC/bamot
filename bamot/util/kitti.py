@@ -294,7 +294,7 @@ def get_2d_track_line(
     obj_cls: int,
 ) -> str:
     obj_id = 2 if "ped" in obj_cls.lower() else 1
-    rle = rletools.encode(mask)
+    rle = rletools.encode(mask)["counts"]
     return f"{img_id} {track_id} {obj_id} {height} {width} {rle}"
 
 

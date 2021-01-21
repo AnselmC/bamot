@@ -69,9 +69,9 @@ def _write_2d_detections(
     img_shape: Tuple[int, int],
 ):
     path = kitti_path / "improved_2d_tracking"
-    fname = path / scene + ".txt"
+    fname = path / (scene + ".txt")
     height, width = img_shape
-    fname.mkdir(exist_ok=True)
+    path.mkdir(exist_ok=True)
     height, width = img_shape
     with open(fname, "w") as fp:
         img_data = writer_data.get(block=True)
@@ -89,7 +89,6 @@ def _write_2d_detections(
                 img_id=img_id,
                 track_id=track_id,
                 mask=mask,
-                scene=scene,
                 height=height,
                 width=width,
                 obj_cls=cls,
@@ -310,7 +309,7 @@ if __name__ == "__main__":
             "writer_data": writer_data,
             "scene": scene,
             "kitti_path": kitti_path,
-            "img_shape": img_shape,
+            "img_shape": img_shape[:2],
         },
         name="2D Detection Writer",
     )
@@ -327,6 +326,7 @@ if __name__ == "__main__":
             "stop_flag": stop_flag,
             "next_step": next_step,
             "returned_data": returned_data,
+            "writer_data": writer_data,
             "continuous_until_img_id": continue_until_image_id,
         },
         name="BAMOT",
