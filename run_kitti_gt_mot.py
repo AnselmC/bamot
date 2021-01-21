@@ -467,5 +467,9 @@ if __name__ == "__main__":
 
     LOGGER.debug("Joining 2d detection writer")
     writer_process.join()
+    while not writer_data.empty():
+        writer_data.get()
+        writer_data.task_done()
+        time.sleep(0.5)
     writer_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT MOT")
