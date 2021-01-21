@@ -77,26 +77,27 @@ def _write_2d_detections(
     path.mkdir(exist_ok=True)
     height, width = img_shape
     with open(fname, "w") as fp:
-        img_data = writer_data.get(block=True)
-        writer_data.task_done()
-        if not img_data:
-            LOGGER.info("Finished writing 2d detections")
-            return
-        img_id = img_data["img_id"]
-        LOGGER.info("Got 2d detection data for image %d", img_id)
-        for i in range(len(img_data["track_ids"])):
-            track_id = img_data["track_ids"][i]
-            mask = img_data["masks"][i]
-            cls = img_data["object_classes"][i]
-            line = get_2d_track_line(
-                img_id=img_id,
-                track_id=track_id,
-                mask=mask,
-                height=height,
-                width=width,
-                obj_cls=cls,
-            )
-            fp.write(line + "\n")
+        while True:
+            img_data = writer_data.get(block=True)
+            writer_data.task_done()
+            if not img_data:
+                LOGGER.info("Finished writing 2d detections")
+                break
+            img_id = img_data["img_id"]
+            LOGGER.info("Got 2d detection data for image %d", img_id)
+            for i in range(len(img_data["track_ids"])):
+                track_id = img_data["track_ids"][i]
+                mask = img_data["masks"][i]
+                cls = img_data["object_classes"][i]
+                line = get_2d_track_line(
+                    img_id=img_id,
+                    track_id=track_id,
+                    mask=mask,
+                    height=height,
+                    width=width,
+                    obj_cls=cls,
+                )
+                fp.write(line + "\n")
 
 
 def _get_image_stream(

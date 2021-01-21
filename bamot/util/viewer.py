@@ -544,7 +544,7 @@ def run(
     view_control.set_constant_z_near(-10)
     opts = vis.get_render_option()
     opts.background_color = np.array([0.0, 0.0, 0.0,])
-    opts.point_size = 1.0
+    opts.point_size = 2.0
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
     all_track_geometries: Dict[int, TrackGeometries] = {}
