@@ -3,7 +3,7 @@ import queue
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import cv2
 import g2o

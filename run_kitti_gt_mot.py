@@ -67,8 +67,11 @@ def _write_2d_detections(
     scene: str,
     kitti_path: Path,
     img_shape: Tuple[int, int],
+    tags: List[str],
 ):
     path = kitti_path / "improved_2d_tracking"
+    for tag in tags:
+        path /= tag
     fname = path / (scene + ".txt")
     height, width = img_shape
     path.mkdir(exist_ok=True)
@@ -77,10 +80,10 @@ def _write_2d_detections(
         img_data = writer_data.get(block=True)
         writer_data.task_done()
         if not img_data:
-            LOGGER.debug("Finished writing 2d detections")
+            LOGGER.info("Finished writing 2d detections")
             return
         img_id = img_data["img_id"]
-        LOGGER.debug("Got 2d detection data for image %d", img_id)
+        LOGGER.info("Got 2d detection data for image %d", img_id)
         for i in range(len(img_data["track_ids"])):
             track_id = img_data["track_ids"][i]
             mask = img_data["masks"][i]
@@ -93,7 +96,7 @@ def _write_2d_detections(
                 width=width,
                 obj_cls=cls,
             )
-            fp.write(line)
+            fp.write(line + "\n")
 
 
 def _get_image_stream(
@@ -310,6 +313,7 @@ if __name__ == "__main__":
             "scene": scene,
             "kitti_path": kitti_path,
             "img_shape": img_shape[:2],
+            "tags": args.tags,
         },
         name="2D Detection Writer",
     )
