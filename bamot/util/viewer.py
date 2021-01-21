@@ -6,16 +6,19 @@ from threading import Event
 from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import cv2
+import g2o
 import numpy as np
 import open3d as o3d
-from bamot.core.base_types import (Feature, Match, ObjectTrack, StereoImage,
-                                   TrackId)
+from bamot.core.base_types import Feature, ObjectTrack, StereoImage, TrackId
+from bamot.core.mot import get_direction_vector
 from bamot.util.cv import (draw_contours, from_homogeneous,
                            get_corners_from_vector, to_homogeneous)
 from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
+CAR_DIMS = (1.5, 1.7, 4.5)  # HxWxL
+PED_DIMS = (1.7, 0.4, 0.25)
 
 
 @dataclass
@@ -24,7 +27,8 @@ class Colors:
     WHITE: np.ndarray = (1.0, 1.0, 1.0)
 
 
-class TrackGeometries(NamedTuple):
+@dataclass
+class TrackGeometries:
     pt_cloud: o3d.geometry.PointCloud
     offline_trajectory: o3d.geometry.LineSet
     online_trajectory: o3d.geometry.LineSet
@@ -183,6 +187,7 @@ def _update_track_visualization(
     show_offline_trajs,
     current_img_id,
     cached_colors,
+    current_cam_pose,
 ):
     # display current track estimates
     inactive_tracks = []
@@ -223,27 +228,59 @@ def _update_track_visualization(
                         points.append(pt_world)
                 if len(points) < 3:
                     continue
-                tmp_pt_cloud = o3d.geometry.PointCloud()
-                tmp_pt_cloud.points = o3d.utility.Vector3dVector(points)
                 try:
-                    bbox = tmp_pt_cloud.get_oriented_bounding_box()
-                    track_geometries.bbox.points = bbox.get_box_points()
-                    track_geometries.bbox.lines = o3d.utility.Vector2iVector(
-                        [
-                            [0, 1],
-                            [0, 2],
-                            [0, 3],
-                            [1, 6],
-                            [1, 7],
-                            [2, 5],
-                            [2, 7],
-                            [3, 5],
-                            [3, 6],
-                            [4, 5],
-                            [4, 6],
-                            [4, 7],
-                        ]
-                    )
+                    if True and len(track.poses) > 1:  # use_dummy_oobb:
+                        # points are in world coordinates
+                        dir_vector_world = get_direction_vector(track, 10).reshape(3, 1)
+                        dir_vector_cam = (
+                            g2o.Isometry3d(current_cam_pose).inverse().R.reshape(3, 3)
+                            @ dir_vector_world
+                        )
+                        # take plane-axes (x, z)
+                        dir_vector = dir_vector_cam[[0, 2]]
+                        # normalize
+                        dir_vector = dir_vector / np.linalg.norm(dir_vector)
+
+                        # compute angle between x axis and dir vector
+                        angle = np.arccos(
+                            np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1))
+                        )
+                        # cw rotation (z is positive) is considered negative angle
+                        if dir_vector[1] > 0:
+                            angle = -angle
+                        dimensions = CAR_DIMS if track.cls == "car" else PED_DIMS
+                        location = from_homogeneous(
+                            np.linalg.inv(current_cam_pose)
+                            @ to_homogeneous(np.mean(np.array(points), axis=0))
+                        )
+                        location[1] += dimensions[0] / 2
+                        bbox, lines = _compute_bounding_box(
+                            location, angle, dimensions, current_cam_pose
+                        )
+                        track_geometries.bbox.points = bbox
+                        track_geometries.bbox.lines = lines
+
+                    else:
+                        tmp_pt_cloud = o3d.geometry.PointCloud()
+                        tmp_pt_cloud.points = o3d.utility.Vector3dVector(points)
+                        bbox = tmp_pt_cloud.get_oriented_bounding_box()
+                        track_geometries.bbox.points = bbox.get_box_points()
+                        track_geometries.bbox.lines = o3d.utility.Vector2iVector(
+                            [
+                                [0, 1],
+                                [0, 2],
+                                [0, 3],
+                                [1, 6],
+                                [1, 7],
+                                [2, 5],
+                                [2, 7],
+                                [3, 5],
+                                [3, 6],
+                                [4, 5],
+                                [4, 6],
+                                [4, 7],
+                            ]
+                        )
                 except RuntimeError:
                     # happens when points are too close to each other
                     pass
@@ -430,6 +467,7 @@ def _update_geometries(
         show_offline_trajs=show_offline_trajs,
         current_img_id=current_img_id,
         cached_colors=cached_colors,
+        current_cam_pose=gt_poses[current_img_id],
     )
 
     # display ego camera and trajectory
@@ -506,6 +544,7 @@ def run(
     view_control.set_constant_z_near(-10)
     opts = vis.get_render_option()
     opts.background_color = np.array([0.0, 0.0, 0.0,])
+    opts.point_size = 1.0
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
     all_track_geometries: Dict[int, TrackGeometries] = {}
@@ -597,7 +636,16 @@ def run(
 
 
 def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam: np.ndarray):
-    vec = np.array([*row.cam_pos, row.rot_angle, *row.dim_3d]).reshape(7, 1)
+    return _compute_bounding_box(
+        location=row.cam_pos,
+        rot_angle=row.rot_angle,
+        dimensions=row.dim_3d,
+        T_world_cam=T_world_cam,
+    )
+
+
+def _compute_bounding_box(location, rot_angle, dimensions, T_world_cam):
+    vec = np.array([*location, rot_angle, *dimensions]).reshape(7, 1)
     corners_cam = get_corners_from_vector(vec)
     corners_world = from_homogeneous(T_world_cam @ to_homogeneous(corners_cam))
 
