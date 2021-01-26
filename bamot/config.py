@@ -8,6 +8,10 @@ import yaml
 from bamot import MODULE_PATH
 
 
+class ConfigError(Exception):
+    pass
+
+
 @dataclass
 class Config:
     USING_CONFIG_FILE: bool
@@ -166,6 +170,9 @@ CONFIG = Config(
     CAR_DIMS=__user_config.get("car_dims", __car_dims_default),
     PED_DIMS=__user_config.get("ped_dims", __car_dims_default),
 )
+
+if CONFIG.MIN_LANDMARKS_CAR < 1 or CONFIG.MIN_LANDMARKS_PED < 1:
+    raise ConfigError("Min. landmarks must be at least 1")
 
 if CONFIG.USING_CONFIG_FILE:
     CONFIG.CONFIG_FILE = __config_file_default.as_posix()
