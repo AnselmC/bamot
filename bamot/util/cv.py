@@ -398,8 +398,8 @@ def triangulate_stereo_match(left_feature, right_feature, stereo_cam, T_ref_cam=
         return pt_3d_left_cam
 
 
-def draw_contours(mask, img, color):
+def draw_contours(mask, img, color, thickness=1):
     contours, _ = cv2.findContours(
         mask.astype(np.uint8), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
     )
-    cv2.drawContours(img, contours, -1, color, 3)
+    cv2.drawContours(img, contours, -1, color, thickness)

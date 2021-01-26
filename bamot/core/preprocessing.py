@@ -57,11 +57,8 @@ def transform_unmatched_to_other_mask(
     for unmatched_idx in unmatched:
         obj = detections[unmatched_idx]
         obj_mask = obj.mask
-        hull_pts = np.array(get_convex_hull_from_mask(obj_mask))
-        other_obj_mask = get_convex_hull_mask(np.flip(hull_pts), img_shape)
         other_obj_mask = dilate_mask(
-            other_obj_mask,
-            num_pixels=min(10, max(1, 1000 // int(other_obj_mask.sum()))),
+            obj_mask, num_pixels=min(10, max(1, 1000 // int(obj_mask.sum()))),
         )
         features = feature_matcher.detect_features(other_img, other_obj_mask)
         other_obj_mask[other_mask == 0] = 0

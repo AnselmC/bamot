@@ -23,9 +23,11 @@ from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.base_types import StereoImage
 from bamot.core.mot import run
-from bamot.util.kitti import (get_2d_track_line, get_cameras_from_kitti,
-                              get_detection_stream, get_gt_poses_from_kitti,
-                              get_image_shape, get_label_data_from_kitti)
+from bamot.util.cv import from_homogeneous, to_homogeneous
+from bamot.util.kitti import (get_2d_track_line, get_3d_track_line,
+                              get_cameras_from_kitti, get_detection_stream,
+                              get_gt_poses_from_kitti, get_image_shape,
+                              get_label_data_from_kitti)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
@@ -62,8 +64,60 @@ def _fake_slam(
     LOGGER.debug("Finished adding fake slam data")
 
 
+def _write_3d_detections(
+    writer_data_3d: Union[queue.Queue, mp.Queue],
+    scene: str,
+    kitti_path: Path,
+    tags: List[str],
+):
+    path = kitti_path / "3d_tracking"
+    for tag in tags:
+        path /= tag
+    path.mkdir(parents=True, exist_ok=True)
+    fname = path / (scene + ".txt")
+    with open(fname, "w") as fp:
+        while True:
+            track_data = writer_data_3d.get(block=True)
+            writer_data_3d.task_done()
+            if not track_data:
+                LOGGER.info("Finished writing 3d detections")
+                break
+            img_id = track_data["img_id"]
+            T_world_cam = track_data["T_world_cam"]
+            for i, track_id in enumerate(track_data["track_ids"]):
+                obj_type = track_data["object_classes"][i].lower()
+                dims = config.PED_DIMS if obj_type == "pedestrian" else config.CAR_DIMS
+                location = track_data["locations"][i]
+                rot_angle = track_data["rot_angles"][i]
+                mask = track_data["masks"][i]
+                y_top_left, x_top_left = map(min, np.where(mask != 0))
+                y_bottom_right, x_bottom_right = map(max, np.where(mask != 0))
+                bbox2d = [x_top_left, y_top_left, x_bottom_right, y_bottom_right]
+                # beta is angle between z and location dir vector
+                loc_cam = from_homogeneous(
+                    np.linalg.inv(T_world_cam) @ to_homogeneous(location)
+                )
+                dir_vec = loc_cam[[0, 2]].reshape(2, 1)
+                dir_vec /= np.linalg.norm(dir_vec)
+                beta = np.arccos(np.dot(dir_vec.T, np.array([0, 1]).reshape(2, 1)))
+                if dir_vec[0] < 0:
+                    beta = -beta
+                alpha = rot_angle - beta
+                line = get_3d_track_line(
+                    img_id=img_id,
+                    track_id=track_id,
+                    obj_type=obj_type,
+                    dims=dims,
+                    loc=loc_cam.flatten().tolist(),
+                    rot=rot_angle,
+                    bbox_2d=bbox2d,
+                    alpha=alpha.flatten()[0],
+                )
+                fp.write(line + "\n")
+
+
 def _write_2d_detections(
-    writer_data: Union[queue.Queue, mp.Queue],
+    writer_data_2d: Union[queue.Queue, mp.Queue],
     scene: str,
     kitti_path: Path,
     img_shape: Tuple[int, int],
@@ -74,12 +128,12 @@ def _write_2d_detections(
         path /= tag
     fname = path / (scene + ".txt")
     height, width = img_shape
-    path.mkdir(exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True)
     height, width = img_shape
     with open(fname, "w") as fp:
         while True:
-            img_data = writer_data.get(block=True)
-            writer_data.task_done()
+            img_data = writer_data_2d.get(block=True)
+            writer_data_2d.task_done()
             if not img_data:
                 LOGGER.info("Finished writing 2d detections")
                 break
@@ -286,7 +340,8 @@ if __name__ == "__main__":
         process_class = threading.Thread
     shared_data = queue_class()
     returned_data = queue_class()
-    writer_data = queue_class()
+    writer_data_2d = queue_class()
+    writer_data_3d = queue_class()
     slam_data = queue_class()
     stop_flag = flag_class()
     next_step = flag_class()
@@ -307,16 +362,26 @@ if __name__ == "__main__":
     slam_process = process_class(
         target=_fake_slam, args=[slam_data, gt_poses, args.offset], name="Fake SLAM"
     )
-    writer_process = process_class(
+    write_2d_process = process_class(
         target=_write_2d_detections,
         kwargs={
-            "writer_data": writer_data,
+            "writer_data_2d": writer_data_2d,
             "scene": scene,
             "kitti_path": kitti_path,
             "img_shape": img_shape[:2],
             "tags": args.tags,
         },
         name="2D Detection Writer",
+    )
+    write_3d_process = process_class(
+        target=_write_3d_detections,
+        kwargs={
+            "writer_data_3d": writer_data_3d,
+            "scene": scene,
+            "kitti_path": kitti_path,
+            "tags": args.tags,
+        },
+        name="3D Detection Writer",
     )
 
     continue_until_image_id = -1 if args.no_viewer else args.continuous + args.offset
@@ -331,13 +396,18 @@ if __name__ == "__main__":
             "stop_flag": stop_flag,
             "next_step": next_step,
             "returned_data": returned_data,
-            "writer_data": writer_data,
+            "writer_data_2d": writer_data_2d,
+            "writer_data_3d": writer_data_3d,
             "continuous_until_img_id": continue_until_image_id,
         },
         name="BAMOT",
     )
-    LOGGER.debug("Starting 2d detection writer")
-    writer_process.start()
+    if config.SAVE_UPDATED_2D_TRACK:
+        LOGGER.debug("Starting 2d detection writer")
+        write_2d_process.start()
+    if config.SAVE_3D_TRACK:
+        LOGGER.debug("Starting 3d detection writer")
+        write_3d_process.start()
     LOGGER.debug("Starting fake SLAM")
     slam_process.start()
     LOGGER.debug("Starting MOT")
@@ -466,11 +536,20 @@ if __name__ == "__main__":
         ).stdout.strip()
         json.dump(state, fp, indent=4)
 
-    LOGGER.debug("Joining 2d detection writer")
-    writer_process.join()
-    while not writer_data.empty():
-        writer_data.get()
-        writer_data.task_done()
+    if config.SAVE_UPDATED_2D_TRACK:
+        LOGGER.debug("Joining 2d detection writer")
+        write_2d_process.join()
+    if config.SAVE_3D_TRACK:
+        LOGGER.debug("Joining 3d detection writer")
+        write_3d_process.join()
+    while not writer_data_2d.empty():
+        writer_data_2d.get()
+        writer_data_2d.task_done()
         time.sleep(0.5)
-    writer_data.join()
+    writer_data_2d.join()
+    while not writer_data_3d.empty():
+        writer_data_3d.get()
+        writer_data_3d.task_done()
+        time.sleep(0.5)
+    writer_data_3d.join()
     LOGGER.info("FINISHED RUNNING KITTI GT MOT")

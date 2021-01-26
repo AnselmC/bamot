@@ -284,6 +284,22 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     return StereoCamera(left_cam, right_cam, T23), T02
 
 
+def get_3d_track_line(
+    img_id: ImageId,
+    track_id: TrackId,
+    rot: float,
+    alpha: float,
+    obj_type: str,
+    dims: Tuple[float, float, float],
+    loc: Tuple[float, float, float],
+    bbox_2d: Tuple[float, float, float, float],
+) -> str:
+    truncation = "invalid"
+    occlusion = "invalid"
+    score = 1
+    return f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {alpha} {' '.join(map(str, bbox_2d))} {' '.join(map(str, dims))} {' '.join(map(str, loc))} {rot} {score}"
+
+
 def get_2d_track_line(
     img_id: ImageId,
     track_id: TrackId,

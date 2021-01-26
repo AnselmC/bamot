@@ -376,7 +376,8 @@ def run(
     stereo_cam: StereoCamera,
     slam_data: queue.Queue,
     shared_data: queue.Queue,
-    writer_data: queue.Queue,
+    writer_data_2d: queue.Queue,
+    writer_data_3d: queue.Queue,
     returned_data: queue.Queue,
     stop_flag: Event,
     next_step: Event,
@@ -652,7 +653,7 @@ def run(
                     if track.masks is not None
                 }
             )
-            writer_data.put(
+            writer_data_2d.put(
                 {
                     "track_ids": [track_id for track_id in track_copy],
                     "img_id": img_id,
@@ -660,9 +661,23 @@ def run(
                     "masks": [obj.masks[0] for obj in track_copy.values()],
                 }
             )
+        if config.SAVE_3D_TRACK:
+            track_copy = copy.deepcopy(active_object_tracks)
+            writer_data_3d.put(
+                {
+                    "T_world_cam": current_pose,
+                    "track_ids": [track_id for track_id in track_copy],
+                    "img_id": img_id,
+                    "object_classes": [obj.cls for obj in track_copy.values()],
+                    "masks": [obj.masks[0] for obj in track_copy.values()],
+                    "locations": [obj.locations[img_id] for obj in track_copy.values()],
+                    "rot_angles": [obj.rot_angle[img_id] for obj in track_copy.values()],
+                }
+            )
     stop_flag.set()
     shared_data.put({})
-    writer_data.put({})
+    writer_data_2d.put({})
+    writer_data_3d.put({})
     all_object_tracks.update(active_object_tracks)
     if config.FINAL_FULL_BA:
         for track_id, track in all_object_tracks.items():
