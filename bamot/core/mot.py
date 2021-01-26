@@ -669,7 +669,6 @@ def run(
                     if track.masks is not None
                 }
             )
-            writer_data_2d.put(
             writer_data_3d.put(
                 {
                     "T_world_cam": current_pose,
