@@ -83,12 +83,13 @@ def _write_3d_detections(
                 LOGGER.info("Finished writing 3d detections")
                 break
             img_id = track_data["img_id"]
+            LOGGER.info("Got 3d detection data for image %d", img_id)
             T_world_cam = track_data["T_world_cam"]
             for i, track_id in enumerate(track_data["track_ids"]):
                 obj_type = track_data["object_classes"][i].lower()
                 dims = config.PED_DIMS if obj_type == "pedestrian" else config.CAR_DIMS
                 location = track_data["locations"][i]
-                rot_angle = track_data["rot_angles"][i]
+                rot_angle = np.array(track_data["rot_angles"][i])
                 mask = track_data["masks"][i]
                 y_top_left, x_top_left = map(min, np.where(mask != 0))
                 y_bottom_right, x_bottom_right = map(max, np.where(mask != 0))
@@ -100,6 +101,8 @@ def _write_3d_detections(
                 dir_vec = loc_cam[[0, 2]].reshape(2, 1)
                 dir_vec /= np.linalg.norm(dir_vec)
                 beta = np.arccos(np.dot(dir_vec.T, np.array([0, 1]).reshape(2, 1)))
+                if not np.isfinite(beta):
+                    beta = np.array([0])
                 if dir_vec[0] < 0:
                     beta = -beta
                 alpha = rot_angle - beta
@@ -109,7 +112,7 @@ def _write_3d_detections(
                     obj_type=obj_type,
                     dims=dims,
                     loc=loc_cam.flatten().tolist(),
-                    rot=rot_angle,
+                    rot=rot_angle.flatten()[0],
                     bbox_2d=bbox2d,
                     alpha=alpha.flatten()[0],
                 )
@@ -406,7 +409,7 @@ if __name__ == "__main__":
         LOGGER.debug("Starting 2d detection writer")
         write_2d_process.start()
     if config.SAVE_3D_TRACK:
-        LOGGER.debug("Starting 3d detection writer")
+        LOGGER.info("Starting 3d detection writer")
         write_3d_process.start()
     LOGGER.debug("Starting fake SLAM")
     slam_process.start()

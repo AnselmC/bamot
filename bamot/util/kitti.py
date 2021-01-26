@@ -297,7 +297,11 @@ def get_3d_track_line(
     truncation = "invalid"
     occlusion = "invalid"
     score = 1
-    return f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {alpha} {' '.join(map(str, bbox_2d))} {' '.join(map(str, dims))} {' '.join(map(str, loc))} {rot} {score}"
+    return (
+        f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {alpha} "
+        f"{' '.join(map(str, bbox_2d))} {' '.join(map(str, dims))} {' '.join(map(str, loc))} "
+        f"{rot} {score}"
+    )
 
 
 def get_2d_track_line(

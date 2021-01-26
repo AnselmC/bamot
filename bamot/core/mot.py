@@ -650,7 +650,7 @@ def run(
                 {
                     track_id: track
                     for track_id, track in active_object_tracks.items()
-                    if track.masks is not None
+                    if track.masks is not None and track.landmarks
                 }
             )
             writer_data_2d.put(
@@ -666,7 +666,7 @@ def run(
                 {
                     track_id: track
                     for track_id, track in active_object_tracks.items()
-                    if track.masks is not None
+                    if track.masks is not None and track.landmarks
                 }
             )
             writer_data_3d.put(
