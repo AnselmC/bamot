@@ -662,7 +662,14 @@ def run(
                 }
             )
         if config.SAVE_3D_TRACK:
-            track_copy = copy.deepcopy(active_object_tracks)
+            track_copy = copy.deepcopy(
+                {
+                    track_id: track
+                    for track_id, track in active_object_tracks.items()
+                    if track.masks is not None
+                }
+            )
+            writer_data_2d.put(
             writer_data_3d.put(
                 {
                     "T_world_cam": current_pose,
