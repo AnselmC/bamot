@@ -6,11 +6,10 @@ from threading import Event
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import cv2
-import g2o
 import numpy as np
 import open3d as o3d
+from bamot.config import CONFIG as config
 from bamot.core.base_types import Feature, ObjectTrack, StereoImage, TrackId
-from bamot.core.mot import get_direction_vector
 from bamot.util.cv import (draw_contours, from_homogeneous,
                            get_corners_from_vector, to_homogeneous)
 from bamot.util.kitti import LabelData, LabelDataRow
@@ -229,33 +228,23 @@ def _update_track_visualization(
                 if len(points) < 3:
                     continue
                 try:
-                    if True and len(track.poses) > 1:  # use_dummy_oobb:
-                        # points are in world coordinates
-                        dir_vector_world = get_direction_vector(track, 10).reshape(3, 1)
-                        dir_vector_cam = (
-                            g2o.Isometry3d(current_cam_pose).inverse().R.reshape(3, 3)
-                            @ dir_vector_world
+                    if (
+                        len(track.poses) > 1
+                        and track.rot_angle.get(current_img_id) is not None
+                    ):
+                        dimensions = (
+                            config.CAR_DIMS if track.cls == "car" else config.PED_DIMS
                         )
-                        # take plane-axes (x, z)
-                        dir_vector = dir_vector_cam[[0, 2]]
-                        # normalize
-                        dir_vector = dir_vector / np.linalg.norm(dir_vector)
-
-                        # compute angle between x axis and dir vector
-                        angle = np.arccos(
-                            np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1))
-                        )
-                        # cw rotation (z is positive) is considered negative angle
-                        if dir_vector[1] > 0:
-                            angle = -angle
-                        dimensions = CAR_DIMS if track.cls == "car" else PED_DIMS
                         location = from_homogeneous(
                             np.linalg.inv(current_cam_pose)
                             @ to_homogeneous(np.mean(np.array(points), axis=0))
                         )
                         location[1] += dimensions[0] / 2
                         bbox, lines = _compute_bounding_box(
-                            location, angle, dimensions, current_cam_pose
+                            location,
+                            track.rot_angle[current_img_id],
+                            dimensions,
+                            current_cam_pose,
                         )
                         track_geometries.bbox.points = bbox
                         track_geometries.bbox.lines = lines

@@ -45,6 +45,26 @@ from scipy.optimize import linear_sum_assignment
 
 LOGGER = logging.getLogger("CORE:MOT")
 
+def get_rotation_of_track(track: ObjectTrack, T_world_cam: np.ndarray) -> float:
+    if len(track.poses) < 2:
+        return 0
+    dir_vector_world = get_direction_vector(track, config.SLIDING_WINDOW_DIR_VEC).reshape(3, 1)
+    dir_vector_cam = (
+        g2o.Isometry3d(T_world_cam).inverse().R.reshape(3, 3)
+        @ dir_vector_world
+        )
+    # take plane-axes (x, z)
+    dir_vector = dir_vector_cam[[0, 2]]
+    # normalize
+    dir_vector = dir_vector / np.linalg.norm(dir_vector)
+    # compute angle between x axis and dir vector
+    angle = np.arccos(
+        np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1))
+    )
+    # cw rotation (z is positive) is considered negative angle
+    if dir_vector[1] > 0:
+        angle = -angle
+    return angle
 
 def _get_track_logger(track_id: str):
 
@@ -64,6 +84,7 @@ def _add_constant_motion_to_track(
         track.locations[img_id] = from_homogeneous(
             track.poses[img_id] @ to_homogeneous(track.pcl_centers[img_id])
         )
+        track.rot_angle[img_id] = get_rotation_of_track(track, T_world_cam)
         T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
         # track behind camera/ego
         pcl_center_cam = from_homogeneous(
@@ -533,6 +554,7 @@ def run(
                 track.poses[img_id]
                 @ to_homogeneous(get_center_of_landmarks(track.landmarks.values()))
             )
+            track.rot_angle[img_id] = get_rotation_of_track(track, T_world_cam)
             # track behind camera/ego
             pcl_center_cam = from_homogeneous(
                 T_cam_obj @ to_homogeneous(track.pcl_centers[img_id])

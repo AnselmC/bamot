@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -21,6 +21,7 @@ class Config:
     NUM_FEATURES: str
     SLIDING_WINDOW_BA: int
     SLIDING_WINDOW_DESCRIPTORS: int
+    SLIDING_WINDOW_DIR_VEC: int
     FRAME_RATE: int
     MAX_SPEED_CAR: float
     MAX_SPEED_PED: float
@@ -31,6 +32,8 @@ class Config:
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST: int
     TRUST_2D: str
     SAVE_UPDATED_2D_TRACK: bool
+    CAR_DIMS: Tuple[float, float, float]  # HxWxL
+    PED_DIMS: Tuple[float, float, float]
     FINAL_FULL_BA: bool = False
     TRACK_POINT_CLOUD_SIZES: bool = False
     CONFIG_FILE: Optional[str] = None
@@ -71,6 +74,7 @@ __using_mad_default = bool(os.environ.get("USING_MAD", default=False))
 __using_const_motion_default = bool(os.environ.get("USING_CONST_MOTION", default=True))
 __kitti_scene_default = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba_default = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
+__sliding_window_dir_default = int(os.environ.get("SLIDING_WINDOW_DIR_VEC", default=10))
 __ba_every_n_steps_default = int(os.environ.get("BA_EVERY_N_STEPS", default=1))
 __ba_normalize_trans_error = bool(
     os.environ.get("BA_NORMALIZE_TRANS_ERROR", default=False)
@@ -90,6 +94,9 @@ __max_speed_ped_default = float(
 __frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
 
 __trust_2d_default = str(os.environ.get("TRUST_2D", default="yes"))
+
+__car_dims_default = (1.5, 1.7, 4.5)
+__ped_dims_default = (1.5, 1.7, 4.5)
 
 
 if __config_file_default.exists():
@@ -131,6 +138,9 @@ CONFIG = Config(
     SLIDING_WINDOW_BA=__user_config.get(
         "sliding_window_ba", __sliding_window_ba_default
     ),
+    SLIDING_WINDOW_DIR_VEC=__user_config.get(
+        "sliding_window_dir_vec", __sliding_window_dir_default
+    ),
     TRUST_2D=__user_config.get("trust_2d", __trust_2d_default),
     SLIDING_WINDOW_DESCRIPTORS=__user_config.get("sliding_window_desc", 10),
     MAX_SPEED_CAR=__user_config.get("max_speed_car", __max_speed_car_default),
@@ -153,6 +163,8 @@ CONFIG = Config(
         "keep_track_for_n_frames_after_lost",
         __keep_track_for_n_frames_after_lost_default,
     ),
+    CAR_DIMS=__user_config.get("car_dims", __car_dims_default),
+    PED_DIMS=__user_config.get("ped_dims", __car_dims_default),
 )
 
 if CONFIG.USING_CONFIG_FILE:
