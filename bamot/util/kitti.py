@@ -126,6 +126,7 @@ def get_label_data_from_kitti(
             truncation_level = int(cols[3])
             occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
+            obs_angle = float(cols[5])
             bbox = list(map(float, cols[6:10]))  # in left image coordinates
             dim_3d = list(map(float, cols[10:13]))  # in camera coordinates
             location_cam2 = np.array(list(map(float, cols[13:16]))).reshape(
@@ -133,6 +134,13 @@ def get_label_data_from_kitti(
             )  # in camera coordinates
             rot_angle = float(cols[16])  # in camera coordinates
             T_w_cam2 = poses[frame]
+            gt_beta = rot_angle - obs_angle
+
+            dir_vec = location_cam2[[0, 2]].reshape(2, 1)
+            dir_vec /= np.linalg.norm(dir_vec)
+            beta = np.arccos(np.dot(dir_vec.T, np.array([0, 1]).reshape(2, 1)))
+            if dir_vec[0] < 0:
+                beta = -beta
             location_world = from_homogeneous(T_w_cam2 @ to_homogeneous(location_cam2))
             if indexed_by_image_id:
                 if not label_data.get(frame):
@@ -294,8 +302,8 @@ def get_3d_track_line(
     loc: Tuple[float, float, float],
     bbox_2d: Tuple[float, float, float, float],
 ) -> str:
-    truncation = "invalid"
-    occlusion = "invalid"
+    truncation = 0
+    occlusion = 0
     score = 1
     return (
         f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {alpha} "

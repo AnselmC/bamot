@@ -5,6 +5,7 @@ import multiprocessing as mp
 import os
 import pickle
 from collections import defaultdict
+from functools import wraps
 from pathlib import Path
 
 import cv2
@@ -22,6 +23,19 @@ from bamot.util.misc import get_color
 from bamot.util.viewer import get_screen_size
 
 
+def except_all(func):
+    @wraps(func)
+    def wrapper(scene):
+        try:
+            return func(scene)
+        except Exception as e:
+            print("scene: ", scene)
+            print(e)
+
+    return wrapper
+
+
+@except_all
 def _process_scene(scene):
     scene = str(scene).zfill(4)
     kitti_path = Path(config.KITTI_PATH)

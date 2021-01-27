@@ -89,6 +89,8 @@ def _write_3d_detections(
                 obj_type = track_data["object_classes"][i].lower()
                 dims = config.PED_DIMS if obj_type == "pedestrian" else config.CAR_DIMS
                 location = track_data["locations"][i]
+                if location is None:
+                    continue
                 rot_angle = np.array(track_data["rot_angles"][i])
                 mask = track_data["masks"][i]
                 y_top_left, x_top_left = map(min, np.where(mask != 0))
@@ -101,11 +103,12 @@ def _write_3d_detections(
                 dir_vec = loc_cam[[0, 2]].reshape(2, 1)
                 dir_vec /= np.linalg.norm(dir_vec)
                 beta = np.arccos(np.dot(dir_vec.T, np.array([0, 1]).reshape(2, 1)))
-                if not np.isfinite(beta):
-                    beta = np.array([0])
                 if dir_vec[0] < 0:
                     beta = -beta
+                if not np.isfinite(rot_angle):
+                    rot_angle = np.array([0])
                 alpha = rot_angle - beta
+
                 line = get_3d_track_line(
                     img_id=img_id,
                     track_id=track_id,

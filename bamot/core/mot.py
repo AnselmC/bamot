@@ -61,8 +61,7 @@ def get_rotation_of_track(track: ObjectTrack, T_world_cam: np.ndarray) -> float:
     angle = np.arccos(
         np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1))
     )
-    # cw rotation (z is positive) is considered negative angle
-    if dir_vector[1] > 0:
+    if dir_vector[1] < 0:
         angle = -angle
     return angle
 
@@ -676,8 +675,8 @@ def run(
                     "img_id": img_id,
                     "object_classes": [obj.cls for obj in track_copy.values()],
                     "masks": [obj.masks[0] for obj in track_copy.values()],
-                    "locations": [obj.locations[img_id] for obj in track_copy.values()],
-                    "rot_angles": [obj.rot_angle[img_id] for obj in track_copy.values()],
+                    "locations": [obj.locations.get(img_id) for obj in track_copy.values()],
+                    "rot_angles": [obj.rot_angle.get(img_id) for obj in track_copy.values()],
                 }
             )
     stop_flag.set()
