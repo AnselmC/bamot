@@ -858,15 +858,6 @@ def _improve_association_trust_3d(
                 continue
             features, lm_mapping = _get_features_from_landmarks(track.landmarks)
             track_matches = feature_matcher.match_features(left_features, features)
-            track_match_ratio = len(track_matches) / len(features) if features else 0
-            feature_match_ratio = (
-                len(track_matches) / len(left_features) if left_features else 0
-            )
-            match_ratio = max(track_match_ratio, feature_match_ratio)
-            if match_ratio < 0.1:
-                # not similar enough
-                LOGGER.info("Not similar enough: %f", match_ratio)
-                continue
             T_world_obj = _estimate_next_pose(track)
             T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
             if not is_in_view(
@@ -889,10 +880,9 @@ def _improve_association_trust_3d(
             )
             LOGGER.info("Pnp successfull: %s", pnp_success)
             LOGGER.info("Inlier ratio: %f", inlier_ratio)
-            LOGGER.info("Match ratio: %f", match_ratio)
+            # check whether pnp pose estimate is valid
             num_inliers = inlier_ratio * len(track_matches)
             if pnp_success:
-                #score = 0.5 * inlier_ratio + match_ratio
                 score = num_inliers / min(len(features), len(track.landmarks))
                 cost_matrix[i][j] = score
                 pnp_poses[track_id] = T_cam_obj_pnp.copy()
