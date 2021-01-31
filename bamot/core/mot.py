@@ -61,7 +61,7 @@ def get_rotation_of_track(track: ObjectTrack, T_world_cam: np.ndarray) -> float:
     angle = np.arccos(
         np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1))
     )
-    if dir_vector[1] < 0:
+    if dir_vector[1] > 0:
         angle = -angle
     return angle
 
@@ -762,7 +762,7 @@ def _get_center_of_stereo_pointcloud(
     track_id: TrackId,
     stereo_cam: StereoCamera,
     T_world_cam: np.ndarray,
-    reduction: str = "mean",
+    reduction: str = "median",
 ):
     feature_matcher = get_feature_matcher()
     left_features, right_features = _extract_features(
@@ -890,8 +890,10 @@ def _improve_association_trust_3d(
             LOGGER.info("Pnp successfull: %s", pnp_success)
             LOGGER.info("Inlier ratio: %f", inlier_ratio)
             LOGGER.info("Match ratio: %f", match_ratio)
+            num_inliers = inlier_ratio * len(track_matches)
             if pnp_success:
-                score = 0.5 * inlier_ratio + match_ratio
+                #score = 0.5 * inlier_ratio + match_ratio
+                score = num_inliers / min(len(features), len(track.landmarks))
                 cost_matrix[i][j] = score
                 pnp_poses[track_id] = T_cam_obj_pnp.copy()
 
@@ -950,6 +952,7 @@ def _improve_association_trust_3d(
                 detections[detection_id].left.track_id,
             )
             if track.cls != detections[detection_id].left.cls:
+
                 LOGGER.debug("Wrong class!")
                 # wrong class
                 continue
