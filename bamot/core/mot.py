@@ -843,19 +843,6 @@ def _improve_association_trust_3d(
             if median is None:
                 LOGGER.info("No stereo matches!")
                 continue
-            last_img_id = list(track.locations)[-1]
-            prev_location = track.locations[last_img_id]
-            dist = np.linalg.norm(median - prev_location)
-            max_dist = _get_max_dist(
-                obj_cls=track.cls,
-                badly_tracked_frames=track.badly_tracked_frames,
-                dist_from_cam=track.dist_from_cam,
-            )
-            LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
-            if not np.isfinite(dist) or dist > max_dist:
-                # invalid distance
-                LOGGER.info("Invalid distance!")
-                continue
             features, lm_mapping = _get_features_from_landmarks(track.landmarks)
             track_matches = feature_matcher.match_features(left_features, features)
             T_world_obj = _estimate_next_pose(track)
@@ -882,7 +869,14 @@ def _improve_association_trust_3d(
             LOGGER.info("Inlier ratio: %f", inlier_ratio)
             # check whether pnp pose estimate is valid
             num_inliers = inlier_ratio * len(track_matches)
-            if pnp_success:
+            last_img_id = list(track.poses)[-1]
+            T_world_obj_prev = track.poses[last_img_id]
+            T_world_obj_pnp = T_world_cam @ T_cam_obj_pnp
+            T_rel = np.linalg.inv(T_world_obj_prev) @ T_world_obj_pnp
+            if pnp_success and _is_valid_motion(T_rel,
+                                                obj_cls=track.cls,
+                                                badly_tracked_frames=track.badly_tracked_frames,
+                                                dist_from_cam=track.dist_from_cam):
                 score = num_inliers / min(len(features), len(track.landmarks))
                 cost_matrix[i][j] = score
                 pnp_poses[track_id] = T_cam_obj_pnp.copy()
