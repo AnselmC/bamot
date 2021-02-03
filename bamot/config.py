@@ -40,6 +40,7 @@ class Config:
     CAR_DIMS: Tuple[float, float, float]  # HxWxL
     PED_DIMS: Tuple[float, float, float]
     FINAL_FULL_BA: bool = False
+    MAX_MAX_DIST_MULTIPLIER: int = 5
     TRACK_POINT_CLOUD_SIZES: bool = False
     CONFIG_FILE: Optional[str] = None
     MAD_SCALE_FACTOR: Optional[float] = None

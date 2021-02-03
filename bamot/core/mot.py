@@ -141,19 +141,20 @@ def get_median_translation(object_track):
     return np.median(translations)
 
 
-def _get_max_dist(obj_cls, badly_tracked_frames, dist_from_cam=None):
+def _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
-    dist_factor = 1 if dist_from_cam is None else max(1, dist_from_cam / 15)
+    cam_baseline = cam.T_left_right[0, 3]
+    dist_factor = 1 if dist_from_cam is None else max(1, dist_from_cam ** 2 / (20 * cam_baseline))
     LOGGER.info("Dist factor: %f", dist_factor)
     LOGGER.info("Badly tracked frames: %d", badly_tracked_frames)
-    return min(5, (badly_tracked_frames / 3 + 1) * dist_factor) * (
+    return min(config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor) * (
         max_speed / config.FRAME_RATE
     )
 
 
-def _is_valid_motion(Tr_rel, obj_cls, badly_tracked_frames, dist_from_cam=None):
+def _is_valid_motion(Tr_rel, obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
     curr_translation = np.linalg.norm(Tr_rel[:3, 3])
-    max_dist = _get_max_dist(obj_cls, badly_tracked_frames, dist_from_cam)
+    max_dist = _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam)
     LOGGER.info("Current translation: %.2f", float(curr_translation))
     LOGGER.info("Max. allowed translation: %.2f", max_dist)
     return curr_translation < max_dist
@@ -450,6 +451,7 @@ def run(
                         T_rel,
                         track.cls,
                         track.badly_tracked_frames,
+                        cam=stereo_cam,
                         dist_from_cam=track.dist_from_cam,
                     )
                     LOGGER.debug("Median translation: %.2f", median_translation)
@@ -843,8 +845,6 @@ def _improve_association_trust_3d(
             if median is None:
                 LOGGER.info("No stereo matches!")
                 continue
-            features, lm_mapping = _get_features_from_landmarks(track.landmarks)
-            track_matches = feature_matcher.match_features(left_features, features)
             T_world_obj = _estimate_next_pose(track)
             T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
             if not is_in_view(
@@ -857,6 +857,8 @@ def _improve_association_trust_3d(
                 tracks_not_in_view.add(track_id)
                 tracks_not_in_view.add(track_id_mapping.get(track_id, track_id))
                 continue
+            features, lm_mapping = _get_features_from_landmarks(track.landmarks)
+            track_matches = feature_matcher.match_features(left_features, features)
             T_cam_obj_pnp, pnp_success, inlier_ratio = _localize_object(
                 left_features,
                 track_matches,
@@ -876,6 +878,7 @@ def _improve_association_trust_3d(
             if pnp_success and _is_valid_motion(T_rel,
                                                 obj_cls=track.cls,
                                                 badly_tracked_frames=track.badly_tracked_frames,
+                                                cam=stereo_cam,
                                                 dist_from_cam=track.dist_from_cam):
                 score = num_inliers / min(len(features), len(track.landmarks))
                 cost_matrix[i][j] = score
@@ -952,6 +955,7 @@ def _improve_association_trust_3d(
                 obj_cls=track.cls,
                 badly_tracked_frames=track.badly_tracked_frames,
                 dist_from_cam=track.dist_from_cam,
+                cam=stereo_cam
             )
             LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
             if not np.isfinite(dist) or dist > max_dist:
@@ -1047,6 +1051,7 @@ def _improve_association_trust_3d(
                         obj_cls=track.cls,
                         badly_tracked_frames=track.badly_tracked_frames,
                         dist_from_cam=track.dist_from_cam,
+                        cam=stereo_cam
                     )
                     LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
                     valid_motion = np.isfinite(dist) and dist < max_dist
@@ -1158,6 +1163,7 @@ def _improve_association_trust_2d(
             T_rel,
             obj_cls=track.cls,
             badly_tracked_frames=track.badly_tracked_frames,
+                cam=stereo_cam,
             dist_from_cam=track.dist_from_cam,
         ):
             # association makes sense in 3D --> add to matches
@@ -1203,6 +1209,7 @@ def _improve_association_trust_2d(
                 obj_cls=track.cls,
                 badly_tracked_frames=track.badly_tracked_frames,
                 dist_from_cam=track.dist_from_cam,
+                cam=stereo_cam
             )
             LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
             if not np.isfinite(dist) or dist > max_dist:
