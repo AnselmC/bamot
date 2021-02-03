@@ -851,7 +851,7 @@ def _improve_association_trust_3d(
                 track.landmarks,
                 T_cam_obj,
                 stereo_cam.left,
-                int(0.2 * len(track.landmarks)),
+                min_landmarks=1 #int(0.2 * len(track.landmarks)),
             ):
                 LOGGER.info("Track %d not in view, can't match", track_id)
                 tracks_not_in_view.add(track_id)
