@@ -811,10 +811,6 @@ def _improve_association_trust_3d(
     all_track_ids,
     track_id_mapping,
 ):
-    # do 3d association:
-    # for each detection, compute features/pointcloud
-    # if valid motion: do pnp with existing tracks
-    # hungarian
     cost_matrix = np.zeros((len(detections), len(tracks)))
     feature_matcher = get_feature_matcher()
     pnp_poses = {}
@@ -822,6 +818,7 @@ def _improve_association_trust_3d(
     tracks_not_in_view = set()
     medians = {}
     LOGGER.info("%d detection(s) in image %d", len(detections), img_id)
+    # first, do pnp-based matching
     for i, detection in enumerate(detections):
         for j, (track_id, track) in enumerate(tracks.items()):
             LOGGER.info(
@@ -910,10 +907,6 @@ def _improve_association_trust_3d(
             matched_tracks.add(track_id)
             matched_detections.add(detection_id)
 
-    # with remaining detections:
-    # for detections w/ new track id: create new track
-    # for detections w/ known track id: if track id already matched, create new track
-    # else: ignore detection
     unmatched_detections = set(range(len(detections))).difference(matched_detections)
     unmatched_tracks = set(tracks).difference(matched_tracks)
     LOGGER.info("%d valid track match(es) in total", len(matched_tracks))
@@ -927,7 +920,91 @@ def _improve_association_trust_3d(
         len(unmatched_tracks),
         unmatched_tracks,
     )
-    # TODO: associate remaining only via 3D?
+    # then do corroborated 2d matching
+    if config.TRUST_2D != "no":
+        LOGGER.debug("Corroborating unmatched associations from tracker")
+        for detection_id in unmatched_detections:
+            detection = detections[detection_id]
+            detection_track_id = detections[detection_id].left.track_id
+            if detection_track_id in track_id_mapping:
+                track_id = track_id_mapping[detection_track_id]
+            else:
+                track_id = detection_track_id
+
+            LOGGER.debug("Checking detection %d w/ track id %d", detection_id, track_id)
+            
+            if track_id in matched_tracks:
+                # already matched --> disregard 2d tracker
+                LOGGER.debug("Track already matched")
+                continue
+
+            if track_id in tracks_not_in_view:
+                LOGGER.debug("Track not in view, matching makes no sense")
+                continue
+
+            if track_id not in all_track_ids.union(matched_tracks):
+                # track id is new --> create new track
+                LOGGER.debug("Track is new!")
+                matched_detections.add(detection_id)
+                matches.append(
+                    TrackMatch(track_id=track_id, detection_id=detection_id))
+
+            elif track_id not in tracks:
+                # track id wasn't matched yet & its not new & its not in the current tracks --> old track
+                # create new track with new id & update track mapping
+                LOGGER.debug("Track is old, creating new track")
+                track_id_mapping[track_id] = uuid.uuid1().int
+                track_id = track_id_mapping[track_id]
+                matched_detections.add(detection_id)
+                matches.append(
+                    TrackMatch(track_id=track_id, detection_id=detection_id))
+            else:
+                # track isn't new or old & wasn't matched yet --> check whether distance is valid
+                median = medians[detection_id]
+                if median is None:
+                # if check can't happen, trust 2d
+                    LOGGER.debug("No stereo matches, trusting tracker")
+                    matched_detections.add(detection_id)
+                    matches.append(
+                        TrackMatch(track_id=track_id,
+                                    detection_id=detection_id))
+                    continue
+
+                    
+                last_img_id = list(track.locations)[-1]
+                prev_location = track.locations[last_img_id]
+                dist = np.linalg.norm(median - prev_location)
+                max_dist = _get_max_dist(
+                    obj_cls=track.cls,
+                    badly_tracked_frames=track.badly_tracked_frames,
+                    dist_from_cam=track.dist_from_cam,
+                    cam=stereo_cam
+                )
+                LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
+                valid_motion = np.isfinite(dist) and dist < max_dist
+                if valid_motion:
+                    LOGGER.debug("2D association makes sense in 3D")
+                    matches.append(
+                        TrackMatch(track_id=track_id,
+                                    detection_id=detection_id))
+                    matched_detections.add(detection_id)
+                    matched_tracks.add(track_id)
+                else:
+                    LOGGER.debug(
+                        "2D association does not make sense in 3D")
+        unmatched_detections = set(range(len(detections))).difference(matched_detections)
+        unmatched_tracks = set(tracks).difference(matched_tracks)
+        LOGGER.info(
+            "%d unmatched track(s) after 2D association: %s ",
+            len(unmatched_tracks),
+            unmatched_tracks,
+        )
+        LOGGER.info(
+            "%d unmatched detections(s) after 2D association: %s ",
+            len(unmatched_detections),
+            unmatched_detections,
+        )
+            
     LOGGER.info("Associating using only 3D info")
     cost_matrix = np.zeros((len(detections), len(unmatched_tracks)))
     for detection_id in unmatched_detections:
@@ -938,16 +1015,20 @@ def _improve_association_trust_3d(
                 detection_id,
                 detections[detection_id].left.track_id,
             )
-            if track.cls != detections[detection_id].left.cls:
-
-                LOGGER.debug("Wrong class!")
-                # wrong class
+            if track_id in tracks_not_in_view:
+                LOGGER.debug("Track not in view, matching makes no sense")
                 continue
+
+            if track.cls != detections[detection_id].left.cls:
+                LOGGER.debug("Wrong class!")
+                continue
+
             track = tracks[track_id]
             median = medians[detection_id]
             if median is None:
-                LOGGER.info("No median!")
+                LOGGER.debug("No median!")
                 continue
+
             last_img_id = list(track.locations)[-1]
             prev_location = track.locations[last_img_id]
             dist = np.linalg.norm(median - prev_location)
@@ -963,6 +1044,7 @@ def _improve_association_trust_3d(
                 LOGGER.info("Invalid distance!")
                 continue
             cost_matrix[detection_id][j] = 1 / dist
+
     first_indices, second_indices = linear_sum_assignment(cost_matrix, maximize=True)
     for row_idx, col_idx in zip(first_indices, second_indices):
         detection_id = row_idx
@@ -999,10 +1081,8 @@ def _improve_association_trust_3d(
         unmatched_tracks,
     )
 
-    LOGGER.info("Checking remaining unmatched detections")
-
-    # create new tracks from remaining detections
     if config.TRUST_2D == "no":
+        # create new tracks from remaining detections
         track_id = max(all_track_ids, default=0) + 1
         for detection_id in unmatched_detections:
             track_id += 1
@@ -1011,93 +1091,6 @@ def _improve_association_trust_3d(
             matched_detections.add(detection_id)
             matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
 
-    else:
-        for detection_id in unmatched_detections:
-            detection = detections[detection_id]
-            detection_track_id = detections[detection_id].left.track_id
-            if not unmatched_tracks:
-                # all tracks were matched, detection constitutes new track
-                track_id = (detection_track_id if detection_track_id
-                            not in all_track_ids.union(matched_tracks) else
-                            uuid.uuid1().int)
-                if track_id != detection_track_id:
-                    track_id_mapping[detection_track_id] = track_id
-                LOGGER.info("Creating new track with id %d", track_id)
-                matched_detections.add(detection_id)
-                matches.append(
-                    TrackMatch(track_id=track_id, detection_id=detection_id))
-            else:
-                # unmatched tracks left over
-                if detection_track_id in unmatched_tracks or track_id_mapping.get(
-                        detection_track_id) in unmatched_tracks:
-                    # tracker says that tracks match --> check whether this makes sense in 3D
-                    if detection_track_id in unmatched_tracks:
-                        track_id = detection_track_id
-                    else:
-                        track_id = track_id_mapping[detection_track_id]
-                    track = tracks[track_id]
-                    if track.cls != detections[detection_id].left.cls:
-                        LOGGER.debug("Wrong class!")
-                        # wrong class
-                        continue
-                    median = medians[detection_id]
-                    if median is None:
-                        LOGGER.info("No stereo matches for track %d", track_id)
-                        continue
-                    last_img_id = list(track.locations)[-1]
-                    prev_location = track.locations[last_img_id]
-                    dist = np.linalg.norm(median - prev_location)
-                    max_dist = _get_max_dist(
-                        obj_cls=track.cls,
-                        badly_tracked_frames=track.badly_tracked_frames,
-                        dist_from_cam=track.dist_from_cam,
-                        cam=stereo_cam
-                    )
-                    LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
-                    valid_motion = np.isfinite(dist) and dist < max_dist
-                    if valid_motion and track_id not in tracks_not_in_view:
-                        LOGGER.info("2D association for %d makes sense in 3D",
-                                    track_id)
-                        matches.append(
-                            TrackMatch(track_id=track_id,
-                                        detection_id=detection_id))
-                        matched_detections.add(detection_id)
-                        matched_tracks.add(track_id)
-                    else:
-                        LOGGER.info(
-                            "2D association for %d does not make sense in 3D",
-                            track_id)
-                        track_id = uuid.uuid1().int
-                        matched_detections.add(detection_id)
-                        matches.append(
-                            TrackMatch(track_id=track_id,
-                                        detection_id=detection_id))
-                else:
-                    # tracker initializes new track
-                    # add new track
-                    if detection_track_id in all_track_ids or track_id_mapping.get(
-                            detection_track_id) in all_track_ids:
-                        track_id = uuid.uuid1().int
-                    else:
-                        track_id = detection_track_id
-                    LOGGER.info("Track is new, creating new track with id %d",
-                                track_id)
-                    matched_detections.add(detection_id)
-                    matches.append(
-                        TrackMatch(track_id=track_id, detection_id=detection_id))
-
-    unmatched_detections = set(range(len(detections))).difference(matched_detections)
-    unmatched_tracks = set(tracks).difference(matched_tracks)
-    LOGGER.info(
-        "%d unmatched track(s) after 2D association: %s ",
-        len(unmatched_tracks),
-        unmatched_tracks,
-    )
-    LOGGER.info(
-        "%d unmatched detections(s) after 2D association: %s ",
-        len(unmatched_detections),
-        unmatched_detections,
-    )
     return matches, unmatched_tracks, pnp_poses
 
 
