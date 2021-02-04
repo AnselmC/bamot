@@ -174,8 +174,8 @@ def _localize_object(
     pts_3d = []
     pts_2d = []
 
-    if len(track_matches) < 5:
-        logger.debug("Too few matches (%d) for PnP (minimum 5)", len(track_matches))
+    if len(track_matches) < 4:
+        logger.debug("Too few matches (%d) for PnP (minimum 4)", len(track_matches))
         return T_cam_obj, False, 0
     logger.debug(
         "Localizing object based on %d point correspondences", len(track_matches)
