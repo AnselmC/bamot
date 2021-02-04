@@ -144,7 +144,7 @@ def get_median_translation(object_track):
 def _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
     cam_baseline = cam.T_left_right[0, 3]
-    dist_factor = 1 if dist_from_cam is None else max(1, dist_from_cam ** 2 / (20 * cam_baseline))
+    dist_factor = 1 if dist_from_cam is None else max(1, dist_from_cam / (20 * cam_baseline))
     LOGGER.info("Dist factor: %f", dist_factor)
     LOGGER.info("Badly tracked frames: %d", badly_tracked_frames)
     return min(config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor) * (
