@@ -283,9 +283,7 @@ def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
     right_bx = P_rect_right[0, 3] / -right_fx
     left_cam = CameraParameters(fx=left_fx, fy=left_fy, cx=left_cx, cy=left_cy)
     right_cam = CameraParameters(fx=right_fx, fy=right_fy, cx=right_cx, cy=right_cy)
-    R_rect_23 = np.linalg.inv(R_rect_02) @ R_rect_03
     T23 = np.identity(4)
-    # T23[:3, :3] = R_rect_23
     T23[0, 3] = right_bx - left_bx
     T02 = np.identity(4)
     T02[0, 3] = left_bx
@@ -305,9 +303,12 @@ def get_3d_track_line(
     truncation = 0
     occlusion = 0
     score = 1
+    to_rounded_string = lambda x: str(round(x, 4))
     return (
         f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {alpha} "
-        f"{' '.join(map(str, bbox_2d))} {' '.join(map(str, dims))} {' '.join(map(str, loc))} "
+        f"{' '.join(map(to_rounded_string, bbox_2d))} "
+        f"{' '.join(map(to_rounded_string, dims))} "
+        f"{' '.join(map(to_rounded_string, loc))} "
         f"{rot} {score}"
     )
 
