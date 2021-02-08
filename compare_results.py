@@ -1,4 +1,6 @@
 import argparse
+import json
+from collections import defaultdict
 from pathlib import Path
 from pprint import pprint
 
@@ -50,6 +52,18 @@ MAIN_METRICS = {
     },
 }
 
+MOTS_METRICS = {
+    "false_positives": {"reverse": False},
+    "true_positives": {"reverse": True},
+    "false_negatives": {"reverse": False},
+    "mostly_tracked": {"reverse": True},
+    "mostly_lost": {"reverse": False},
+    "partly_tracked": {"reverse": True},
+    "precision": {"reverse": True},
+    "recall": {"reverse": True},
+    "f1": {"reverse": True},
+}
+
 
 def _get_nested(d, keys):
     for key in keys:
@@ -57,23 +71,22 @@ def _get_nested(d, keys):
     return d
 
 
-def _get_n_best(reports, keys, n, reverse=False):
-    flattened = {
-        fname: _get_nested(summary, keys) for fname, summary in reports.items()
-    }
-    sorted_flattened = sorted(flattened.items(), key=lambda x: x[1], reverse=reverse)[
-        :n
-    ]
+def _flatten_reports(reports, keys):
+    return {fname: _get_nested(summary, keys) for fname, summary in reports.items()}
+
+
+def _get_n_best(d, n, reverse=False):
+    sorted_d = sorted(d.items(), key=lambda x: x[1], reverse=reverse)[:n]
     index = 0
     current_val = -1
     order = []
-    for t in sorted_flattened:
+    for t in sorted_d:
         if t[1] != current_val:
             current_val = t[1]
             index += 1
         order.append(index)
 
-    best = [(i, (k, v)) for i, (k, v) in zip(order, sorted_flattened)]
+    best = [(i, (k, v)) for i, (k, v) in zip(order, sorted_d)]
     return best
 
 
@@ -90,14 +103,23 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     reports = {}
+    mots = {}
     for r in args.results:
-        fname = Path(r) / "full_eval" / "report.yaml"
-        if not fname.exists():
-            print(f"{fname} does not exist...")
+        report_fname = Path(r) / "full_eval" / "report.yaml"
+        if not report_fname.exists():
+            print(f"{report_fname} does not exist...")
             continue
-        with open(fname.as_posix(), "r") as fp:
+        with open(report_fname, "r") as fp:
             rep = yaml.load(fp, Loader=yaml.FullLoader)
         reports[r.split("/")[-1]] = rep["summary"]
+
+        mots_fname = Path(r) / "full_eval" / "mot_metrics.json"
+        if not mots_fname.exists():
+            print(f"{mots_fname} does not exist...")
+            continue
+        with open(mots_fname, "r") as fp:
+            m = json.load(fp)
+        mots[r.split("/")[-1]] = m
 
     if len(reports) < 2:
         print("Need at least two directories/files to compare")
@@ -106,8 +128,11 @@ if __name__ == "__main__":
     n = args.n
     overall_best = {}
 
+    print("*" * 60)
+    print("CUSTOM 3D EVALUATION")
+
     for metric_name, info in MAIN_METRICS.items():
-        print("*" * 30)
+        print("=" * 30)
         print(f"Metric: {metric_name.replace('-', ' ').capitalize()}")
         reverse_order = info.pop("reverse")
         for obj_type, keys in info.items():
@@ -115,7 +140,9 @@ if __name__ == "__main__":
                 overall_best[obj_type] = {}
             print("-" * 30)
             print(obj_type.capitalize())
-            best = _get_n_best(reports, keys, n, reverse=reverse_order)
+            best = _get_n_best(
+                _flatten_reports(reports, keys), n, reverse=reverse_order
+            )
             for place, (name, _) in best:
                 if overall_best[obj_type].get(name) is None:
                     overall_best[obj_type][name] = []
@@ -127,5 +154,26 @@ if __name__ == "__main__":
         for name, scores in d.items():
             names_mean.append((name, np.mean(scores)))
         overall_best[obj_type] = sorted(names_mean, key=lambda x: x[1])
+    print("OVERALL BEST")
+    pprint(overall_best)
+    print("*" * 60)
+    print("CUSTOM MOTS EVALUATION")
+    scores = defaultdict(list)
+    for metric_name, info in MOTS_METRICS.items():
+        print(f"Metric: {metric_name.replace('-', ' ').capitalize()}")
+        print("=" * 30)
+        print(f"Metric: {metric_name.replace('-', ' ').capitalize()}")
+        reverse_order = info.pop("reverse")
+        best = _get_n_best(
+            {name: d[metric_name] for name, d in mots.items()}, n, reverse=reverse_order
+        )
+        print(f"{n} best:")
+        pprint(best, indent=4)
+        for place, (name, _) in best:
+            scores[name].append(place)
+    overall_best = {}
+    for name, scores in scores.items():
+        overall_best[name] = np.mean(scores)
+    overall_best = sorted(overall_best.items(), key=lambda x: x[1])
     print("OVERALL BEST")
     pprint(overall_best)
