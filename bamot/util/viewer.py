@@ -22,8 +22,8 @@ PED_DIMS = (1.7, 0.4, 0.25)
 
 @dataclass
 class Colors:
-    BLACK: np.ndarray = (0.0, 0.0, 0.0)
-    WHITE: np.ndarray = (1.0, 1.0, 1.0)
+    BLACK: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    WHITE: Tuple[float, float, float] = (1.0, 1.0, 1.0)
 
 
 @dataclass
@@ -247,6 +247,12 @@ def _update_track_visualization(
                             np.linalg.inv(current_cam_pose)
                             @ to_homogeneous(np.mean(np.array(points), axis=0))
                         )
+                        location = from_homogeneous(
+                            np.linalg.inv(current_cam_pose)
+                            @ to_homogeneous(track.locations[current_img_id])
+                        )
+                        # kitti locations are given as bottom of bounding box
+                        # positive y direction is downward, hence add half of the dimensions
                         location[1] += dimensions[0] / 2
                         bbox, lines = _compute_bounding_box(
                             location,
@@ -327,10 +333,10 @@ def _update_track_visualization(
             track_geometries.bbox.paint_uniform_color(color)
         else:
             LOGGER.debug("Track is inactive")
-            track_geometries.pt_cloud.paint_uniform_color([0.0, 0.0, 0.0])
-            track_geometries.offline_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
-            track_geometries.online_trajectory.paint_uniform_color([0.0, 0.0, 0.0])
-            track_geometries.bbox.paint_uniform_color([0.0, 0.0, 0.0])
+            track_geometries.pt_cloud.paint_uniform_color(Colors.BLACK)
+            track_geometries.offline_trajectory.paint_uniform_color(Colors.BLACK)
+            track_geometries.online_trajectory.paint_uniform_color(Colors.BLACK)
+            track_geometries.bbox.paint_uniform_color(Colors.BLACK)
         if all_track_geometries.get(ido) is None:
             visualizer.add_geometry(track_geometries.pt_cloud)
             visualizer.add_geometry(track_geometries.bbox)
@@ -411,7 +417,7 @@ def _update_ego_visualization(gt_poses, visualizer, ego_geometries, current_img_
     if len(ego_path_lines) > 0:
         ego_geometries.trajectory.points = o3d.utility.Vector3dVector(ego_pts)
         ego_geometries.trajectory.lines = o3d.utility.Vector2iVector(ego_path_lines)
-        ego_geometries.trajectory.paint_uniform_color(np.array([1.0, 1.0, 1.0]))
+        ego_geometries.trajectory.paint_uniform_color(Colors.WHITE)
         if ego_geometries.curr_img < current_img_id:
             ego_geometries.curr_img = current_img_id
             if current_img_id > 0:
@@ -419,7 +425,7 @@ def _update_ego_visualization(gt_poses, visualizer, ego_geometries, current_img_
                     np.linalg.inv(gt_poses[current_img_id - 1])
                 )
             ego_geometries.curr_pose.transform(gt_poses[current_img_id])
-            ego_geometries.curr_pose.paint_uniform_color(np.array([1.0, 1.0, 1.0]))
+            ego_geometries.curr_pose.paint_uniform_color(np.array(Colors.WHITE))
             visualizer.update_geometry(ego_geometries.trajectory)
             visualizer.update_geometry(ego_geometries.curr_pose)
 
@@ -540,7 +546,7 @@ def run(
     view_control.set_constant_z_far(150)
     view_control.set_constant_z_near(-10)
     opts = vis.get_render_option()
-    opts.background_color = np.array([0.0, 0.0, 0.0,])
+    opts.background_color = np.array(Colors.BLACK)
     opts.point_size = 2.0
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
@@ -676,7 +682,7 @@ def visualize_pointcloud_and_obb(
     vis = o3d.visualization.Visualizer()
     vis.create_window("MOT", top=0, left=1440)
     opts = vis.get_render_option()
-    opts.background_color = np.array([0.0, 0.0, 0.0,])
+    opts.background_color = np.array(Colors.BLACK)
     pcl = o3d.geometry.PointCloud()
     pcl.points = o3d.utility.Vector3dVector(pointcloud.T)
     vis.add_geometry(pcl)

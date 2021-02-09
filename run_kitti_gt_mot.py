@@ -75,8 +75,11 @@ def _write_3d_detections(
         path /= tag
     path.mkdir(parents=True, exist_ok=True)
     fname = path / (scene + ".txt")
-    with open(fname, "w") as fp:
-        while True:
+    # overwrite file if exists
+    if fname.exists():
+        fname.unlink()
+    while True:
+        with open(fname, "a") as fp:
             track_data = writer_data_3d.get(block=True)
             writer_data_3d.task_done()
             if not track_data:
@@ -100,6 +103,9 @@ def _write_3d_detections(
                 loc_cam = from_homogeneous(
                     np.linalg.inv(T_world_cam) @ to_homogeneous(location)
                 )
+                # kitti locations are given as bottom of bounding box
+                # positive y direction is downward, hence add half of the dimensions
+                loc_cam[1] += dims[0] / 2
                 dir_vec = loc_cam[[0, 2]].reshape(2, 1)
                 dir_vec /= np.linalg.norm(dir_vec)
                 beta = np.arccos(np.dot(dir_vec.T, np.array([0, 1]).reshape(2, 1)))

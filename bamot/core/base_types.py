@@ -92,7 +92,7 @@ class ObjectTrack:
     masks: Tuple[np.ndarray, np.ndarray]
     landmarks: Dict[int, Landmark] = field(
         default_factory=dict
-    )  # need to be referenced in constant time by id
+    )  # need to be referenced in constant time by id, w.r.t. obj
     poses: Dict[ImageId, np.ndarray] = field(
         default_factory=dict
     )  # changing poses over time w.r.t. world

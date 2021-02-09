@@ -305,11 +305,11 @@ def get_3d_track_line(
     score = 1
     to_rounded_string = lambda x: str(round(x, 4))
     return (
-        f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {alpha} "
+        f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {to_rounded_string(alpha)} "
         f"{' '.join(map(to_rounded_string, bbox_2d))} "
         f"{' '.join(map(to_rounded_string, dims))} "
         f"{' '.join(map(to_rounded_string, loc))} "
-        f"{rot} {score}"
+        f"{to_rounded_string(rot)} {score}"
     )
 
 
