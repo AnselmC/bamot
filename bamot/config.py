@@ -103,7 +103,7 @@ __frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for
 __trust_2d_default = str(os.environ.get("TRUST_2D", default="yes"))
 
 __car_dims_default = (1.5, 1.7, 4.5)
-__ped_dims_default = (1.5, 1.7, 4.5)
+__ped_dims_default = (1.7, 0.4, 0.25)
 
 
 if __config_file_default.exists():
@@ -172,7 +172,7 @@ CONFIG = Config(
         __keep_track_for_n_frames_after_lost_default,
     ),
     CAR_DIMS=__user_config.get("car_dims", __car_dims_default),
-    PED_DIMS=__user_config.get("ped_dims", __car_dims_default),
+    PED_DIMS=__user_config.get("ped_dims", __ped_dims_default),
 )
 
 if CONFIG.MIN_LANDMARKS_CAR < 1 or CONFIG.MIN_LANDMARKS_PED < 1:

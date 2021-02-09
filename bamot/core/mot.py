@@ -145,8 +145,8 @@ def _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
     cam_baseline = cam.T_left_right[0, 3]
     dist_factor = 1 if dist_from_cam is None else max(1, dist_from_cam / (20 * cam_baseline))
-    LOGGER.info("Dist factor: %f", dist_factor)
-    LOGGER.info("Badly tracked frames: %d", badly_tracked_frames)
+    LOGGER.debug("Dist factor: %f", dist_factor)
+    LOGGER.debug("Badly tracked frames: %d", badly_tracked_frames)
     return min(config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor) * (
         max_speed / config.FRAME_RATE
     )
@@ -155,8 +155,8 @@ def _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
 def _is_valid_motion(Tr_rel, obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
     curr_translation = np.linalg.norm(Tr_rel[:3, 3])
     max_dist = _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam)
-    LOGGER.info("Current translation: %.2f", float(curr_translation))
-    LOGGER.info("Max. allowed translation: %.2f", max_dist)
+    LOGGER.debug("Current translation: %.2f", float(curr_translation))
+    LOGGER.debug("Max. allowed translation: %.2f", max_dist)
     return curr_translation < max_dist
 
 
@@ -278,7 +278,7 @@ def _add_new_landmarks_and_observations(
         current_landmarks.append(pt_obj)
         already_added_features.append(features_idx)
         landmarks[landmark_mapping[landmark_idx]].observations.append(obs)
-    logger.info("Added %d observations", len(already_added_features))
+    logger.debug("Added %d observations", len(already_added_features))
 
     # add new landmarks
     created_landmarks = 0
@@ -313,7 +313,7 @@ def _add_new_landmarks_and_observations(
 
     for match in bad_matches:
         stereo_matches.remove(match)
-    logger.info("Created %d landmarks", created_landmarks)
+    logger.debug("Created %d landmarks", created_landmarks)
     return landmarks, current_landmarks
 
 
@@ -462,11 +462,11 @@ def run(
             and successful
             and valid_motion
         ):
-            track_logger.info(
+            track_logger.debug(
                 "Enough matches: %s (%d)", enough_track_matches, len(track_matches)
             )
             if enough_track_matches:
-                track_logger.info("PnP successful: %s", successful)
+                track_logger.debug("PnP successful: %s", successful)
                 if successful:
                     track_logger.info("Valid motion: %s", valid_motion)
         track.badly_tracked_frames = 0
@@ -496,7 +496,7 @@ def run(
         # -> SLAM optimizes motion of camera
         # cameras maps a timecam_id (i.e. frame + left/right) to a camera pose and camera parameters
         if len(track.poses) > 3 and track.landmarks and run_ba:
-            track_logger.info("Running BA")
+            track_logger.debug("Running BA")
             track = object_bundle_adjustment(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
@@ -534,7 +534,7 @@ def run(
             and min_landmarks
             and len(track.landmarks) < min_landmarks
         ):
-            track_logger.info(
+            track_logger.debug(
                 "Track doesn't have enough landmarks (%d) for init (min: %d)",
                 len(track.landmarks),
                 min_landmarks,
@@ -542,7 +542,7 @@ def run(
             track.active = False
         # track far away
         if track.dist_from_cam > config.MAX_DIST:
-            track_logger.info(
+            track_logger.debug(
                 "Track too far away: %f (max: %f)", track.dist_from_cam, config.MAX_DIST
             )
             track.active = False
@@ -562,7 +562,7 @@ def run(
                 T_cam_obj @ to_homogeneous(track.pcl_centers[img_id])
             )
             if len(track.poses) > 1 and pcl_center_cam[-1] < 0:
-                track_logger.info("Track is behind camera (z: %f)", pcl_center_cam[-1])
+                track_logger.debug("Track is behind camera (z: %f)", pcl_center_cam[-1])
                 track.active = False
         return track, left_features, right_features, stereo_matches
 
@@ -599,7 +599,7 @@ def run(
             ba_slots[slot_idx].add(track_id)
             slot_sizes[slot_idx] += 1
         tracks_to_run_ba = ba_slots[img_id % config.BA_EVERY_N_STEPS]
-        LOGGER.info("BA slots: %s", ba_slots)
+        LOGGER.debug("BA slots: %s", ba_slots)
         try:
             (
                 active_object_tracks,
@@ -625,7 +625,7 @@ def run(
             break
         for track_id in old_tracks:
             # only store tracks that weren't immediately deemed false positives
-            LOGGER.info("Deleting %d", track_id)
+            LOGGER.debug("Deleting %d", track_id)
             track = active_object_tracks[track_id]
             if len(track.poses) > 1:
                 all_object_tracks[track_id] = copy.deepcopy(track)
@@ -817,11 +817,11 @@ def _improve_association_trust_3d(
     matches = []
     tracks_not_in_view = set()
     medians = {}
-    LOGGER.info("%d detection(s) in image %d", len(detections), img_id)
+    LOGGER.debug("%d detection(s) in image %d", len(detections), img_id)
     # first, do pnp-based matching
     for i, detection in enumerate(detections):
         for j, (track_id, track) in enumerate(tracks.items()):
-            LOGGER.info(
+            LOGGER.debug(
                 "Checking track %d against detection %d (tid: %d)",
                 track_id,
                 i,
@@ -836,11 +836,11 @@ def _improve_association_trust_3d(
             )
             medians[i] = median
             if track.cls != detection.left.cls:
-                LOGGER.info("Wrong class!")
+                LOGGER.debug("Wrong class!")
                 # wrong class
                 continue
             if median is None:
-                LOGGER.info("No stereo matches!")
+                LOGGER.debug("No stereo matches!")
                 continue
             T_world_obj = _estimate_next_pose(track)
             T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
@@ -850,7 +850,7 @@ def _improve_association_trust_3d(
                 stereo_cam.left,
                 min_landmarks=1 #int(0.2 * len(track.landmarks)),
             ):
-                LOGGER.info("Track %d not in view, can't match", track_id)
+                LOGGER.debug("Track %d not in view, can't match", track_id)
                 tracks_not_in_view.add(track_id)
                 tracks_not_in_view.add(track_id_mapping.get(track_id, track_id))
                 continue
@@ -864,8 +864,8 @@ def _improve_association_trust_3d(
                 T_cam_obj,
                 camera_params=stereo_cam.left,
             )
-            LOGGER.info("Pnp successfull: %s", pnp_success)
-            LOGGER.info("Inlier ratio: %f", inlier_ratio)
+            LOGGER.debug("Pnp successfull: %s", pnp_success)
+            LOGGER.debug("Inlier ratio: %f", inlier_ratio)
             # check whether pnp pose estimate is valid
             num_inliers = inlier_ratio * len(track_matches)
             last_img_id = list(track.poses)[-1]
@@ -894,7 +894,7 @@ def _improve_association_trust_3d(
 
         if inlier_ratio > 0.0:
             track_ids_match = track_id == detections[detection_id].left.track_id
-            LOGGER.info(
+            LOGGER.debug(
                 "Matched detection %d to track %d with inlier ratio of %f. Track ids match: %s",
                 detection_id,
                 track_id,
@@ -909,13 +909,13 @@ def _improve_association_trust_3d(
 
     unmatched_detections = set(range(len(detections))).difference(matched_detections)
     unmatched_tracks = set(tracks).difference(matched_tracks)
-    LOGGER.info("%d valid track match(es) in total", len(matched_tracks))
-    LOGGER.info(
+    LOGGER.debug("%d valid track match(es) in total", len(matched_tracks))
+    LOGGER.debug(
         "%d unmatched detection(s) after 3D + appearance association: %s",
         len(unmatched_detections),
         unmatched_detections,
     )
-    LOGGER.info(
+    LOGGER.debug(
         "%d unmatched track(s) after 3D + appearance association: %s ",
         len(unmatched_tracks),
         unmatched_tracks,
@@ -980,7 +980,7 @@ def _improve_association_trust_3d(
                     dist_from_cam=track.dist_from_cam,
                     cam=stereo_cam
                 )
-                LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
+                LOGGER.debug("Dist/max. dist: %f/%f", dist, max_dist)
                 valid_motion = np.isfinite(dist) and dist < max_dist
                 if valid_motion:
                     LOGGER.debug("2D association makes sense in 3D")
@@ -994,22 +994,22 @@ def _improve_association_trust_3d(
                         "2D association does not make sense in 3D")
         unmatched_detections = set(range(len(detections))).difference(matched_detections)
         unmatched_tracks = set(tracks).difference(matched_tracks)
-        LOGGER.info(
+        LOGGER.debug(
             "%d unmatched track(s) after 2D association: %s ",
             len(unmatched_tracks),
             unmatched_tracks,
         )
-        LOGGER.info(
+        LOGGER.debug(
             "%d unmatched detections(s) after 2D association: %s ",
             len(unmatched_detections),
             unmatched_detections,
         )
             
-    LOGGER.info("Associating using only 3D info")
+    LOGGER.debug("Associating using only 3D info")
     cost_matrix = np.zeros((len(detections), len(unmatched_tracks)))
     for detection_id in unmatched_detections:
         for j, track_id in enumerate(unmatched_tracks):
-            LOGGER.info(
+            LOGGER.debug(
                 "Checking track %d against detection %d (tid: %d)",
                 track_id,
                 detection_id,
@@ -1038,10 +1038,10 @@ def _improve_association_trust_3d(
                 dist_from_cam=track.dist_from_cam,
                 cam=stereo_cam
             )
-            LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
+            LOGGER.debug("Dist/max. dist: %f/%f", dist, max_dist)
             if not np.isfinite(dist) or dist > max_dist:
                 # invalid distance
-                LOGGER.info("Invalid distance!")
+                LOGGER.debug("Invalid distance!")
                 continue
             cost_matrix[detection_id][j] = 1 / dist
 
@@ -1055,7 +1055,7 @@ def _improve_association_trust_3d(
             track = tracks[track_id]
 
             track_ids_match = track_id == detections[detection_id].left.track_id
-            LOGGER.info(
+            LOGGER.debug(
                 "Matched detection %d to track %d with dist of %f. Track ids match: %s",
                 detection_id,
                 track_id,
@@ -1069,13 +1069,13 @@ def _improve_association_trust_3d(
             matched_detections.add(detection_id)
     unmatched_detections = set(range(len(detections))).difference(matched_detections)
     unmatched_tracks = set(tracks).difference(matched_tracks)
-    LOGGER.info("%d valid track match(es) in total", len(matched_tracks))
-    LOGGER.info(
+    LOGGER.debug("%d valid track match(es) in total", len(matched_tracks))
+    LOGGER.debug(
         "%d unmatched detection(s) after further 3D association: %s",
         len(unmatched_detections),
         unmatched_detections,
     )
-    LOGGER.info(
+    LOGGER.debug(
         "%d unmatched track(s) after further 3D association: %s ",
         len(unmatched_tracks),
         unmatched_tracks,
@@ -1087,7 +1087,7 @@ def _improve_association_trust_3d(
         for detection_id in unmatched_detections:
             track_id += 1
             detection = detections[detection_id]
-            LOGGER.info("Creating new track with id %d", track_id)
+            LOGGER.debug("Creating new track with id %d", track_id)
             matched_detections.add(detection_id)
             matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
 
@@ -1111,21 +1111,21 @@ def _improve_association_trust_2d(
     matches = []
     detection_locations = {}
     # corroborate 2D tracker matches
-    LOGGER.info("%d detection(s) in image %d", len(detections), img_id)
+    LOGGER.debug("%d detection(s) in image %d", len(detections), img_id)
     for detection_id, stereo_detection in enumerate(detections):
         # get new 3D info from stereo_matches
         track_id = stereo_detection.left.track_id
         if track_id in track_id_mapping:
-            LOGGER.info("Track %d in track mapping", track_id)
+            LOGGER.debug("Track %d in track mapping", track_id)
             track_id = track_id_mapping[track_id]
-            LOGGER.info("Converted id to %d", track_id)
+            LOGGER.debug("Converted id to %d", track_id)
 
         # need to compute for later use
         median = _get_center_of_stereo_pointcloud(
             stereo_detection, stereo_image, img_id, track_id, stereo_cam, T_world_cam
         )
         if median is None:  # no stereo matches, assume 2D association is fine
-            LOGGER.info("No stereo matches for track %d", track_id)
+            LOGGER.debug("No stereo matches for track %d", track_id)
             matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
             matched_detections.add(detection_id)
             matched_tracks.add(track_id)
@@ -1135,7 +1135,7 @@ def _improve_association_trust_2d(
         track = tracks.get(track_id)
         # 2D tracker wasn't able to associate to existing track --> possibly new track
         if track is None:
-            LOGGER.info("Track %d is new according to 2D tracker", track_id)
+            LOGGER.debug("Track %d is new according to 2D tracker", track_id)
             unmatched_detections.add(detection_id)
             continue
 
@@ -1143,7 +1143,7 @@ def _improve_association_trust_2d(
         T_world_obj = _estimate_next_pose(track)
         T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
         if not is_in_view(track.landmarks, T_cam_obj, stereo_cam.left):
-            LOGGER.info("Track %d not in view, can't match", track_id)
+            LOGGER.debug("Track %d not in view, can't match", track_id)
             tracks_not_in_view.add(track_id)
             unmatched_detections.add(detection_id)
             continue
@@ -1160,26 +1160,26 @@ def _improve_association_trust_2d(
             dist_from_cam=track.dist_from_cam,
         ):
             # association makes sense in 3D --> add to matches
-            LOGGER.info("Track %d has valid motion", track_id)
+            LOGGER.debug("Track %d has valid motion", track_id)
             matches.append(TrackMatch(track_id=track_id, detection_id=detection_id,))
             matched_tracks.add(track_id)
             matched_detections.add(detection_id)
         else:
             # association violates 3D info, track is unmatched
-            LOGGER.info("Track %d has invalid motion", track_id)
+            LOGGER.debug("Track %d has invalid motion", track_id)
             unmatched_detections.add(detection_id)
 
     # associate unmatched tracks and detections via 3D heuristic
     unmatched_tracks = (
         set(tracks).difference(tracks_not_in_view).difference(matched_tracks)
     )
-    LOGGER.info("%d valid 2D track match(es)", len(matched_tracks))
-    LOGGER.info(
+    LOGGER.debug("%d valid 2D track match(es)", len(matched_tracks))
+    LOGGER.debug(
         "%d unmatched detection(s) after 2D corroboration: %s",
         len(unmatched_detections),
         unmatched_detections,
     )
-    LOGGER.info(
+    LOGGER.debug(
         "%d unmatched track(s) after 2D corroboration: %s",
         len(unmatched_tracks),
         unmatched_tracks,
@@ -1204,7 +1204,7 @@ def _improve_association_trust_2d(
                 dist_from_cam=track.dist_from_cam,
                 cam=stereo_cam
             )
-            LOGGER.info("Dist/max. dist: %f/%f", dist, max_dist)
+            LOGGER.debug("Dist/max. dist: %f/%f", dist, max_dist)
             if not np.isfinite(dist) or dist > max_dist:
                 # invalid distance
                 LOGGER.debug("Invalid distance!")
@@ -1216,7 +1216,7 @@ def _improve_association_trust_2d(
             match_ratio = max(track_match_ratio, feature_match_ratio)
             if match_ratio < 0.2:
                 # not similar enough
-                LOGGER.info("Not similar enough: %f", match_ratio)
+                LOGGER.debug("Not similar enough: %f", match_ratio)
                 continue
             T_world_obj = _estimate_next_pose(track)
             T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
@@ -1228,9 +1228,9 @@ def _improve_association_trust_2d(
                 T_cam_obj,
                 camera_params=stereo_cam.left,
             )
-            LOGGER.info("Pnp successfull: %s", pnp_success)
-            LOGGER.info("Inlier ratio: %f", inlier_ratio)
-            LOGGER.info("Match ratio: %f", match_ratio)
+            LOGGER.debug("Pnp successfull: %s", pnp_success)
+            LOGGER.debug("Inlier ratio: %f", inlier_ratio)
+            LOGGER.debug("Match ratio: %f", match_ratio)
             if pnp_success:
                 score = inlier_ratio
                 cost_matrix[i][j] = score
@@ -1246,7 +1246,7 @@ def _improve_association_trust_2d(
         track = tracks[track_id]
 
         if inlier_ratio > 0.0:
-            LOGGER.info(
+            LOGGER.debug(
                 "Matched detection %d to track %d with inlier ratio of %f",
                 detection_id,
                 track_id,
@@ -1261,13 +1261,13 @@ def _improve_association_trust_2d(
         set(tracks).difference(tracks_not_in_view).difference(matched_tracks)
     )
     unmatched_detections = set(range(len(detections))).difference(matched_detections)
-    LOGGER.info("%d valid track match(es) in total", len(matched_tracks))
-    LOGGER.info(
+    LOGGER.debug("%d valid track match(es) in total", len(matched_tracks))
+    LOGGER.debug(
         "%d unmatched detection(s) after 3D association: %s",
         len(unmatched_detections),
         unmatched_detections,
     )
-    LOGGER.info(
+    LOGGER.debug(
         "%d unmatched track(s) after 3D association: %s ",
         len(unmatched_tracks),
         unmatched_tracks,
@@ -1282,7 +1282,7 @@ def _improve_association_trust_2d(
         )
         if track_id != detection_track_id:
             track_id_mapping[detection_track_id] = track_id
-            LOGGER.info("Adding track mapping for %d: %d", detection_track_id, track_id)
+            LOGGER.debug("Adding track mapping for %d: %d", detection_track_id, track_id)
         matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
 
     return matches, unmatched_tracks, pnp_poses
@@ -1307,10 +1307,10 @@ def step(
     all_left_features = []
     all_right_features = []
     all_stereo_matches = []
-    LOGGER.info("-----------------------------------------")
+    LOGGER.debug("-----------------------------------------")
     LOGGER.debug("Running step for image %d", img_id)
     LOGGER.debug("Current ego pose:\n%s", current_cam_pose)
-    LOGGER.info("Current track ids: %s", list(object_tracks.keys()))
+    LOGGER.debug("Current track ids: %s", list(object_tracks.keys()))
     matches, unmatched_tracks, cached_pnp_poses = _improve_association(
         detections=new_detections,
         tracks=object_tracks,
@@ -1325,7 +1325,7 @@ def step(
     for match in matches:
         # if new track ids are present, the tracks need to be added to the object_tracks
         if object_tracks.get(match.track_id) is None:
-            LOGGER.info("Added track with ID %d", match.track_id)
+            LOGGER.debug("Added track with ID %d", match.track_id)
             object_tracks[match.track_id] = ObjectTrack(
                 cls=new_detections[match.detection_id].left.cls,
                 masks=(
@@ -1350,7 +1350,7 @@ def step(
             track = object_tracks[track_id]
             track.badly_tracked_frames += 1
             track_logger = _get_track_logger(str(track_id))
-            track_logger.info(
+            track_logger.debug(
                 "Increased badly tracked frames to %d", track.badly_tracked_frames
             )
             track.masks = None

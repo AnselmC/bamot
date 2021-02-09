@@ -83,10 +83,10 @@ def _write_3d_detections(
             track_data = writer_data_3d.get(block=True)
             writer_data_3d.task_done()
             if not track_data:
-                LOGGER.info("Finished writing 3d detections")
+                LOGGER.debug("Finished writing 3d detections")
                 break
             img_id = track_data["img_id"]
-            LOGGER.info("Got 3d detection data for image %d", img_id)
+            LOGGER.debug("Got 3d detection data for image %d", img_id)
             T_world_cam = track_data["T_world_cam"]
             for i, track_id in enumerate(track_data["track_ids"]):
                 obj_type = track_data["object_classes"][i].lower()
@@ -147,10 +147,10 @@ def _write_2d_detections(
             img_data = writer_data_2d.get(block=True)
             writer_data_2d.task_done()
             if not img_data:
-                LOGGER.info("Finished writing 2d detections")
+                LOGGER.debug("Finished writing 2d detections")
                 break
             img_id = img_data["img_id"]
-            LOGGER.info("Got 2d detection data for image %d", img_id)
+            LOGGER.debug("Got 2d detection data for image %d", img_id)
             for i in range(len(img_data["track_ids"])):
                 track_id = img_data["track_ids"][i]
                 mask = img_data["masks"][i]
