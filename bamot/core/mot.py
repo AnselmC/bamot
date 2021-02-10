@@ -13,57 +13,41 @@ import g2o
 import numpy as np
 import pathos
 from bamot.config import CONFIG as config
-from bamot.core.base_types import (
-    CameraParameters,
-    Feature,
-    FeatureMatcher,
-    ImageId,
-    Landmark,
-    Location,
-    Match,
-    ObjectTrack,
-    Observation,
-    StereoCamera,
-    StereoImage,
-    StereoObjectDetection,
-    TrackId,
-    TrackMatch,
-    get_camera_parameters_matrix,
-)
+from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
+                                   ImageId, Landmark, Location, Match,
+                                   ObjectTrack, Observation, StereoCamera,
+                                   StereoImage, StereoObjectDetection, TrackId,
+                                   TrackMatch, get_camera_parameters_matrix)
 from bamot.core.optimization import object_bundle_adjustment
-from bamot.util.cv import (
-    TriangulationError,
-    from_homogeneous,
-    get_center_of_landmarks,
-    get_feature_matcher,
-    is_in_view,
-    to_homogeneous,
-    triangulate_stereo_match,
-)
+from bamot.util.cv import (TriangulationError, from_homogeneous,
+                           get_center_of_landmarks, get_feature_matcher,
+                           is_in_view, to_homogeneous,
+                           triangulate_stereo_match)
 from bamot.util.misc import get_mad, timer
 from scipy.optimize import linear_sum_assignment
 
 LOGGER = logging.getLogger("CORE:MOT")
 
+
 def get_rotation_of_track(track: ObjectTrack, T_world_cam: np.ndarray) -> float:
     if len(track.poses) < 2:
         return 0
-    dir_vector_world = get_direction_vector(track, config.SLIDING_WINDOW_DIR_VEC).reshape(3, 1)
+    dir_vector_world = get_direction_vector(
+        track, config.SLIDING_WINDOW_DIR_VEC
+    ).reshape(3, 1)
     dir_vector_cam = (
-        g2o.Isometry3d(T_world_cam).inverse().R.reshape(3, 3)
-        @ dir_vector_world
-        )
+        g2o.Isometry3d(T_world_cam).inverse().R.reshape(3, 3) @ dir_vector_world
+    )
     # take plane-axes (x, z)
     dir_vector = dir_vector_cam[[0, 2]]
     # normalize
     dir_vector = dir_vector / np.linalg.norm(dir_vector)
     # compute angle between x axis and dir vector
-    angle = np.arccos(
-        np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1))
-    )
+    angle = np.arccos(np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1)))
     if dir_vector[1] > 0:
         angle = -angle
     return angle
+
 
 def _get_track_logger(track_id: str):
 
@@ -76,7 +60,8 @@ def _add_constant_motion_to_track(
 ):
     if not track.poses:
         return track
-    T_world_obj = _estimate_next_pose(track)
+    track_logger = _get_track_logger(str(track_id))
+    T_world_obj = _estimate_next_pose(track, track_logger)
     if track.landmarks:
         track.poses[img_id] = T_world_obj
         track.pcl_centers[img_id] = get_center_of_landmarks(track.landmarks.values())
@@ -90,7 +75,6 @@ def _add_constant_motion_to_track(
             T_cam_obj @ to_homogeneous(track.pcl_centers[img_id])
         )
         if len(track.poses) > 1 and pcl_center_cam[-1] < 0:
-            track_logger = _get_track_logger(str(track_id))
             track_logger.debug("Track is behind camera (z: %f)", pcl_center_cam[-1])
             track.active = False
     return track
@@ -128,35 +112,70 @@ def _remove_outlier_landmarks(
     return cluster_median_center, dist_from_cam
 
 
-def get_median_translation(object_track):
+def get_mean_translation(object_track):
     translations = []
     frames = list(object_track.poses.keys())
     for i in range(len(frames[-2 * config.SLIDING_WINDOW_BA :]) - 1):
         img_id_0 = frames[i]
         img_id_1 = frames[i + 1]
-        pose0 = object_track.poses[img_id_0]
-        pose1 = object_track.poses[img_id_1]
-        translations.append(np.linalg.norm((np.linalg.inv(pose0) @ pose1)[:3, 3]))
+        location0 = object_track.locations[img_id_0]
+        location1 = object_track.locations[img_id_1]
+        translations.append(np.linalg.norm(location0 - location1))
+    if not translations:
+        return None
+    LOGGER.debug("Translations:\n%s", translations)
+    return np.mean(translations)
 
-    return np.median(translations)
 
-
-def _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
-    max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
+def _get_max_dist(
+    obj_cls,
+    badly_tracked_frames,
+    cam,
+    mean_translation=None,
+    dist_from_cam=None,
+    num_poses=0,
+    track_logger=LOGGER,
+):
+    if mean_translation is None or (num_poses - badly_tracked_frames) < 5:
+        track_logger.debug("Using max speed of object type")
+        max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
+    else:
+        track_logger.debug("Using max speed based on median translation")
+        max_speed = 3 * mean_translation * config.FRAME_RATE
+    track_logger.debug("Max speed: %f", max_speed)
     cam_baseline = cam.T_left_right[0, 3]
-    dist_factor = 1 if dist_from_cam is None else max(1, dist_from_cam / (20 * cam_baseline))
-    LOGGER.debug("Dist factor: %f", dist_factor)
-    LOGGER.debug("Badly tracked frames: %d", badly_tracked_frames)
-    return min(config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor) * (
-        max_speed / config.FRAME_RATE
+    dist_factor = (
+        1 if dist_from_cam is None else max(1, dist_from_cam / (20 * cam_baseline))
     )
+    track_logger.debug("Dist factor: %f", dist_factor)
+    track_logger.debug("Badly tracked frames: %d", badly_tracked_frames)
+    return min(
+        config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor
+    ) * (max_speed / config.FRAME_RATE)
 
 
-def _is_valid_motion(Tr_rel, obj_cls, badly_tracked_frames, cam, dist_from_cam=None):
+def _is_valid_motion(
+    Tr_rel,
+    obj_cls,
+    badly_tracked_frames,
+    cam,
+    mean_translation=None,
+    dist_from_cam=None,
+    track_logger=LOGGER,
+    num_poses=0,
+):
     curr_translation = np.linalg.norm(Tr_rel[:3, 3])
-    max_dist = _get_max_dist(obj_cls, badly_tracked_frames, cam, dist_from_cam)
-    LOGGER.debug("Current translation: %.2f", float(curr_translation))
-    LOGGER.debug("Max. allowed translation: %.2f", max_dist)
+    max_dist = _get_max_dist(
+        obj_cls=obj_cls,
+        badly_tracked_frames=badly_tracked_frames,
+        cam=cam,
+        dist_from_cam=dist_from_cam,
+        mean_translation=mean_translation,
+        num_poses=num_poses,
+        track_logger=track_logger,
+    )
+    track_logger.debug("Current translation: %.2f", float(curr_translation))
+    track_logger.debug("Max. allowed translation: %.2f", max_dist)
     return curr_translation < max_dist
 
 
@@ -167,7 +186,7 @@ def _localize_object(
     landmarks: Dict[int, Landmark],
     T_cam_obj: np.ndarray,
     camera_params: CameraParameters,
-    logger: logging.Logger = logging.getLogger(),
+    logger: logging.Logger = LOGGER,
     num_iterations: int = 400,
     reprojection_error: float = 2.0,
 ) -> Tuple[np.ndarray, bool, float]:
@@ -420,15 +439,16 @@ def run(
         track_matches = feature_matcher.match_features(left_features, features)
         track_logger.debug("%d track matches", len(track_matches))
         # localize object
-        T_world_obj = _estimate_next_pose(track)
+        T_world_obj = _estimate_next_pose(track, track_logger)
         T_world_cam = current_cam_pose
         T_cam_obj = np.linalg.inv(T_world_cam) @ T_world_obj
         enough_track_matches = len(track_matches) >= 5
         successful = True
         valid_motion = True
-        median_translation = get_median_translation(track)
+        mean_translation = get_mean_translation(track)
         if enough_track_matches:
             if cached_pnp_poses.get(track_id) is not None:
+                track_logger.debug("Getting cached PnP pose")
                 T_cam_obj_pnp = cached_pnp_poses.get(track_id)
                 successful = True
             else:
@@ -453,9 +473,13 @@ def run(
                         track.badly_tracked_frames,
                         cam=stereo_cam,
                         dist_from_cam=track.dist_from_cam,
+                        mean_translation=mean_translation,
+                        track_logger=track_logger,
+                        num_poses=len(track.poses),
                     )
-                    LOGGER.debug("Median translation: %.2f", median_translation)
+                    track_logger.debug("Median translation: %.2f", mean_translation)
                     if valid_motion:
+                        track_logger.debug("PnP estimate is valid motion")
                         T_cam_obj = T_cam_obj_pnp
         if not (
             (enough_track_matches or len(track.poses) == 1)
@@ -501,7 +525,7 @@ def run(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
                 stereo_cam=stereo_cam,
-                median_translation=median_translation,
+                mean_translation=mean_translation,
             )
         if track.landmarks:
             track.poses[img_id] = T_world_obj
@@ -677,8 +701,12 @@ def run(
                     "img_id": img_id,
                     "object_classes": [obj.cls for obj in track_copy.values()],
                     "masks": [obj.masks[0] for obj in track_copy.values()],
-                    "locations": [obj.locations.get(img_id) for obj in track_copy.values()],
-                    "rot_angles": [obj.rot_angle.get(img_id) for obj in track_copy.values()],
+                    "locations": [
+                        obj.locations.get(img_id) for obj in track_copy.values()
+                    ],
+                    "rot_angles": [
+                        obj.rot_angle.get(img_id) for obj in track_copy.values()
+                    ],
                 }
             )
     stop_flag.set()
@@ -688,12 +716,12 @@ def run(
     all_object_tracks.update(active_object_tracks)
     if config.FINAL_FULL_BA:
         for track_id, track in all_object_tracks.items():
-            median_translation = get_median_translation(track)
+            mean_translation = get_mean_translation(track)
             track = object_bundle_adjustment(
                 track,
                 all_poses,
                 stereo_cam,
-                median_translation,
+                mean_translation,
                 max_iterations=20,
                 full_ba=True,
             )
@@ -719,21 +747,21 @@ def get_direction_vector(track, num_frames):
     return (T_world_obj1.translation() - T_world_obj0.translation()) / (num_frames)
 
 
-def _estimate_next_pose(track: ObjectTrack) -> np.ndarray:
+def _estimate_next_pose(track: ObjectTrack, track_logger=LOGGER) -> np.ndarray:
     available_poses = list(track.poses)  # sorted in order of entry by default
     if len(available_poses) >= 2:
         num_frames = min(int(config.SLIDING_WINDOW_BA), len(available_poses))
         T_world_obj1 = g2o.Isometry3d(track.poses[available_poses[-1]])
-        LOGGER.debug("Previous pose:\n%s", T_world_obj1.matrix())
+        track_logger.debug("Previous pose:\n%s", T_world_obj1.matrix())
         T_world_obj0 = g2o.Isometry3d(track.poses[available_poses[-num_frames]])
         rel_translation = (T_world_obj1.translation() - T_world_obj0.translation()) / (
             num_frames
         )
-        LOGGER.debug("Relative translation:\n%s", rel_translation)
+        track_logger.debug("Relative translation:\n%s", rel_translation)
         T_world_new = g2o.Isometry3d(
             T_world_obj1.rotation(), T_world_obj1.translation() + 1.0 * rel_translation,
         )
-        LOGGER.debug("Estimated new pose:\n%s", T_world_new.matrix())
+        track_logger.debug("Estimated new pose:\n%s", T_world_new.matrix())
         return T_world_new.matrix()
     return track.poses[available_poses[-1]]
 
@@ -817,6 +845,7 @@ def _improve_association_trust_3d(
     matches = []
     tracks_not_in_view = set()
     medians = {}
+    mean_translations = {}
     LOGGER.debug("%d detection(s) in image %d", len(detections), img_id)
     # first, do pnp-based matching
     for i, detection in enumerate(detections):
@@ -848,7 +877,7 @@ def _improve_association_trust_3d(
                 track.landmarks,
                 T_cam_obj,
                 stereo_cam.left,
-                min_landmarks=1 #int(0.2 * len(track.landmarks)),
+                min_landmarks=1,  # int(0.2 * len(track.landmarks)),
             ):
                 LOGGER.debug("Track %d not in view, can't match", track_id)
                 tracks_not_in_view.add(track_id)
@@ -872,11 +901,17 @@ def _improve_association_trust_3d(
             T_world_obj_prev = track.poses[last_img_id]
             T_world_obj_pnp = T_world_cam @ T_cam_obj_pnp
             T_rel = np.linalg.inv(T_world_obj_prev) @ T_world_obj_pnp
-            if pnp_success and _is_valid_motion(T_rel,
-                                                obj_cls=track.cls,
-                                                badly_tracked_frames=track.badly_tracked_frames,
-                                                cam=stereo_cam,
-                                                dist_from_cam=track.dist_from_cam):
+            mean_translation = get_mean_translation(track)
+            mean_translations[track_id] = mean_translation
+            if pnp_success and _is_valid_motion(
+                T_rel,
+                obj_cls=track.cls,
+                badly_tracked_frames=track.badly_tracked_frames,
+                cam=stereo_cam,
+                dist_from_cam=track.dist_from_cam,
+                num_poses=len(track.poses),
+                mean_translation=mean_translation,
+            ):
                 score = num_inliers / min(len(features), len(track.landmarks))
                 cost_matrix[i][j] = score
                 pnp_poses[track_id] = T_cam_obj_pnp.copy()
@@ -932,7 +967,7 @@ def _improve_association_trust_3d(
                 track_id = detection_track_id
 
             LOGGER.debug("Checking detection %d w/ track id %d", detection_id, track_id)
-            
+
             if track_id in matched_tracks:
                 # already matched --> disregard 2d tracker
                 LOGGER.debug("Track already matched")
@@ -946,8 +981,7 @@ def _improve_association_trust_3d(
                 # track id is new --> create new track
                 LOGGER.debug("Track is new!")
                 matched_detections.add(detection_id)
-                matches.append(
-                    TrackMatch(track_id=track_id, detection_id=detection_id))
+                matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
 
             elif track_id not in tracks:
                 # track id wasn't matched yet & its not new & its not in the current tracks --> old track
@@ -956,21 +990,21 @@ def _improve_association_trust_3d(
                 track_id_mapping[track_id] = uuid.uuid1().int
                 track_id = track_id_mapping[track_id]
                 matched_detections.add(detection_id)
-                matches.append(
-                    TrackMatch(track_id=track_id, detection_id=detection_id))
+                matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
             else:
                 # track isn't new or old & wasn't matched yet --> check whether distance is valid
                 median = medians[detection_id]
                 if median is None:
-                # if check can't happen, trust 2d
+                    # if check can't happen, trust 2d
                     LOGGER.debug("No stereo matches, trusting tracker")
                     matched_detections.add(detection_id)
                     matches.append(
-                        TrackMatch(track_id=track_id,
-                                    detection_id=detection_id))
+                        TrackMatch(track_id=track_id, detection_id=detection_id)
+                    )
+                    matched_tracks.add(track_id)
                     continue
+                mean_translation = mean_translations[track_id]
 
-                    
                 last_img_id = list(track.locations)[-1]
                 prev_location = track.locations[last_img_id]
                 dist = np.linalg.norm(median - prev_location)
@@ -978,21 +1012,24 @@ def _improve_association_trust_3d(
                     obj_cls=track.cls,
                     badly_tracked_frames=track.badly_tracked_frames,
                     dist_from_cam=track.dist_from_cam,
-                    cam=stereo_cam
+                    mean_translation=mean_translation,
+                    num_poses=len(track.poses),
+                    cam=stereo_cam,
                 )
                 LOGGER.debug("Dist/max. dist: %f/%f", dist, max_dist)
                 valid_motion = np.isfinite(dist) and dist < max_dist
                 if valid_motion:
                     LOGGER.debug("2D association makes sense in 3D")
                     matches.append(
-                        TrackMatch(track_id=track_id,
-                                    detection_id=detection_id))
+                        TrackMatch(track_id=track_id, detection_id=detection_id)
+                    )
                     matched_detections.add(detection_id)
                     matched_tracks.add(track_id)
                 else:
-                    LOGGER.debug(
-                        "2D association does not make sense in 3D")
-        unmatched_detections = set(range(len(detections))).difference(matched_detections)
+                    LOGGER.debug("2D association does not make sense in 3D")
+        unmatched_detections = set(range(len(detections))).difference(
+            matched_detections
+        )
         unmatched_tracks = set(tracks).difference(matched_tracks)
         LOGGER.debug(
             "%d unmatched track(s) after 2D association: %s ",
@@ -1004,7 +1041,7 @@ def _improve_association_trust_3d(
             len(unmatched_detections),
             unmatched_detections,
         )
-            
+
     LOGGER.debug("Associating using only 3D info")
     cost_matrix = np.zeros((len(detections), len(unmatched_tracks)))
     for detection_id in unmatched_detections:
@@ -1032,11 +1069,14 @@ def _improve_association_trust_3d(
             last_img_id = list(track.locations)[-1]
             prev_location = track.locations[last_img_id]
             dist = np.linalg.norm(median - prev_location)
+            mean_translation = mean_translations[track_id]
             max_dist = _get_max_dist(
                 obj_cls=track.cls,
                 badly_tracked_frames=track.badly_tracked_frames,
+                mean_translation=mean_translation,
+                num_poses=len(track.poses),
                 dist_from_cam=track.dist_from_cam,
-                cam=stereo_cam
+                cam=stereo_cam,
             )
             LOGGER.debug("Dist/max. dist: %f/%f", dist, max_dist)
             if not np.isfinite(dist) or dist > max_dist:
@@ -1156,7 +1196,7 @@ def _improve_association_trust_2d(
             T_rel,
             obj_cls=track.cls,
             badly_tracked_frames=track.badly_tracked_frames,
-                cam=stereo_cam,
+            cam=stereo_cam,
             dist_from_cam=track.dist_from_cam,
         ):
             # association makes sense in 3D --> add to matches
@@ -1202,7 +1242,7 @@ def _improve_association_trust_2d(
                 obj_cls=track.cls,
                 badly_tracked_frames=track.badly_tracked_frames,
                 dist_from_cam=track.dist_from_cam,
-                cam=stereo_cam
+                cam=stereo_cam,
             )
             LOGGER.debug("Dist/max. dist: %f/%f", dist, max_dist)
             if not np.isfinite(dist) or dist > max_dist:
@@ -1282,7 +1322,9 @@ def _improve_association_trust_2d(
         )
         if track_id != detection_track_id:
             track_id_mapping[detection_track_id] = track_id
-            LOGGER.debug("Adding track mapping for %d: %d", detection_track_id, track_id)
+            LOGGER.debug(
+                "Adding track mapping for %d: %d", detection_track_id, track_id
+            )
         matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
 
     return matches, unmatched_tracks, pnp_poses
