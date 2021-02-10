@@ -398,7 +398,7 @@ def get_masks_from_landmarks(
     else:
         right_convex_hull = get_convex_hull_mask(right_points, img_shape)
         right_mask = fill_contours(right_convex_hull)
-        num_pixels_right = min(10, max(1, 1000 // int(left_mask.sum())))
+        num_pixels_right = min(10, max(1, 1000 // int(right_mask.sum())))
         right_mask = dilate_mask(right_mask, num_pixels_right)
 
     return (left_mask, right_mask)
