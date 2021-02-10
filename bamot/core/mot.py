@@ -21,8 +21,8 @@ from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
 from bamot.core.optimization import object_bundle_adjustment
 from bamot.util.cv import (TriangulationError, from_homogeneous,
                            get_center_of_landmarks, get_feature_matcher,
-                           is_in_view, to_homogeneous,
-                           triangulate_stereo_match)
+                           get_masks_from_landmarks, is_in_view,
+                           to_homogeneous, triangulate_stereo_match)
 from bamot.util.misc import get_mad, timer
 from scipy.optimize import linear_sum_assignment
 
@@ -56,7 +56,12 @@ def _get_track_logger(track_id: str):
 
 
 def _add_constant_motion_to_track(
-    track: ObjectTrack, img_id: ImageId, T_world_cam: np.ndarray, track_id: TrackId
+    track: ObjectTrack,
+    img_id: ImageId,
+    T_world_cam: np.ndarray,
+    track_id: TrackId,
+    stereo_cam: StereoCamera,
+    img_shape: Tuple[int, int],
 ):
     if not track.poses:
         return track
@@ -74,6 +79,12 @@ def _add_constant_motion_to_track(
         pcl_center_cam = from_homogeneous(
             T_cam_obj @ to_homogeneous(track.pcl_centers[img_id])
         )
+        if not track.in_view:
+            track.masks = (None, None)
+        else:
+            track.masks = get_masks_from_landmarks(
+                track.landmarks, T_cam_obj, stereo_cam, img_shape
+            )
         if len(track.poses) > 1 and pcl_center_cam[-1] < 0:
             track_logger.debug("Track is behind camera (z: %f)", pcl_center_cam[-1])
             track.active = False
@@ -136,16 +147,18 @@ def _get_max_dist(
     num_poses=0,
     track_logger=LOGGER,
 ):
-    if mean_translation is None or (num_poses - badly_tracked_frames) < 5:
-        track_logger.debug("Using max speed of object type")
-        max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
-    else:
+    max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
+    if mean_translation is not None and (num_poses - badly_tracked_frames) >= 5:
         track_logger.debug("Using max speed based on median translation")
-        max_speed = 3 * mean_translation * config.FRAME_RATE
+        max_speed = min(max_speed, 3 * mean_translation * config.FRAME_RATE)
+    else:
+        track_logger.debug("Using max speed of object type")
     track_logger.debug("Max speed: %f", max_speed)
     cam_baseline = cam.T_left_right[0, 3]
     dist_factor = (
-        1 if dist_from_cam is None else max(1, dist_from_cam / (20 * cam_baseline))
+        1
+        if dist_from_cam is None
+        else max(1, (2 * dist_from_cam) / (3 * 20 * cam_baseline))
     )
     track_logger.debug("Dist factor: %f", dist_factor)
     track_logger.debug("Badly tracked frames: %d", badly_tracked_frames)
@@ -339,8 +352,8 @@ def _add_new_landmarks_and_observations(
 def _get_median_descriptor(
     observations: List[Observation], norm: int, smallest_dist_to_rest: bool = True
 ) -> np.ndarray:
-    rng = np.random.default_rng()
     if len(observations) > config.SLIDING_WINDOW_DESCRIPTORS:
+        rng = np.random.default_rng()
         subset = rng.choice(
             observations, size=config.SLIDING_WINDOW_DESCRIPTORS, replace=False
         )
@@ -401,6 +414,7 @@ def run(
     stop_flag: Event,
     next_step: Event,
     continuous_until_img_id: int,
+    img_shape: Tuple[int, int],
 ):
     active_object_tracks: Dict[int, ObjectTrack] = {}
     all_object_tracks: Dict[int, ObjectTrack] = {}
@@ -492,7 +506,7 @@ def run(
             if enough_track_matches:
                 track_logger.debug("PnP successful: %s", successful)
                 if successful:
-                    track_logger.info("Valid motion: %s", valid_motion)
+                    track_logger.debug("Valid motion: %s", valid_motion)
         track.badly_tracked_frames = 0
 
         T_world_obj = T_world_cam @ T_cam_obj
@@ -643,6 +657,7 @@ def run(
                 tracks_to_run_ba=tracks_to_run_ba,
                 all_track_ids=all_track_ids,
                 track_id_mapping=track_id_mapping,
+                img_shape=img_shape,
             )
         except Exception as exc:  # ignore: broad-except
             LOGGER.exception("Unexpected error: %s", exc)
@@ -675,7 +690,7 @@ def run(
                 {
                     track_id: track
                     for track_id, track in active_object_tracks.items()
-                    if track.masks is not None and track.landmarks
+                    if track.masks[0] is not None and track.landmarks
                 }
             )
             writer_data_2d.put(
@@ -691,7 +706,7 @@ def run(
                 {
                     track_id: track
                     for track_id, track in active_object_tracks.items()
-                    if track.masks is not None and track.landmarks
+                    if track.masks[0] is not None and track.landmarks
                 }
             )
             writer_data_3d.put(
@@ -864,6 +879,10 @@ def _improve_association_trust_3d(
                 ),
             )
             medians[i] = median
+            mean_translation = mean_translations.get(
+                track_id, get_mean_translation(track)
+            )
+            mean_translations[track_id] = mean_translation
             if track.cls != detection.left.cls:
                 LOGGER.debug("Wrong class!")
                 # wrong class
@@ -880,9 +899,11 @@ def _improve_association_trust_3d(
                 min_landmarks=1,  # int(0.2 * len(track.landmarks)),
             ):
                 LOGGER.debug("Track %d not in view, can't match", track_id)
+                track.in_view = False
                 tracks_not_in_view.add(track_id)
                 tracks_not_in_view.add(track_id_mapping.get(track_id, track_id))
                 continue
+            track.in_view = True
             features, lm_mapping = _get_features_from_landmarks(track.landmarks)
             track_matches = feature_matcher.match_features(left_features, features)
             T_cam_obj_pnp, pnp_success, inlier_ratio = _localize_object(
@@ -901,8 +922,6 @@ def _improve_association_trust_3d(
             T_world_obj_prev = track.poses[last_img_id]
             T_world_obj_pnp = T_world_cam @ T_cam_obj_pnp
             T_rel = np.linalg.inv(T_world_obj_prev) @ T_world_obj_pnp
-            mean_translation = get_mean_translation(track)
-            mean_translations[track_id] = mean_translation
             if pnp_success and _is_valid_motion(
                 T_rel,
                 obj_cls=track.cls,
@@ -971,6 +990,10 @@ def _improve_association_trust_3d(
             if track_id in matched_tracks:
                 # already matched --> disregard 2d tracker
                 LOGGER.debug("Track already matched")
+                track_id_mapping[track_id] = uuid.uuid1().int
+                track_id = track_id_mapping[track_id]
+                matched_detections.add(detection_id)
+                matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
                 continue
 
             if track_id in tracks_not_in_view:
@@ -995,13 +1018,8 @@ def _improve_association_trust_3d(
                 # track isn't new or old & wasn't matched yet --> check whether distance is valid
                 median = medians[detection_id]
                 if median is None:
-                    # if check can't happen, trust 2d
+                    # if no points can be matched, detection has no useful info, discard
                     LOGGER.debug("No stereo matches, trusting tracker")
-                    matched_detections.add(detection_id)
-                    matches.append(
-                        TrackMatch(track_id=track_id, detection_id=detection_id)
-                    )
-                    matched_tracks.add(track_id)
                     continue
                 mean_translation = mean_translations[track_id]
 
@@ -1343,6 +1361,7 @@ def step(
     tracks_to_run_ba: List[TrackId],
     all_track_ids: Set[TrackId],
     track_id_mapping: Dict[TrackId, TrackId],
+    img_shape: Tuple[int, int],
 ) -> Tuple[
     Dict[int, ObjectTrack], List[List[Feature]], List[List[Feature]], List[List[Match]]
 ]:
@@ -1395,7 +1414,6 @@ def step(
             track_logger.debug(
                 "Increased badly tracked frames to %d", track.badly_tracked_frames
             )
-            track.masks = None
             unmatched_futures_to_track_id[
                 executor.apipe(
                     _add_constant_motion_to_track,
@@ -1403,6 +1421,8 @@ def step(
                     img_id=img_id,
                     T_world_cam=current_cam_pose,
                     track_id=track_id,
+                    stereo_cam=stereo_cam,
+                    img_shape=img_shape,
                 )
             ] = track_id
         for match in matches:

@@ -2,13 +2,13 @@ import logging
 import pickle
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 from bamot.config import CONFIG as config
 from bamot.core.base_types import (CameraParameters, Feature, FeatureMatcher,
-                                   Landmark, Match)
+                                   Landmark, Match, StereoCamera)
 from g2o import AngleAxis
 from PIL import Image, ImageDraw
 
@@ -67,8 +67,8 @@ def get_convex_hull_from_mask(obj_mask):
     return list(map(tuple, get_convex_hull(np.argwhere(obj_mask))))
 
 
-def project(params: CameraParameters, pt_3d: np.ndarray):
-    x, y, z = map(float, pt_3d)
+def project(params: CameraParameters, pt_3d_cam: np.ndarray):
+    x, y, z = map(float, pt_3d_cam)
     return np.array(
         [params.fx * (x / z) + params.cx, params.fy * (y / z) + params.cy]
     ).reshape(2, 1)
@@ -330,7 +330,7 @@ def match_features(
 
 
 def is_in_view(
-    landmarks: List[Landmark],
+    landmarks: Dict[int, Landmark],
     T_cam_obj: np.ndarray,
     params: CameraParameters,
     min_landmarks: int = 1,
@@ -346,6 +346,68 @@ def is_in_view(
                 # at least one landmark is in view
                 return True
     return False
+
+
+def get_masks_from_landmarks(
+    landmarks: List[Landmark],
+    T_cam_obj: np.ndarray,
+    stereo_cam: StereoCamera,
+    img_shape: Tuple[int, int],
+    num_landmarks: int = 30,
+):
+    if len(landmarks) > num_landmarks:
+        rng = np.random.default_rng()
+        lm_subset = rng.choice(list(landmarks), size=num_landmarks, replace=False)
+    else:
+        lm_subset = landmarks
+    left_points = []
+    right_points = []
+    for lmid in lm_subset:
+        lm = landmarks[lmid]
+        pt_3d_left_cam = from_homogeneous(T_cam_obj @ to_homogeneous(lm.pt_3d))
+        pt_3d_right_cam = from_homogeneous(
+            np.linalg.inv(stereo_cam.T_left_right)
+            @ T_cam_obj
+            @ to_homogeneous(lm.pt_3d)
+        )
+        x_left, y_left = project(stereo_cam.left, pt_3d_left_cam)
+        x_right, y_right = project(stereo_cam.right, pt_3d_right_cam)
+        if (
+            x_left > 0
+            and y_left > 0
+            and x_left < img_shape[1]
+            and y_left < img_shape[0]
+        ):
+            left_points.append([y_left, x_left])
+        if (
+            x_right > 0
+            and y_right > 0
+            and x_right < img_shape[1]
+            and y_left < img_shape[0]
+        ):
+            right_points.append([y_right, x_right])
+    if len(left_points) < 3:
+        left_mask = None
+    else:
+        left_convex_hull = get_convex_hull_mask(left_points, img_shape)
+        left_mask = fill_contours(left_convex_hull)
+        num_pixels_left = min(10, max(1, 1000 // int(left_mask.sum())))
+        left_mask = dilate_mask(left_mask, num_pixels_left)
+    if len(right_points) < 3:
+        right_mask = None
+    else:
+        right_convex_hull = get_convex_hull_mask(right_points, img_shape)
+        right_mask = fill_contours(right_convex_hull)
+        num_pixels_right = min(10, max(1, 1000 // int(left_mask.sum())))
+        right_mask = dilate_mask(right_mask, num_pixels_right)
+
+    return (left_mask, right_mask)
+
+
+def fill_contours(arr):
+    return (
+        np.maximum.accumulate(arr, 1) & np.maximum.accumulate(arr[:, ::-1], 1)[:, ::-1]
+    )
 
 
 def triangulate(

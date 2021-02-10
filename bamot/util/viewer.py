@@ -16,8 +16,6 @@ from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
-CAR_DIMS = (1.5, 1.7, 4.5)  # HxWxL
-PED_DIMS = (1.7, 0.4, 0.25)
 
 
 @dataclass
@@ -64,43 +62,43 @@ def _enhance_image(
         cv2.drawKeypoints(stereo_img.left, left_keypoints, stereo_img.left)
         cv2.drawKeypoints(stereo_img.right, right_keypoints, stereo_img.right)
     for track_id, track in tracks.items():
-        if track.masks is None:
-            continue
         # opencv expects BGR non-normalized color as tuple
-        clr = tuple((255 * np.flip(colors[track_id])).astype(int).tolist())
-        draw_contours(track.masks[0], stereo_img.left, clr)
-        y, x = map(min, np.where(track.masks[0] != 0))
-        y_other, x_other = map(max, np.where(track.masks[0] != 0))
-        shortend_track_id = (
-            (str(track_id)[:3] + "..") if len(str(track_id)) > 5 else str(track_id)
-        )
-        stereo_img.left = cv2.putText(
-            stereo_img.left,
-            shortend_track_id,
-            (x, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.0,
-            clr,
-            3,
-        )
-        stereo_img.left = cv2.rectangle(
-            stereo_img.left, (x, y), (x_other, y_other), clr, 1
-        )
-        draw_contours(track.masks[1], stereo_img.right, clr)
-        y, x = map(min, np.where(track.masks[1] != 0))
-        y_other, x_other = map(max, np.where(track.masks[1] != 0))
-        stereo_img.right = cv2.putText(
-            stereo_img.right,
-            shortend_track_id,
-            (x, y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.0,
-            clr,
-            3,
-        )
-        stereo_img.right = cv2.rectangle(
-            stereo_img.right, (x, y), (x_other, y_other), clr, 1
-        )
+        if track.masks[0] is not None:
+            clr = tuple((255 * np.flip(colors[track_id])).astype(int).tolist())
+            draw_contours(track.masks[0], stereo_img.left, clr)
+            y, x = map(min, np.where(track.masks[0] != 0))
+            y_other, x_other = map(max, np.where(track.masks[0] != 0))
+            shortend_track_id = (
+                (str(track_id)[:3] + "..") if len(str(track_id)) > 5 else str(track_id)
+            )
+            stereo_img.left = cv2.putText(
+                stereo_img.left,
+                shortend_track_id,
+                (x, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                clr,
+                3,
+            )
+            stereo_img.left = cv2.rectangle(
+                stereo_img.left, (x, y), (x_other, y_other), clr, 1
+            )
+        if track.masks[1] is not None:
+            draw_contours(track.masks[1], stereo_img.right, clr)
+            y, x = map(min, np.where(track.masks[1] != 0))
+            y_other, x_other = map(max, np.where(track.masks[1] != 0))
+            stereo_img.right = cv2.putText(
+                stereo_img.right,
+                shortend_track_id,
+                (x, y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                clr,
+                3,
+            )
+            stereo_img.right = cv2.rectangle(
+                stereo_img.right, (x, y), (x_other, y_other), clr, 1
+            )
 
     return stereo_img
 

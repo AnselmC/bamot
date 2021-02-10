@@ -102,8 +102,8 @@ __frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for
 
 __trust_2d_default = str(os.environ.get("TRUST_2D", default="yes"))
 
-__car_dims_default = (1.5, 1.7, 4.5)
-__ped_dims_default = (1.7, 0.4, 0.25)
+__car_dims_default = (1.6, 1.8, 4.3)  # HxWxL
+__ped_dims_default = (1.9, 0.7, 0.9)
 
 
 if __config_file_default.exists():

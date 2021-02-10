@@ -103,6 +103,7 @@ class ObjectTrack:
         default_factory=dict
     )  # w.r.t. object
     active: bool = True
+    in_view: bool = True
     badly_tracked_frames: int = 0
     dist_from_cam: float = 0
     rot_angle: Dict[int, float] = field(default_factory=dict)  # in camera coordinates

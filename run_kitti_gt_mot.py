@@ -402,6 +402,7 @@ if __name__ == "__main__":
         kwargs={
             "images": image_stream,
             "detections": detection_stream,
+            "img_shape": img_shape,
             "stereo_cam": stereo_cam,
             "slam_data": slam_data,
             "shared_data": shared_data,
