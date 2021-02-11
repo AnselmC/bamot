@@ -130,14 +130,14 @@ def _write_3d_detections(
                 )
 
                 # number of landmarks positively effects confidence
-                num_lm_score = get_confidence(max_point=500, value=len(track.landmarks))
+                num_lm_score = get_confidence(max_point=120, value=len(track.landmarks))
 
                 # number of poses positively effects confidence
                 num_pose_score = get_confidence(max_point=10, value=len(track.poses))
 
                 # dist from camera negatively effects confidence
                 dist_cam_score = get_confidence(
-                    max_point=60, value=track.dist_from_cam, upward_sloping=False,
+                    max_point=100, value=track.dist_from_cam, upward_sloping=False,
                 )
 
                 confidence_score = (
