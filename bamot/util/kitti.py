@@ -295,6 +295,7 @@ def get_3d_track_line(
     track_id: TrackId,
     rot: float,
     alpha: float,
+    confidence_score: float,
     obj_type: str,
     dims: Tuple[float, float, float],
     loc: Tuple[float, float, float],
@@ -302,14 +303,13 @@ def get_3d_track_line(
 ) -> str:
     truncation = 0
     occlusion = 0
-    score = 1
     to_rounded_string = lambda x: str(round(x, 4))
     return (
         f"{img_id} {track_id} {obj_type} {truncation} {occlusion} {to_rounded_string(alpha)} "
         f"{' '.join(map(to_rounded_string, bbox_2d))} "
         f"{' '.join(map(to_rounded_string, dims))} "
         f"{' '.join(map(to_rounded_string, loc))} "
-        f"{to_rounded_string(rot)} {score}"
+        f"{to_rounded_string(rot)} {confidence_score}"
     )
 
 
