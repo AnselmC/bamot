@@ -393,6 +393,8 @@ def get_masks_from_landmarks(
         left_mask = fill_contours(left_convex_hull)
         num_pixels_left = min(10, max(1, 1000 // (1 + int(left_mask.sum()))))
         left_mask = dilate_mask(left_mask, num_pixels_left)
+        if not np.any(left_mask):
+            left_mask = None
     if len(right_points) < 3:
         right_mask = None
     else:
@@ -400,7 +402,8 @@ def get_masks_from_landmarks(
         right_mask = fill_contours(right_convex_hull)
         num_pixels_right = min(10, max(1, 1000 // (1 + int(right_mask.sum()))))
         right_mask = dilate_mask(right_mask, num_pixels_right)
-
+        if not np.any(right_mask):
+            right_mask = None
     return (left_mask, right_mask)
 
 
