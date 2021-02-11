@@ -171,7 +171,7 @@ def _get_max_dist(
     track_logger.debug("Badly tracked frames: %d", badly_tracked_frames)
     return (
         min(
-            config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor
+            config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 2 + 1) * dist_factor
         )
         * max_translation
     )
