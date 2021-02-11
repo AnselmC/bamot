@@ -135,7 +135,7 @@ def get_mean_translation(object_track):
     if not translations:
         return None
     LOGGER.debug("Translations:\n%s", translations)
-    return np.mean(translations)
+    return np.median(translations)
 
 
 def _get_max_dist(
@@ -150,7 +150,7 @@ def _get_max_dist(
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
     if mean_translation is not None and (num_poses - badly_tracked_frames) >= 5:
         track_logger.debug("Using max speed based on median translation")
-        max_speed = min(max_speed, 3 * mean_translation * config.FRAME_RATE)
+        max_speed = min(max_speed, 4 * mean_translation * config.FRAME_RATE)
     else:
         track_logger.debug("Using max speed of object type")
     track_logger.debug("Max speed: %f", max_speed)
@@ -158,7 +158,7 @@ def _get_max_dist(
     dist_factor = (
         1
         if dist_from_cam is None
-        else max(1, (2 * dist_from_cam) / (3 * 20 * cam_baseline))
+        else max(1, (1 * dist_from_cam) / (2 * 20 * cam_baseline))
     )
     track_logger.debug("Dist factor: %f", dist_factor)
     track_logger.debug("Badly tracked frames: %d", badly_tracked_frames)
