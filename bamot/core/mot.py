@@ -79,13 +79,12 @@ def _add_constant_motion_to_track(
         pcl_center_cam = from_homogeneous(
             T_cam_obj @ to_homogeneous(track.pcl_centers[img_id])
         )
-        track.masks = (None, None)
-        # if not track.in_view:
-        #    track.masks = (None, None)
-        # else:
-        #    track.masks = get_masks_from_landmarks(
-        #        track.landmarks, T_cam_obj, stereo_cam, img_shape
-        #    )
+        if not track.in_view:
+            track.masks = (None, None)
+        else:
+            track.masks = get_masks_from_landmarks(
+                track.landmarks, T_cam_obj, stereo_cam, img_shape
+            )
         if len(track.poses) > 1 and pcl_center_cam[-1] < 0:
             track_logger.debug("Track is behind camera (z: %f)", pcl_center_cam[-1])
             track.active = False
@@ -149,12 +148,19 @@ def _get_max_dist(
     track_logger=LOGGER,
 ):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
+    min_speed = (
+        max_speed / 10
+    )  # allow for some motion even if previous estimates had none
     if median_translation is not None and (num_poses - badly_tracked_frames) >= 5:
         track_logger.debug("Using max speed based on median translation")
         max_speed = min(max_speed, 4 * median_translation * config.FRAME_RATE)
+        max_translation = max(
+            min_speed / config.FRAME_RATE, max_speed / config.FRAME_RATE
+        )
     else:
         track_logger.debug("Using max speed of object type")
-    track_logger.debug("Max speed: %f", max_speed)
+        max_translation = max_speed / config.FRAME_RATE
+    track_logger.debug("Max translation: %f", max_translation)
     cam_baseline = cam.T_left_right[0, 3]
     dist_factor = (
         1
@@ -163,9 +169,12 @@ def _get_max_dist(
     )
     track_logger.debug("Dist factor: %f", dist_factor)
     track_logger.debug("Badly tracked frames: %d", badly_tracked_frames)
-    return min(
-        config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor
-    ) * (max_speed / config.FRAME_RATE)
+    return (
+        min(
+            config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 3 + 1) * dist_factor
+        )
+        * max_translation
+    )
 
 
 def _is_valid_motion(
@@ -711,19 +720,7 @@ def run(
                 }
             )
             writer_data_3d.put(
-                {
-                    "T_world_cam": current_pose,
-                    "track_ids": [track_id for track_id in track_copy],
-                    "img_id": img_id,
-                    "object_classes": [obj.cls for obj in track_copy.values()],
-                    "masks": [obj.masks[0] for obj in track_copy.values()],
-                    "locations": [
-                        obj.locations.get(img_id) for obj in track_copy.values()
-                    ],
-                    "rot_angles": [
-                        obj.rot_angle.get(img_id) for obj in track_copy.values()
-                    ],
-                }
+                {"T_world_cam": current_pose, "tracks": track_copy, "img_id": img_id,}
             )
     stop_flag.set()
     shared_data.put({})

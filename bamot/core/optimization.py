@@ -25,7 +25,7 @@ def object_bundle_adjustment(
     object_track: ObjectTrack,
     all_poses: Dict[ImageId, np.ndarray],
     stereo_cam: StereoCamera,
-    mean_translation: float,
+    median_translation: float,
     max_iterations: int = 10,
     full_ba: bool = False,
 ) -> ObjectTrack:
@@ -80,7 +80,7 @@ def object_bundle_adjustment(
                 else config.CONSTANT_MOTION_WEIGHTS_PED
             )
             rot_weight = rot_weight * num_obs
-            trans_weight = trans_weight * num_obs * trans_func(mean_translation)
+            trans_weight = trans_weight * num_obs * trans_func(median_translation)
             if prev_prev_cam == EmptyTuple:
                 prev_prev_cam = (pose_vertex, img_id)
             elif prev_cam == EmptyTuple:

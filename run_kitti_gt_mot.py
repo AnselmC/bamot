@@ -53,6 +53,12 @@ HANDLER.setFormatter(
 LOGGER.handlers = [HANDLER]
 
 
+def get_confidence(max_point, value, upward_sloping=True):
+    if upward_sloping:
+        return 0.5 * (np.tanh(4 * value / max_point - 2) + 1)
+    return 0.5 * (np.tanh(2 - 4 * value / max_point) + 1)
+
+
 def _fake_slam(
     slam_data: Union[queue.Queue, mp.Queue], gt_poses: List[np.ndarray], offset: int
 ):
@@ -89,14 +95,14 @@ def _write_3d_detections(
             img_id = track_data["img_id"]
             LOGGER.debug("Got 3d detection data for image %d", img_id)
             T_world_cam = track_data["T_world_cam"]
-            for i, track_id in enumerate(track_data["track_ids"]):
-                obj_type = track_data["object_classes"][i].lower()
+            for track_id, track in track_data["tracks"].items():
+                obj_type = track.cls.lower()
                 dims = config.PED_DIMS if obj_type == "pedestrian" else config.CAR_DIMS
-                location = track_data["locations"][i]
+                location = track.locations.get(img_id)
                 if location is None:
                     continue
-                rot_angle = np.array(track_data["rot_angles"][i])
-                mask = track_data["masks"][i]
+                rot_angle = np.array(track.rot_angle.get(img_id))
+                mask = track.masks[0]
                 y_top_left, x_top_left = map(min, np.where(mask != 0))
                 y_bottom_right, x_bottom_right = map(max, np.where(mask != 0))
                 bbox2d = [x_top_left, y_top_left, x_bottom_right, y_bottom_right]
@@ -116,6 +122,28 @@ def _write_3d_detections(
                     rot_angle = np.array([0])
                 alpha = rot_angle - beta
 
+                # number of badly tracked frames negatively effects confidence
+                btf_score = get_confidence(
+                    max_point=config.KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST,
+                    value=track.badly_tracked_frames,
+                    upward_sloping=False,
+                )
+
+                # number of landmarks positively effects confidence
+                num_lm_score = get_confidence(max_point=500, value=len(track.landmarks))
+
+                # number of poses positively effects confidence
+                num_pose_score = get_confidence(max_point=10, value=len(track.poses))
+
+                # dist from camera negatively effects confidence
+                dist_cam_score = get_confidence(
+                    max_point=60, value=track.dist_from_cam, upward_sloping=False,
+                )
+
+                confidence_score = (
+                    btf_score * num_lm_score * num_pose_score * dist_cam_score
+                )
+
                 line = get_3d_track_line(
                     img_id=img_id,
                     track_id=track_id,
@@ -124,6 +152,7 @@ def _write_3d_detections(
                     loc=loc_cam.flatten().tolist(),
                     rot=rot_angle.flatten()[0],
                     bbox_2d=bbox2d,
+                    confidence_score=confidence_score,
                     alpha=alpha.flatten()[0],
                 )
                 fp.write(line + "\n")
