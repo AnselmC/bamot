@@ -73,6 +73,7 @@ def _write_3d_detections(
     path = kitti_path / "3d_tracking"
     for tag in tags:
         path /= tag
+    path /= "data"  # to adhere to dir structure expected by ab3dmot
     path.mkdir(parents=True, exist_ok=True)
     fname = path / (scene + ".txt")
     # overwrite file if exists

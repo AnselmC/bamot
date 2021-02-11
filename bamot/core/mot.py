@@ -79,12 +79,13 @@ def _add_constant_motion_to_track(
         pcl_center_cam = from_homogeneous(
             T_cam_obj @ to_homogeneous(track.pcl_centers[img_id])
         )
-        if not track.in_view:
-            track.masks = (None, None)
-        else:
-            track.masks = get_masks_from_landmarks(
-                track.landmarks, T_cam_obj, stereo_cam, img_shape
-            )
+        track.masks = (None, None)
+        # if not track.in_view:
+        #    track.masks = (None, None)
+        # else:
+        #    track.masks = get_masks_from_landmarks(
+        #        track.landmarks, T_cam_obj, stereo_cam, img_shape
+        #    )
         if len(track.poses) > 1 and pcl_center_cam[-1] < 0:
             track_logger.debug("Track is behind camera (z: %f)", pcl_center_cam[-1])
             track.active = False
@@ -123,7 +124,7 @@ def _remove_outlier_landmarks(
     return cluster_median_center, dist_from_cam
 
 
-def get_mean_translation(object_track):
+def get_median_translation(object_track):
     translations = []
     frames = list(object_track.poses.keys())
     for i in range(len(frames[-2 * config.SLIDING_WINDOW_BA :]) - 1):
@@ -142,15 +143,15 @@ def _get_max_dist(
     obj_cls,
     badly_tracked_frames,
     cam,
-    mean_translation=None,
+    median_translation=None,
     dist_from_cam=None,
     num_poses=0,
     track_logger=LOGGER,
 ):
     max_speed = config.MAX_SPEED_CAR if obj_cls == "car" else config.MAX_SPEED_PED
-    if mean_translation is not None and (num_poses - badly_tracked_frames) >= 5:
+    if median_translation is not None and (num_poses - badly_tracked_frames) >= 5:
         track_logger.debug("Using max speed based on median translation")
-        max_speed = min(max_speed, 4 * mean_translation * config.FRAME_RATE)
+        max_speed = min(max_speed, 4 * median_translation * config.FRAME_RATE)
     else:
         track_logger.debug("Using max speed of object type")
     track_logger.debug("Max speed: %f", max_speed)
@@ -172,7 +173,7 @@ def _is_valid_motion(
     obj_cls,
     badly_tracked_frames,
     cam,
-    mean_translation=None,
+    median_translation=None,
     dist_from_cam=None,
     track_logger=LOGGER,
     num_poses=0,
@@ -183,7 +184,7 @@ def _is_valid_motion(
         badly_tracked_frames=badly_tracked_frames,
         cam=cam,
         dist_from_cam=dist_from_cam,
-        mean_translation=mean_translation,
+        median_translation=median_translation,
         num_poses=num_poses,
         track_logger=track_logger,
     )
@@ -459,7 +460,7 @@ def run(
         enough_track_matches = len(track_matches) >= 5
         successful = True
         valid_motion = True
-        mean_translation = get_mean_translation(track)
+        median_translation = get_median_translation(track)
         if enough_track_matches:
             if cached_pnp_poses.get(track_id) is not None:
                 track_logger.debug("Getting cached PnP pose")
@@ -487,11 +488,11 @@ def run(
                         track.badly_tracked_frames,
                         cam=stereo_cam,
                         dist_from_cam=track.dist_from_cam,
-                        mean_translation=mean_translation,
+                        median_translation=median_translation,
                         track_logger=track_logger,
                         num_poses=len(track.poses),
                     )
-                    track_logger.debug("Median translation: %.2f", mean_translation)
+                    track_logger.debug("Median translation: %.2f", median_translation)
                     if valid_motion:
                         track_logger.debug("PnP estimate is valid motion")
                         T_cam_obj = T_cam_obj_pnp
@@ -539,7 +540,7 @@ def run(
                 object_track=copy.deepcopy(track),
                 all_poses=all_poses,
                 stereo_cam=stereo_cam,
-                mean_translation=mean_translation,
+                median_translation=median_translation,
             )
         if track.landmarks:
             track.poses[img_id] = T_world_obj
@@ -731,12 +732,12 @@ def run(
     all_object_tracks.update(active_object_tracks)
     if config.FINAL_FULL_BA:
         for track_id, track in all_object_tracks.items():
-            mean_translation = get_mean_translation(track)
+            median_translation = get_median_translation(track)
             track = object_bundle_adjustment(
                 track,
                 all_poses,
                 stereo_cam,
-                mean_translation,
+                median_translation,
                 max_iterations=20,
                 full_ba=True,
             )
@@ -860,7 +861,7 @@ def _improve_association_trust_3d(
     matches = []
     tracks_not_in_view = set()
     medians = {}
-    mean_translations = {}
+    median_translations = {}
     LOGGER.debug("%d detection(s) in image %d", len(detections), img_id)
     # first, do pnp-based matching
     for i, detection in enumerate(detections):
@@ -879,10 +880,10 @@ def _improve_association_trust_3d(
                 ),
             )
             medians[i] = median
-            mean_translation = mean_translations.get(
-                track_id, get_mean_translation(track)
+            median_translation = median_translations.get(
+                track_id, get_median_translation(track)
             )
-            mean_translations[track_id] = mean_translation
+            median_translations[track_id] = median_translation
             if track.cls != detection.left.cls:
                 LOGGER.debug("Wrong class!")
                 # wrong class
@@ -929,7 +930,7 @@ def _improve_association_trust_3d(
                 cam=stereo_cam,
                 dist_from_cam=track.dist_from_cam,
                 num_poses=len(track.poses),
-                mean_translation=mean_translation,
+                median_translation=median_translation,
             ):
                 score = num_inliers / min(len(features), len(track.landmarks))
                 cost_matrix[i][j] = score
@@ -1021,7 +1022,7 @@ def _improve_association_trust_3d(
                     # if no points can be matched, detection has no useful info, discard
                     LOGGER.debug("No stereo matches, trusting tracker")
                     continue
-                mean_translation = mean_translations[track_id]
+                median_translation = median_translations[track_id]
 
                 last_img_id = list(track.locations)[-1]
                 prev_location = track.locations[last_img_id]
@@ -1030,7 +1031,7 @@ def _improve_association_trust_3d(
                     obj_cls=track.cls,
                     badly_tracked_frames=track.badly_tracked_frames,
                     dist_from_cam=track.dist_from_cam,
-                    mean_translation=mean_translation,
+                    median_translation=median_translation,
                     num_poses=len(track.poses),
                     cam=stereo_cam,
                 )
@@ -1087,11 +1088,11 @@ def _improve_association_trust_3d(
             last_img_id = list(track.locations)[-1]
             prev_location = track.locations[last_img_id]
             dist = np.linalg.norm(median - prev_location)
-            mean_translation = mean_translations[track_id]
+            median_translation = median_translations[track_id]
             max_dist = _get_max_dist(
                 obj_cls=track.cls,
                 badly_tracked_frames=track.badly_tracked_frames,
-                mean_translation=mean_translation,
+                median_translation=median_translation,
                 num_poses=len(track.poses),
                 dist_from_cam=track.dist_from_cam,
                 cam=stereo_cam,
