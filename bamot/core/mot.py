@@ -46,6 +46,8 @@ def get_rotation_of_track(track: ObjectTrack, T_world_cam: np.ndarray) -> float:
     angle = np.arccos(np.dot(dir_vector.T, np.array([1, 0]).reshape(2, 1)))
     if dir_vector[1] > 0:
         angle = -angle
+    if not np.isfinite(angle):
+        angle = 0
     return angle
 
 

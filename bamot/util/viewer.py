@@ -3,7 +3,7 @@ import queue
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import cv2
 import numpy as np
@@ -16,6 +16,14 @@ from bamot.util.kitti import LabelData, LabelDataRow
 from bamot.util.misc import Color, get_color
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
+
+
+class ViewerColors(NamedTuple):
+    foreground: Tuple[float, float, float]
+    background: Tuple[float, float, float]
+
+
+VIEWER_COLORS: ViewerColors = None
 
 
 @dataclass
@@ -42,7 +50,7 @@ class EgoGeometries:
 
 def _create_camera_lineset():
     lineset = o3d.geometry.LineSet()
-    points = [[0, 0, 2], [2, 1, 3], [2, -1, 3], [-2, 1, 3], [-2, -1, 3]]
+    points = [[0, 0, 0], [2, 1, 2], [2, -1, 2], [-2, 1, 2], [-2, -1, 2]]
     lines = [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2], [1, 3], [2, 4], [3, 4]]
     lineset.points = o3d.utility.Vector3dVector(points)
     lineset.lines = o3d.utility.Vector2iVector(lines)
@@ -65,7 +73,7 @@ def _enhance_image(
         # opencv expects BGR non-normalized color as tuple
         if track.masks[0] is not None:
             clr = tuple((255 * np.flip(colors[track_id])).astype(int).tolist())
-            draw_contours(track.masks[0], stereo_img.left, clr)
+            stereo_img.left = draw_contours(track.masks[0], stereo_img.left, clr)
             y, x = map(min, np.where(track.masks[0] != 0))
             y_other, x_other = map(max, np.where(track.masks[0] != 0))
             shortend_track_id = (
@@ -84,7 +92,7 @@ def _enhance_image(
                 stereo_img.left, (x, y), (x_other, y_other), clr, 1
             )
         if track.masks[1] is not None:
-            draw_contours(track.masks[1], stereo_img.right, clr)
+            stereo_img.right = draw_contours(track.masks[1], stereo_img.right, clr)
             y, x = map(min, np.where(track.masks[1] != 0))
             y_other, x_other = map(max, np.where(track.masks[1] != 0))
             stereo_img.right = cv2.putText(
@@ -128,8 +136,10 @@ def _update_gt_visualization(
         if current_img_id not in track_data:
             if track_id in all_gt_track_geometries:
                 geom = all_gt_track_geometries.pop(track_id)
-                visualizer.remove_geometry(geom.bbox)
-                visualizer.remove_geometry(geom.online_trajectory)
+                visualizer.remove_geometry(geom.bbox, reset_bounding_box=False)
+                visualizer.remove_geometry(
+                    geom.online_trajectory, reset_bounding_box=False
+                )
         else:
             geometry = all_gt_track_geometries.get(
                 track_id,
@@ -138,7 +148,7 @@ def _update_gt_visualization(
                     offline_trajectory=None,
                     online_trajectory=o3d.geometry.LineSet(),
                     bbox=o3d.geometry.LineSet(),
-                    color=Colors.WHITE,
+                    color=VIEWER_COLORS.foreground,
                 ),
             )
             bbox_points, bbox_lines = _compute_bounding_box_from_kitti(
@@ -160,24 +170,28 @@ def _update_gt_visualization(
                     all_track_geometries.get(track_id).color
                     if track_ids_match
                     and all_track_geometries.get(track_id) is not None
-                    else Colors.WHITE
+                    else VIEWER_COLORS.foreground
                 )
                 geometry.bbox.paint_uniform_color(color)
                 if show_trajs:
                     geometry.online_trajectory.paint_uniform_color(color)
                 else:
-                    geometry.online_trajectory.paint_uniform_color(Colors.BLACK)
+                    geometry.online_trajectory.paint_uniform_color(
+                        VIEWER_COLORS.background
+                    )
             else:
-                geometry.bbox.paint_uniform_color(Colors.BLACK)
-                geometry.online_trajectory.paint_uniform_color(Colors.BLACK)
+                geometry.bbox.paint_uniform_color(VIEWER_COLORS.background)
+                geometry.online_trajectory.paint_uniform_color(VIEWER_COLORS.background)
 
             # update geometries in visualizer
             if all_gt_track_geometries.get(track_id) is None:
-                visualizer.add_geometry(geometry.bbox)
+                visualizer.add_geometry(geometry.bbox, reset_bounding_box=False)
                 all_gt_track_geometries[track_id] = geometry
             elif len(lines) == 1:
                 visualizer.update_geometry(geometry.bbox)
-                visualizer.add_geometry(geometry.online_trajectory)
+                visualizer.add_geometry(
+                    geometry.online_trajectory, reset_bounding_box=False
+                )
             else:
                 visualizer.update_geometry(geometry.bbox)
                 visualizer.update_geometry(geometry.online_trajectory)
@@ -207,7 +221,9 @@ def _update_track_visualization(
                 offline_trajectory=o3d.geometry.LineSet(),
                 online_trajectory=o3d.geometry.LineSet(),
                 bbox=o3d.geometry.LineSet(),
-                color=cached_colors.get(ido, get_color()),
+                color=cached_colors.get(
+                    ido, get_color(only_bright=VIEWER_COLORS.background == Colors.BLACK)
+                ),
             ),
         )
         cached_colors[ido] = track_geometries.color
@@ -234,10 +250,7 @@ def _update_track_visualization(
                 if len(points) < 3:
                     continue
                 try:
-                    if (
-                        len(track.poses) > 1
-                        and track.rot_angle.get(current_img_id) is not None
-                    ):
+                    if track.rot_angle.get(current_img_id) is not None:
                         dimensions = (
                             config.CAR_DIMS if track.cls == "car" else config.PED_DIMS
                         )
@@ -323,34 +336,46 @@ def _update_track_visualization(
             if show_offline_trajs.val:
                 track_geometries.offline_trajectory.paint_uniform_color(color)
             else:
-                track_geometries.offline_trajectory.paint_uniform_color(Colors.BLACK)
+                track_geometries.offline_trajectory.paint_uniform_color(
+                    VIEWER_COLORS.background
+                )
             if show_online_trajs.val:
                 track_geometries.online_trajectory.paint_uniform_color(darker_color)
             else:
-                track_geometries.online_trajectory.paint_uniform_color(Colors.BLACK)
+                track_geometries.online_trajectory.paint_uniform_color(
+                    VIEWER_COLORS.background
+                )
             track_geometries.bbox.paint_uniform_color(color)
         else:
             LOGGER.debug("Track is inactive")
-            track_geometries.pt_cloud.paint_uniform_color(Colors.BLACK)
-            track_geometries.offline_trajectory.paint_uniform_color(Colors.BLACK)
-            track_geometries.online_trajectory.paint_uniform_color(Colors.BLACK)
-            track_geometries.bbox.paint_uniform_color(Colors.BLACK)
+            track_geometries.pt_cloud.paint_uniform_color(VIEWER_COLORS.background)
+            track_geometries.offline_trajectory.paint_uniform_color(
+                VIEWER_COLORS.background
+            )
+            track_geometries.online_trajectory.paint_uniform_color(
+                VIEWER_COLORS.background
+            )
+            track_geometries.bbox.paint_uniform_color(VIEWER_COLORS.background)
         if all_track_geometries.get(ido) is None:
-            visualizer.add_geometry(track_geometries.pt_cloud)
-            visualizer.add_geometry(track_geometries.bbox)
+            visualizer.add_geometry(track_geometries.pt_cloud, reset_bounding_box=False)
+            visualizer.add_geometry(track_geometries.bbox, reset_bounding_box=False)
             all_geometries.add(track_geometries.pt_cloud)
             all_geometries.add(track_geometries.bbox)
             if (
                 len(path_lines_online) >= 1
                 and track_geometries.online_trajectory not in all_geometries
             ):
-                visualizer.add_geometry(track_geometries.online_trajectory)
+                visualizer.add_geometry(
+                    track_geometries.online_trajectory, reset_bounding_box=False
+                )
                 all_geometries.add(track_geometries.online_trajectory)
             if (
                 len(path_lines_offline) >= 1
                 and track_geometries.offline_trajectory not in all_geometries
             ):
-                visualizer.add_geometry(track_geometries.offline_trajectory)
+                visualizer.add_geometry(
+                    track_geometries.offline_trajectory, reset_bounding_box=False
+                )
                 all_geometries.add(track_geometries.offline_trajectory)
             all_track_geometries[ido] = track_geometries
         else:
@@ -359,7 +384,9 @@ def _update_track_visualization(
                 len(path_lines_online) >= 1
                 and track_geometries.online_trajectory not in all_geometries
             ):
-                visualizer.add_geometry(track_geometries.online_trajectory)
+                visualizer.add_geometry(
+                    track_geometries.online_trajectory, reset_bounding_box=False
+                )
                 all_geometries.add(track_geometries.online_trajectory)
             else:
                 visualizer.update_geometry(track_geometries.online_trajectory)
@@ -367,7 +394,9 @@ def _update_track_visualization(
                 len(path_lines_offline) >= 1
                 and track_geometries.offline_trajectory not in all_geometries
             ):
-                visualizer.add_geometry(track_geometries.offline_trajectory)
+                visualizer.add_geometry(
+                    track_geometries.offline_trajectory, reset_bounding_box=False
+                )
                 all_geometries.add(track_geometries.offline_trajectory)
             else:
                 visualizer.update_geometry(track_geometries.offline_trajectory)
@@ -377,10 +406,16 @@ def _update_track_visualization(
         track_geometry = all_track_geometries.get(ido)
         if track_geometry is not None:
             cached_colors[ido] = track_geometry.color
-            visualizer.remove_geometry(track_geometry.pt_cloud)
-            visualizer.remove_geometry(track_geometry.bbox)
-            visualizer.remove_geometry(track_geometry.offline_trajectory)
-            visualizer.remove_geometry(track_geometry.online_trajectory)
+            visualizer.remove_geometry(
+                track_geometry.pt_cloud, reset_bounding_box=False
+            )
+            visualizer.remove_geometry(track_geometry.bbox, reset_bounding_box=False)
+            visualizer.remove_geometry(
+                track_geometry.offline_trajectory, reset_bounding_box=False
+            )
+            visualizer.remove_geometry(
+                track_geometry.online_trajectory, reset_bounding_box=False
+            )
 
             all_geometries.remove(track_geometry.pt_cloud)
             all_geometries.remove(track_geometry.bbox)
@@ -392,40 +427,43 @@ def _update_track_visualization(
             del cached_colors[ido]
 
 
-def _update_ego_visualization(gt_poses, visualizer, ego_geometries, current_img_id):
+def _update_ego_visualization(
+    gt_poses, visualizer, ego_geometries, current_img_id, follow_ego=True
+):
     ego_pts = []
     ego_path_lines = []
     for img_id, pose in enumerate(gt_poses):
         ego_pts.append(pose[:3, 3])
-        if img_id > current_img_id:
-            ctr = visualizer.get_view_control()
-            cam_parameters = ctr.convert_to_pinhole_camera_parameters()
-            init_traf = np.array(
-                [
-                    [1.0000000, 0.0000000, 0.0000000, 0.0],
-                    [0.0000000, 1.0000000, 0.0000000, 6.0],
-                    [0.0000000, 0.0000000, 1.0000000, 15.0],
-                    [0, 0, 0, 1],
-                ]
-            )
-            cam_parameters.extrinsic = init_traf @ np.linalg.inv(pose)
-            ctr.convert_from_pinhole_camera_parameters(cam_parameters)
+        if img_id == current_img_id:
+            if follow_ego or current_img_id == 0:
+                ctr = visualizer.get_view_control()
+                cam_parameters = ctr.convert_to_pinhole_camera_parameters()
+                init_traf = np.array(
+                    [
+                        [1.0000000, 0.0000000, 0.0000000, 0.0],
+                        [0.0000000, 1.0000000, 0.0000000, 6.0],
+                        [0.0000000, 0.0000000, 1.0000000, 15.0],
+                        [0, 0, 0, 1],
+                    ]
+                )
+                cam_parameters.extrinsic = init_traf @ np.linalg.inv(pose)
+                ctr.convert_from_pinhole_camera_parameters(cam_parameters)
             break
         ego_path_lines.append([img_id, img_id + 1])
     if len(ego_path_lines) > 0:
         ego_geometries.trajectory.points = o3d.utility.Vector3dVector(ego_pts)
         ego_geometries.trajectory.lines = o3d.utility.Vector2iVector(ego_path_lines)
-        ego_geometries.trajectory.paint_uniform_color(Colors.WHITE)
-        if ego_geometries.curr_img < current_img_id:
-            ego_geometries.curr_img = current_img_id
-            if current_img_id > 0:
-                ego_geometries.curr_pose.transform(
-                    np.linalg.inv(gt_poses[current_img_id - 1])
-                )
-            ego_geometries.curr_pose.transform(gt_poses[current_img_id])
-            ego_geometries.curr_pose.paint_uniform_color(np.array(Colors.WHITE))
-            visualizer.update_geometry(ego_geometries.trajectory)
-            visualizer.update_geometry(ego_geometries.curr_pose)
+        ego_geometries.trajectory.paint_uniform_color(VIEWER_COLORS.foreground)
+        visualizer.update_geometry(ego_geometries.trajectory)
+    if ego_geometries.curr_img < current_img_id:
+        ego_geometries.curr_img = current_img_id
+        if current_img_id > 0:
+            ego_geometries.curr_pose.transform(
+                np.linalg.inv(gt_poses[current_img_id - 1])
+            )
+        ego_geometries.curr_pose.transform(gt_poses[current_img_id])
+        ego_geometries.curr_pose.paint_uniform_color(np.array(VIEWER_COLORS.foreground))
+        visualizer.update_geometry(ego_geometries.curr_pose)
 
 
 def _update_geometries(
@@ -443,6 +481,7 @@ def _update_geometries(
     cached_colors: Dict[TrackId, Color],
     gt_poses: List[np.ndarray],
     track_ids_match: bool = False,
+    follow_ego: bool = True,
 ) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
     # display all GT tracks present in current img
@@ -477,6 +516,7 @@ def _update_geometries(
         visualizer=visualizer,
         ego_geometries=ego_geometries,
         current_img_id=current_img_id,
+        follow_ego=follow_ego,
     )
 
 
@@ -509,6 +549,7 @@ def run(
     show_gt: bool = True,
     recording: bool = False,
     track_ids_match: bool = False,
+    dark_background: bool = False,
 ):
     if save_path:
         save_path.mkdir(parents=True, exist_ok=True)
@@ -516,6 +557,11 @@ def run(
         save_path_2d = save_path / "2d"
         save_path_3d.mkdir(exist_ok=True)
         save_path_2d.mkdir(exist_ok=True)
+    global VIEWER_COLORS
+    if dark_background:
+        VIEWER_COLORS = ViewerColors(foreground=Colors.WHITE, background=Colors.BLACK)
+    else:
+        VIEWER_COLORS = ViewerColors(foreground=Colors.BLACK, background=Colors.WHITE)
     vis = o3d.visualization.VisualizerWithKeyCallback()
     show_gt = Boolean(show_gt)
     show_offline_trajs = Boolean(trajs in ["both", "offline"])
@@ -544,7 +590,7 @@ def run(
     view_control.set_constant_z_far(150)
     view_control.set_constant_z_near(-10)
     opts = vis.get_render_option()
-    opts.background_color = np.array(Colors.BLACK)
+    opts.background_color = np.array(VIEWER_COLORS.background)
     opts.point_size = 2.0
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
@@ -555,7 +601,7 @@ def run(
         curr_pose=_create_camera_lineset(),
         curr_img=-1,
     )
-    vis.add_geometry(ego_geometries.trajectory)
+    vis.add_geometry(ego_geometries.trajectory, reset_bounding_box=False)
     vis.add_geometry(ego_geometries.curr_pose)
     first_update = True
     counter = 0
@@ -590,6 +636,7 @@ def run(
                 current_img_id=current_img_id,
                 track_ids_match=track_ids_match,
                 cached_colors=cached_colors,
+                follow_ego=recording,
             )
             if new_data:
                 stereo_image = new_data["stereo_image"]
