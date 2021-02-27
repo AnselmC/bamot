@@ -568,6 +568,7 @@ def run(
             )
             T_world_obj = np.identity(4)
             T_world_obj[:3, 3] += median_cluster_world.reshape(3,)
+            current_landmark_median = np.array([0, 0, 0]).reshape(3, 1)
             for lmid in track.landmarks:
                 pt_3d_obj = track.landmarks[lmid].pt_3d
                 pt_3d_world = T_world_obj_old @ to_homogeneous(pt_3d_obj)
@@ -599,12 +600,13 @@ def run(
 
         if track.landmarks:
             track.poses[img_id] = T_world_obj
-            track.pcl_centers[img_id] = get_center_of_landmarks(
-                track.landmarks.values()
-            )
+            track.pcl_centers[img_id] = current_landmark_median
+            #get_center_of_landmarks(
+            #    track.landmarks.values()
+            #)
             track.locations[img_id] = from_homogeneous(
                 track.poses[img_id]
-                @ to_homogeneous(get_center_of_landmarks(track.landmarks.values()))
+                @ to_homogeneous(np.mean([current_landmark_median, get_center_of_landmarks(track.landmarks.values(), reduction="mean")], axis=0))
             )
             track.rot_angle[img_id] = get_rotation_of_track(track, T_world_cam)
             # track behind camera/ego
