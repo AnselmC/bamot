@@ -1016,6 +1016,9 @@ def _improve_association_trust_3d(
                 matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
             else:
                 # track isn't new or old & wasn't matched yet --> check whether distance is valid
+                if track.cls != detections[detection_id].left.cls:
+                    LOGGER.debug("Wrong class!")
+                    continue
                 median = medians[detection_id]
                 if median is None:
                     # if no points can be matched, detection has no useful info, discard

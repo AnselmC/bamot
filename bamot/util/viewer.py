@@ -237,6 +237,7 @@ def _update_track_visualization(
         lighter_color = np.clip(lighter_color, 0, 1)
         darker_color = np.clip(darker_color, 0, 1)
         track_size = 0
+        dimensions = config.CAR_DIMS if track.cls == "car" else config.PED_DIMS
         for i, (img_id, pose_world_obj) in enumerate(track.poses.items()):
             # center = np.array([0.0, 0.0, 0.0]).reshape(3, 1)
             if i == len(track.poses) - 1:
@@ -251,13 +252,6 @@ def _update_track_visualization(
                     continue
                 try:
                     if track.rot_angle.get(current_img_id) is not None:
-                        dimensions = (
-                            config.CAR_DIMS if track.cls == "car" else config.PED_DIMS
-                        )
-                        location = from_homogeneous(
-                            np.linalg.inv(current_cam_pose)
-                            @ to_homogeneous(np.mean(np.array(points), axis=0))
-                        )
                         location = from_homogeneous(
                             np.linalg.inv(current_cam_pose)
                             @ to_homogeneous(track.locations[current_img_id])
@@ -306,9 +300,11 @@ def _update_track_visualization(
                 pt_world = from_homogeneous(
                     pose_world_obj @ to_homogeneous(offline_point)
                 )
+                pt_world[2] -= dimensions[0] / 2
                 path_points_offline.append(pt_world)
-            online_point = track.locations.get(img_id)
+            online_point = track.locations.get(img_id).copy()
             if online_point is not None:
+                online_point[2] -= dimensions[0] / 2
                 path_points_online.append(online_point.reshape(3,).tolist())
             if i == len(track.poses) - 1:
                 track_size = len(points)
@@ -592,6 +588,7 @@ def run(
     opts = vis.get_render_option()
     opts.background_color = np.array(VIEWER_COLORS.background)
     opts.point_size = 2.0
+    opts.line_width = 50.0
     cv2_window_name = "Stereo Image"
     cv2.namedWindow(cv2_window_name, cv2.WINDOW_NORMAL)
     all_track_geometries: Dict[int, TrackGeometries] = {}
