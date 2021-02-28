@@ -96,14 +96,14 @@ __max_speed_car_default = float(
 )  # about 140 km/h
 __max_speed_ped_default = float(
     os.environ.get("MAX_SPEED_PED", default=8)
-)  # about 30 m/h
+)  # about 14 m/h
 
 __frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
 
 __trust_2d_default = str(os.environ.get("TRUST_2D", default="yes"))
 
-__car_dims_default = (1.5261, 1.6286, 3.8840)  # HxWxL
-__ped_dims_default = (1.8, 1.0, 1.0)
+__car_dims_default = (1.6, 1.8, 4.3)  # HxWxL
+__ped_dims_default = (1.9, 0.7, 0.9)
 
 
 if __config_file_default.exists():
