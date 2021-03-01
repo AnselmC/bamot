@@ -5,6 +5,7 @@ import logging
 import queue
 import time
 import uuid
+from collections import defaultdict
 from threading import Event
 from typing import Dict, Iterable, List, Set, Tuple
 
@@ -167,13 +168,14 @@ def _get_max_dist(
     dist_factor = (
         1
         if dist_from_cam is None
-        else max(1, (1 * dist_from_cam) / (2 * 20 * cam_baseline))
+        else max(1, (1 * dist_from_cam) / (1 * 20 * cam_baseline))
     )
     track_logger.debug("Dist factor: %f", dist_factor)
     track_logger.debug("Badly tracked frames: %d", badly_tracked_frames)
     return (
         min(
-            config.MAX_MAX_DIST_MULTIPLIER, (badly_tracked_frames / 2 + 1) * dist_factor
+            config.MAX_MAX_DIST_MULTIPLIER,
+            (0.75 * badly_tracked_frames + 1) * dist_factor,
         )
         * max_translation
     )
@@ -861,7 +863,7 @@ def _improve_association(
 ):
     cost_matrix = np.zeros((len(detections), len(tracks)))
     feature_matcher = get_feature_matcher()
-    pnp_poses = {}
+    all_pnp_poses = defaultdict(dict)
     matches = []
     tracks_not_in_view = set()
     medians = {}
@@ -938,11 +940,12 @@ def _improve_association(
             ):
                 score = num_inliers / min(len(features), len(track.landmarks))
                 cost_matrix[i][j] = score
-                pnp_poses[track_id] = T_cam_obj_pnp.copy()
+                all_pnp_poses[track_id][i] = T_cam_obj_pnp.copy()
 
     first_indices, second_indices = linear_sum_assignment(cost_matrix, maximize=True)
     matched_tracks = set()
     matched_detections = set()
+    pnp_poses = {}
 
     for row_idx, col_idx in zip(first_indices, second_indices):
         track_id = list(tracks.keys())[col_idx]
@@ -965,6 +968,7 @@ def _improve_association(
             matches.append(TrackMatch(track_id=track_id, detection_id=detection_id,))
             matched_tracks.add(track_id)
             matched_detections.add(detection_id)
+            pnp_poses[track_id] = all_pnp_poses[track_id][detection_id]
 
     unmatched_detections = set(range(len(detections))).difference(matched_detections)
     unmatched_tracks = set(tracks).difference(matched_tracks)
