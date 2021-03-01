@@ -12,7 +12,7 @@ from bamot.config import CONFIG as config
 from bamot.core.base_types import Feature, ObjectTrack, StereoImage, TrackId
 from bamot.util.cv import (draw_contours, from_homogeneous,
                            get_corners_from_vector, to_homogeneous)
-from bamot.util.kitti import LabelData, LabelDataRow
+from bamot.util.kitti import DetectionData, DetectionDataRow
 from bamot.util.misc import Color, get_color
 
 LOGGER = logging.getLogger("UTIL:VIEWER")
@@ -221,9 +221,7 @@ def _update_track_visualization(
                 offline_trajectory=o3d.geometry.LineSet(),
                 online_trajectory=o3d.geometry.LineSet(),
                 bbox=o3d.geometry.LineSet(),
-                color=cached_colors.get(
-                    ido, get_color(only_bright=VIEWER_COLORS.background == Colors.BLACK)
-                ),
+                color=cached_colors.get(ido, get_color(only_bright=True)),
             ),
         )
         cached_colors[ido] = track_geometries.color
@@ -469,7 +467,7 @@ def _update_geometries(
     ego_geometries: EgoGeometries,
     visualizer: o3d.visualization.Visualizer,
     object_tracks: Dict[TrackId, ObjectTrack],
-    label_data: LabelData,
+    label_data: DetectionData,
     current_img_id: int,
     show_online_trajs: bool,
     show_offline_trajs: bool,
@@ -537,10 +535,9 @@ def run(
     shared_data: queue.Queue,
     stop_flag: Event,
     next_step: Event,
-    label_data: LabelData,
+    label_data: DetectionData,
     gt_poses: Optional[List[np.ndarray]] = None,
     save_path: Optional[Path] = None,
-    cam_coordinates: bool = False,
     trajs: str = "both",
     show_gt: bool = True,
     recording: bool = False,
@@ -680,7 +677,7 @@ def run(
     LOGGER.debug("Finished viewer")
 
 
-def _compute_bounding_box_from_kitti(row: LabelDataRow, T_world_cam: np.ndarray):
+def _compute_bounding_box_from_kitti(row: DetectionDataRow, T_world_cam: np.ndarray):
     return _compute_bounding_box(
         location=row.cam_pos,
         rot_angle=row.rot_angle,

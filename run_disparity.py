@@ -14,8 +14,8 @@ from bamot.config import CONFIG as config
 from bamot.config import get_config_dict
 from bamot.core.disparity import run
 from bamot.util.kitti import (get_cameras_from_kitti, get_detection_stream,
-                              get_gt_poses_from_kitti, get_image_shape,
-                              get_label_data_from_kitti)
+                              get_gt_detection_data_from_kitti,
+                              get_gt_poses_from_kitti, get_image_shape)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 from run_kitti_gt_mot import _get_image_stream
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
-    label_data = get_label_data_from_kitti(
+    label_data = get_gt_detection_data_from_kitti(
         kitti_path, scene, poses=gt_poses, offset=args.offset
     )
     if args.use_gt:

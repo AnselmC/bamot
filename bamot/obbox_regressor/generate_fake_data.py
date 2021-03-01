@@ -6,8 +6,9 @@ import pandas as pd
 import tqdm
 from bamot.config import CONFIG as cfg
 from bamot.util.cv import get_corners_from_vector
-from bamot.util.kitti import (LabelDataRow, get_gt_poses_from_kitti,
-                              get_label_data_from_kitti)
+from bamot.util.kitti import (DetectionDataRow,
+                              get_gt_detection_data_from_kitti,
+                              get_gt_poses_from_kitti)
 
 
 def main(base_dir):
@@ -22,7 +23,7 @@ def main(base_dir):
         num_other_tracks = []
         fnames = []
         gt_poses = get_gt_poses_from_kitti(kitti_path=cfg.KITTI_PATH, scene=scene)
-        label_data = get_label_data_from_kitti(
+        label_data = get_gt_detection_data_from_kitti(
             kitti_path=cfg.KITTI_PATH, scene=scene, poses=gt_poses
         )
         for track_id, track_data in tqdm.tqdm(
@@ -56,7 +57,7 @@ def main(base_dir):
         df.to_csv(out_fname, index=False)
 
 
-def _generate_point_cloud(row: LabelDataRow, num_points: int = 1000) -> np.ndarray:
+def _generate_point_cloud(row: DetectionDataRow, num_points: int = 1000) -> np.ndarray:
     vec = np.array([*row.cam_pos, row.rot_angle, *row.dim_3d]).reshape(7, 1)
     corners = get_corners_from_vector(vec)
 

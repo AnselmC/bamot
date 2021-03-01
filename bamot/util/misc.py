@@ -58,8 +58,9 @@ def get_color(
     color = COLORS[RNG.choice(len(COLORS))]
     if only_bright:
         # only bright colors
-        color[np.argmin(color)] = 0
-        color[np.argmax(color)] = 1.0
+        color[np.argmax(color)] = 0.80
+        color[np.argmin(color)] = 0.1
+        color[np.argmin(color)] = 0.1
     if not normalized:
         color = (255 * color).astype(int)
     return color if not as_tuple else tuple(color.tolist())

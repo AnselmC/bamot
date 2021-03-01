@@ -26,8 +26,8 @@ from bamot.core.mot import run
 from bamot.util.cv import from_homogeneous, to_homogeneous
 from bamot.util.kitti import (get_2d_track_line, get_3d_track_line,
                               get_cameras_from_kitti, get_detection_stream,
-                              get_gt_poses_from_kitti, get_image_shape,
-                              get_label_data_from_kitti)
+                              get_gt_detection_data_from_kitti,
+                              get_gt_poses_from_kitti, get_image_shape)
 from bamot.util.misc import TqdmLoggingHandler
 from bamot.util.viewer import run as run_viewer
 
@@ -326,12 +326,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--cam",
-        dest="cam",
-        help="Show objects in camera coordinates in viewer (instead of world)",
-        action="store_true",
-    )
-    parser.add_argument(
         "-no-gt",
         "--viewer-disable-gt",
         dest="viewer_disable_gt",
@@ -391,7 +385,7 @@ if __name__ == "__main__":
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
     stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
-    label_data = get_label_data_from_kitti(
+    label_data = get_gt_detection_data_from_kitti(
         kitti_path, scene, poses=gt_poses, offset=args.offset
     )
     detection_stream = get_detection_stream(
@@ -472,7 +466,6 @@ if __name__ == "__main__":
             recording=args.record,
             trajs=args.trajs,
             show_gt=not args.viewer_disable_gt,
-            cam_coordinates=args.cam,
             track_ids_match=args.use_gt,
         )
     while not shared_data.empty():

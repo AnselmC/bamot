@@ -16,7 +16,7 @@ from bamot.util.cv import from_homogeneous, to_homogeneous
 LOGGER = logging.getLogger("Util:Kitti")
 
 
-class LabelDataRow(NamedTuple):
+class DetectionDataRow(NamedTuple):
     world_pos: np.ndarray
     cam_pos: np.ndarray
     occ_lvl: int
@@ -27,13 +27,13 @@ class LabelDataRow(NamedTuple):
     rot_angle: float
 
 
-LabelData = Dict[TrackId, Dict[ImageId, LabelDataRow]]
+DetectionData = Dict[TrackId, Dict[ImageId, DetectionDataRow]]
 
 
 def get_detection_stream(
     obj_detections_path: Path,
     offset: int,
-    label_data: Optional[LabelData] = None,
+    label_data: Optional[DetectionData] = None,
     object_ids: Optional[List[int]] = None,
 ) -> Iterable[List[StereoObjectDetection]]:
     detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
@@ -96,21 +96,35 @@ def get_image_stream(
     return Stream(_generator(with_file_names), len(left_imgs))
 
 
-def get_label_data_from_kitti(
+def get_gt_detection_data_from_kitti(
     kitti_path: Union[str, Path],
     scene: Union[str, int],
     poses: List[np.ndarray],
     offset: int = 0,
     indexed_by_image_id: bool = False,
-) -> LabelData:
+) -> DetectionData:
     kitti_path = _convert_to_path_if_needed(kitti_path)
     scene = _convert_to_str_scene(scene)
     detection_file = _get_detection_file(kitti_path, scene)
+    return read_kitti_detection_data(
+        detection_file,
+        poses=poses,
+        indexed_by_image_id=indexed_by_image_id,
+        offset=offset,
+    )
+
+
+def read_kitti_detection_data(
+    detection_file: Path,
+    poses: List[np.ndarray],
+    offset: int = 0,
+    indexed_by_image_id: bool = False,
+) -> DetectionData:
     if not detection_file.exists():
         raise FileNotFoundError(
             f"Detection file {detection_file.as_posix()} doesn't exist"
         )
-    label_data: LabelData = {}
+    label_data: DetectionData = {}
     with open(detection_file, "r") as fp:
         for line in fp:
             cols = line.split(" ")
@@ -121,12 +135,11 @@ def get_label_data_from_kitti(
             if track_id == -1:
                 continue
             object_class = str(cols[2])
-            if object_class not in ["Car", "Pedestrian"]:
+            if object_class.lower() not in ["car", "pedestrian"]:
                 continue
             truncation_level = int(cols[3])
             occlusion_level = int(cols[4])
             # cols[5] is observation angle of object
-            obs_angle = float(cols[5])
             bbox = list(map(float, cols[6:10]))  # in left image coordinates
             dim_3d = list(map(float, cols[10:13]))  # in camera coordinates
             location_cam2 = np.array(list(map(float, cols[13:16]))).reshape(
@@ -134,7 +147,6 @@ def get_label_data_from_kitti(
             )  # in camera coordinates
             rot_angle = float(cols[16])  # in camera coordinates
             T_w_cam2 = poses[frame]
-            gt_beta = rot_angle - obs_angle
 
             dir_vec = location_cam2[[0, 2]].reshape(2, 1)
             dir_vec /= np.linalg.norm(dir_vec)
@@ -149,7 +161,7 @@ def get_label_data_from_kitti(
                 if not label_data.get(track_id):
                     label_data[track_id] = {}
 
-            label_row = LabelDataRow(
+            label_row = DetectionDataRow(
                 world_pos=location_world.reshape(-1).tolist(),
                 cam_pos=location_cam2.reshape(-1).tolist(),
                 occ_lvl=occlusion_level,
@@ -164,8 +176,78 @@ def get_label_data_from_kitti(
             else:
                 label_data[track_id][frame] = label_row
 
-    LOGGER.debug("Extracted GT trajectories for %d objects", len(label_data))
+    LOGGER.debug("Extracted trajectories for %d objects", len(label_data))
     return label_data
+
+
+def get_gt_detection_data_from_kitti(
+    kitti_path: Union[str, Path],
+    scene: Union[str, int],
+    poses: List[np.ndarray],
+    offset: int = 0,
+    indexed_by_image_id: bool = False,
+) -> DetectionData:
+    kitti_path = _convert_to_path_if_needed(kitti_path)
+    scene = _convert_to_str_scene(scene)
+    detection_file = _get_detection_file(kitti_path, scene)
+    if not detection_file.exists():
+        raise FileNotFoundError(
+            f"Detection file {detection_file.as_posix()} doesn't exist"
+        )
+    detection_data: DetectionData = {}
+    with open(detection_file, "r") as fp:
+        for line in fp:
+            cols = line.split(" ")
+            frame = int(cols[0])
+            if frame < offset:
+                continue
+            track_id = int(cols[1])
+            if track_id == -1:
+                continue
+            object_class = str(cols[2])
+            if object_class.lower() not in ["car", "pedestrian"]:
+                continue
+            truncation_level = int(cols[3])
+            occlusion_level = int(cols[4])
+            # cols[5] is observation angle of object
+            bbox = list(map(float, cols[6:10]))  # in left image coordinates
+            dim_3d = list(map(float, cols[10:13]))  # in camera coordinates
+            location_cam2 = np.array(list(map(float, cols[13:16]))).reshape(
+                (3, 1)
+            )  # in camera coordinates
+            rot_angle = float(cols[16])  # in camera coordinates
+            T_w_cam2 = poses[frame]
+
+            dir_vec = location_cam2[[0, 2]].reshape(2, 1)
+            dir_vec /= np.linalg.norm(dir_vec)
+            beta = np.arccos(np.dot(dir_vec.T, np.array([0, 1]).reshape(2, 1)))
+            if dir_vec[0] < 0:
+                beta = -beta
+            location_world = from_homogeneous(T_w_cam2 @ to_homogeneous(location_cam2))
+            if indexed_by_image_id:
+                if not detection_data.get(frame):
+                    detection_data[frame] = {}
+            else:
+                if not detection_data.get(track_id):
+                    detection_data[track_id] = {}
+
+            detection_row = DetectionDataRow(
+                world_pos=location_world.reshape(-1).tolist(),
+                cam_pos=location_cam2.reshape(-1).tolist(),
+                occ_lvl=occlusion_level,
+                trunc_lvl=truncation_level,
+                object_class=object_class,
+                bbox2d=bbox,
+                dim_3d=dim_3d,
+                rot_angle=rot_angle,
+            )
+            if indexed_by_image_id:
+                detection_data[frame][track_id] = detection_row
+            else:
+                detection_data[track_id][frame] = detection_row
+
+    LOGGER.debug("Extracted trajectories for %d objects", len(detection_data))
+    return detection_data
 
 
 def _convert_to_path_if_needed(path: Union[str, Path]) -> Path:

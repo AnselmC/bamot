@@ -4,8 +4,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
-                              get_label_data_from_kitti)
+from bamot.util.kitti import (get_cameras_from_kitti,
+                              get_gt_detection_data_from_kitti,
+                              get_gt_poses_from_kitti)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
@@ -27,7 +28,9 @@ if __name__ == "__main__":
     kitti_path = Path(args.kitti_path)
     gt_poses_world = get_gt_poses_from_kitti(kitti_path, scene)
     get_cameras_from_kitti(kitti_path)
-    label_data = get_label_data_from_kitti(kitti_path, scene, gt_poses_world, offset=0,)
+    label_data = get_gt_detection_data_from_kitti(
+        kitti_path, scene, gt_poses_world, offset=0,
+    )
     fig = plt.figure()
     ax_3d = fig.add_subplot(1, 1, 1, projection="3d")
     gt_poses_x, gt_poses_y, gt_poses_z = zip(*(map(lambda x: x[:3, 3], gt_poses_world)))

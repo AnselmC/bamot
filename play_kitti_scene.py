@@ -6,9 +6,10 @@ import g2o
 import matplotlib.pyplot as plt
 import numpy as np
 
-from bamot.config import CONFIG as config
-from bamot.util.kitti import (get_cameras_from_kitti, get_gt_poses_from_kitti,
-                              get_image_stream, get_label_data_from_kitti)
+from bamot.config import CONFIG as configfrom
+from bamot.config import (bamot.util.kitti, get_cameras_from_kitti,
+                          get_gt_detection_data_from_kitti,
+                          get_gt_poses_from_kitti, get_image_stream, import)
 
 
 def _get_euler_angles(rot):
@@ -47,7 +48,7 @@ if __name__ == "__main__":
     kitti_path = Path(config.KITTI_PATH)
     _, T02 = get_cameras_from_kitti(kitti_path)
     gt_poses_world = get_gt_poses_from_kitti(kitti_path, scene)
-    label_data = get_label_data_from_kitti(kitti_path, scene, gt_poses_world)
+    label_data = get_gt_detection_data_from_kitti(kitti_path, scene, gt_poses_world)
     ax = plt.axes()
     object_poses_by_img_id = {}
     bounding_boxes_by_img_id = {}

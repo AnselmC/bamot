@@ -7,7 +7,8 @@ import pandas as pd
 import pytorch_lightning as pl
 import torch
 from bamot.config import CONFIG as config
-from bamot.util.kitti import get_gt_poses_from_kitti, get_label_data_from_kitti
+from bamot.util.kitti import (get_gt_detection_data_from_kitti,
+                              get_gt_poses_from_kitti)
 from torch.utils.data import DataLoader, Dataset, random_split
 
 
@@ -90,7 +91,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
             gt_poses = get_gt_poses_from_kitti(
                 kitti_path=config.KITTI_PATH, scene=scene
             )
-            label_data = get_label_data_from_kitti(
+            label_data = get_gt_detection_data_from_kitti(
                 kitti_path=config.KITTI_PATH, scene=scene, poses=gt_poses
             )
             all_gt_data[scene] = label_data
