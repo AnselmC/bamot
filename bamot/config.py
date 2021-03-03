@@ -39,6 +39,7 @@ class Config:
     SAVE_3D_TRACK: bool
     CAR_DIMS: Tuple[float, float, float]  # HxWxL
     PED_DIMS: Tuple[float, float, float]
+    FORCE_NEW_DETECTIONS: bool
     FINAL_FULL_BA: bool = False
     MAX_MAX_DIST_MULTIPLIER: int = 5
     TRACK_POINT_CLOUD_SIZES: bool = False
@@ -105,6 +106,9 @@ __trust_2d_default = str(os.environ.get("TRUST_2D", default="yes"))
 __car_dims_default = (1.6, 1.8, 4.3)  # HxWxL
 __ped_dims_default = (1.9, 0.7, 0.9)
 
+__force_new_detections_default = bool(
+    os.environ.get("FORCE_NEW_DETECTIONS", default=False)
+)
 
 if __config_file_default.exists():
     with open(__config_file_default.as_posix(), "r") as fp:
@@ -173,6 +177,9 @@ CONFIG = Config(
     ),
     CAR_DIMS=__user_config.get("car_dims", __car_dims_default),
     PED_DIMS=__user_config.get("ped_dims", __ped_dims_default),
+    FORCE_NEW_DETECTIONS=__user_config.get(
+        "force_new_detections", __force_new_detections_default
+    ),
 )
 
 if CONFIG.MIN_LANDMARKS_CAR < 1 or CONFIG.MIN_LANDMARKS_PED < 1:

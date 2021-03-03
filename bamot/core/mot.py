@@ -798,14 +798,14 @@ def _estimate_next_pose(track: ObjectTrack, track_logger=LOGGER) -> np.ndarray:
 
 def _extract_features(stereo_detection, stereo_image, img_id, track_id):
     feature_matcher = get_feature_matcher()
-    if not stereo_detection.left.features:
+    if not stereo_detection.left.features or config.FORCE_NEW_DETECTIONS:
         left_features = feature_matcher.detect_features(
             stereo_image.left, stereo_detection.left.mask, img_id, track_id, "left"
         )
         stereo_detection.left.features = left_features
     else:
         left_features = stereo_detection.left.features
-    if not stereo_detection.right.features:
+    if not stereo_detection.right.features or config.FORCE_NEW_DETECTIONS:
         right_features = feature_matcher.detect_features(
             stereo_image.right, stereo_detection.right.mask, img_id, track_id, "right",
         )
