@@ -71,14 +71,14 @@ def _enhance_image(
         cv2.drawKeypoints(stereo_img.right, right_keypoints, stereo_img.right)
     for track_id, track in tracks.items():
         # opencv expects BGR non-normalized color as tuple
+        clr = tuple((255 * np.flip(colors[track_id])).astype(int).tolist())
+        shortend_track_id = (
+            (str(track_id)[:3] + "..") if len(str(track_id)) > 5 else str(track_id)
+        )
         if track.masks[0] is not None:
-            clr = tuple((255 * np.flip(colors[track_id])).astype(int).tolist())
             stereo_img.left = draw_contours(track.masks[0], stereo_img.left, clr)
             y, x = map(min, np.where(track.masks[0] != 0))
             y_other, x_other = map(max, np.where(track.masks[0] != 0))
-            shortend_track_id = (
-                (str(track_id)[:3] + "..") if len(str(track_id)) > 5 else str(track_id)
-            )
             stereo_img.left = cv2.putText(
                 stereo_img.left,
                 shortend_track_id,

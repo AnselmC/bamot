@@ -35,6 +35,7 @@ def get_detection_stream(
     offset: int,
     label_data: Optional[DetectionData] = None,
     object_ids: Optional[List[int]] = None,
+    classes: List[str] = ["car", "pedestrian"],
 ) -> Iterable[List[StereoObjectDetection]]:
     detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
     if not detection_files:
@@ -42,7 +43,9 @@ def get_detection_stream(
     LOGGER.debug("Found %d detection files", len(detection_files))
     for i, f in enumerate(detection_files[offset:]):
         with open(f, "rb") as fp:
-            detections = pickle.load(fp)
+            detections = list(
+                filter(lambda x: x.left.cls.lower() in classes, pickle.load(fp))
+            )
         if object_ids:
             detections = [d for d in detections if d.left.track_id in object_ids]
 

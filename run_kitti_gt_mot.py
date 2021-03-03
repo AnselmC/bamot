@@ -289,6 +289,13 @@ if __name__ == "__main__":
         default=0,
     )
     parser.add_argument(
+        "--classes",
+        type=str,
+        nargs="+",
+        help="Which classes to detect from {car, pedestrian} (default is car and pedestrian)",
+        default=["car", "pedestrian"],
+    )
+    parser.add_argument(
         "-t",
         "--tags",
         type=str,
@@ -393,6 +400,7 @@ if __name__ == "__main__":
         offset=args.offset,
         label_data=label_data if args.use_gt else None,
         object_ids=[int(idx) for idx in args.indeces] if args.indeces else None,
+        classes=args.classes,
     )
 
     slam_process = process_class(
