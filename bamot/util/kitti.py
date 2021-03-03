@@ -334,28 +334,17 @@ def get_transformation_cam_to_imu(kitti_path: Path, scene) -> np.ndarray:
     return Tr_imu_cam
 
 
-def get_cameras_from_kitti(kitti_path: Path) -> Tuple[StereoCamera, np.ndarray]:
-    calib_file = _get_calib_cam_to_cam_file(kitti_path)
+def get_cameras_from_kitti(kitti_path: Path, scene) -> Tuple[StereoCamera, np.ndarray]:
+    calib_file = _get_calib_file(kitti_path, scene)
     with open(calib_file, "r") as fp:
-        for line in fp:
+        for line in fp.readlines():
+            line = line.strip().split("\n")[0]
             cols = line.split(" ")
             name = cols[0]
-            # if "R_02" in name:
-            #    R02 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
-            # elif "T_02" in name:
-            #    t02 = np.array(list(map(float, cols[1:]))).reshape(3)
-            # elif "R_03" in name:
-            #    R03 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
-            # elif "T_03" in name:
-            #    t03 = np.array(list(map(float, cols[1:]))).reshape(3)
-            if "P_rect_02" in name:
+            if "P2" in name:
                 P_rect_left = np.array(list(map(float, cols[1:]))).reshape(3, 4)
-            elif "P_rect_03" in name:
+            elif "P3" in name:
                 P_rect_right = np.array(list(map(float, cols[1:]))).reshape(3, 4)
-            elif "R_rect_02" in name:
-                R_rect_02 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
-            elif "R_rect_03" in name:
-                R_rect_03 = np.array(list(map(float, cols[1:]))).reshape(3, 3)
     left_fx = P_rect_left[0, 0]
     left_fy = P_rect_left[1, 1]
     left_cx = P_rect_left[0, 2]

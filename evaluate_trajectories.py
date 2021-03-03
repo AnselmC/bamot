@@ -1,12 +1,12 @@
 import argparse
 import json
 from pathlib import Path
-from pprint import pprint
 from typing import NamedTuple
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from g2o import Isometry3d
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.optimize import linear_sum_assignment
 
@@ -105,6 +105,12 @@ def associate_gt_to_est(
     matched_gt = set()
     for est_idx, gt_idx in zip(est_indices, gt_indices):
         weight = cost_matrix[est_idx][gt_idx].sum()
+        est_track_data = est_detection_data[track_id_est]
+        gt_track_data = gt_detection_data[track_id_gt]
+        overlapping_img_ids = set(est_track_data.keys()).intersection(
+            gt_track_data.keys()
+        )
+        tracked_ratio = len(overlapping_img_ids) / len(gt_track_data.keys())
         if not np.isfinite(weight) or weight == 0:
             continue  # invalid match
         track_id_est = est_track_id_mapping[est_idx]
@@ -113,18 +119,11 @@ def associate_gt_to_est(
         matched_gt.add(track_id_gt)
         track_id_mapping[int(track_id_gt)] = int(track_id_est)
 
-        est_track_data = est_detection_data[track_id_est]
-        gt_track_data = gt_detection_data[track_id_gt]
-        overlapping_img_ids = set(est_track_data.keys()).intersection(
-            gt_track_data.keys()
-        )
-        tracked_ratio = len(overlapping_img_ids) / len(gt_track_data.keys())
-
     not_matched_est = set(est_detection_data.keys()).difference(matched_est)
     not_matched_gt = set(gt_detection_data.keys()).difference(matched_gt)
     print("Not matched est.: ", not_matched_est)
     print("Not matched gt.: ", not_matched_gt)
-    return track_id_mapping
+    return track_id_mapping, not_matched_est, not_matched_gt
 
 
 if __name__ == "__main__":
@@ -138,9 +137,9 @@ if __name__ == "__main__":
         "--plot",
         dest="plot",
         nargs="?",
-        help="Turn plotting on (default when passed is `both`)",
-        choices=["both", "error", "trajectory"],
-        const="both",
+        help="Turn plotting on (default when passed is `world`)",
+        choices=["both", "world", "individual"],
+        const="world",
     )
     parser.add_argument(
         "-sc",
@@ -149,12 +148,6 @@ if __name__ == "__main__":
         help="the kitti scene (if not given, will try to determine from `detection_file` path",
         choices=range(0, 21),
         type=int,
-    )
-
-    parser.add_argument(
-        "--track-ids-match",
-        help="Estimated track ids match the GT track ids",
-        action="store_true",
     )
 
     parser.add_argument(
@@ -187,35 +180,68 @@ if __name__ == "__main__":
             args.scene = scene
     scene = str(args.scene).zfill(4)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
+    gt_ego_traj = np.array(
+        [Isometry3d(pose).translation() for pose in gt_poses]
+    ).reshape(-1, 3)
     gt_detections = get_gt_detection_data_from_kitti(kitti_path, scene, poses=gt_poses,)
     print("Loaded GT detections")
     est_detections = read_kitti_detection_data(detection_path, gt_poses)
     print("Loaded estimated detections")
 
     print("Matching GT tracks to estimated tracks")
-    if not args.track_ids_match:
-        print("Track ids do not match, associating tracks")
-        track_mapping = associate_gt_to_est(est_detections, gt_detections)
-    else:
-        print("Estimated track ids match GT")
-        track_mapping = dict(zip(gt_detections.keys(), gt_detections.keys()))
+    track_mapping, not_matched_est, not_matched_gt = associate_gt_to_est(
+        est_detections, gt_detections
+    )
 
     if args.save:
         save_dir = Path(args.save) / args.trajectories.split("/")[-1] / scene
         save_dir.mkdir(exist_ok=True, parents=True)
     err_per_obj = {}
 
-    if args.plot:
+    if args.plot in ["world", "both"]:
         fig_world = plt.figure(figsize=plt.figaspect(0.5))
-        ax_3d_world = fig_world.add_subplot(1, 1, 1, projection="3d")
-    for i, track_id_gt in enumerate(gt_detections.keys()):
-        if track_id_gt not in track_mapping:
-            # False negative
-            continue
+        ax_world_gt = fig_world.add_subplot(1, 2, 1)
+        ax_world_est = fig_world.add_subplot(
+            1, 2, 2, sharex=ax_world_gt, sharey=ax_world_gt
+        )
+        ax_world_gt.plot(
+            gt_ego_traj[:, 0],
+            gt_ego_traj[:, 1],
+            color="k",
+            linewidth=2.5,
+            linestyle="dotted",
+            label="Ego trajectory",
+        )
+        ax_world_gt.scatter(
+            gt_ego_traj[0, 0], gt_ego_traj[0, 1], marker="o", color="k", label="Start",
+        )
+        ax_world_gt.scatter(
+            gt_ego_traj[-1, 0], gt_ego_traj[-1, 1], marker="x", color="k", label="End",
+        )
+        ax_world_est.plot(
+            gt_ego_traj[:, 0],
+            gt_ego_traj[:, 1],
+            color="k",
+            linewidth=2.5,
+            linestyle="dotted",
+            label="Ego trajectory",
+        )
+        ax_world_est.scatter(
+            gt_ego_traj[0, 0], gt_ego_traj[0, 1], marker="o", color="k", label="Start",
+        )
+        ax_world_est.scatter(
+            gt_ego_traj[-1, 0], gt_ego_traj[-1, 1], marker="x", color="k", label="End",
+        )
+        ax_world_est.arrow(
+            gt_ego_traj[-2, 0],
+            gt_ego_traj[-2, 1],
+            gt_ego_traj[-1, 0] - gt_ego_traj[-2, 0],
+            gt_ego_traj[-1, 1] - gt_ego_traj[-2, 1],
+        )
+    for track_id_gt, track_id_est in track_mapping.items():
         # Calculate errors
         gt_track = gt_detections[track_id_gt]
-        est_track = est_detections[track_mapping[track_id_gt]]
-        track_id_est = track_mapping[track_id_gt]
+        est_track = est_detections[track_id_est]
         err_per_image = {}
         for img_id, gt_row_data in gt_track.items():
             gt_pt_cam = gt_row_data.cam_pos
@@ -233,31 +259,6 @@ if __name__ == "__main__":
 
         # plot trajectories and errors
         if args.plot:
-            # fig to hold error and trajectory of object
-            track_fig = plt.figure(figsize=plt.figaspect(0.5))
-
-            # trajectory subplot
-            ax_3d = track_fig.add_subplot(1, 2, 1, projection="3d")
-            ax_3d.set_xlabel("x [m]", color="w")
-            ax_3d.set_ylabel("y [m]", color="w")
-            ax_3d.set_zlabel("z [m]", color="w")
-            ax_3d_world.set_xlabel("x [m]", color="w")
-            ax_3d_world.set_ylabel("y [m]", color="w")
-            ax_3d_world.set_zlabel("z [m]", color="w")
-
-            gt_traj_world = np.array(
-                [row.world_pos for row in gt_track.values()]
-            ).reshape(-1, 3)
-            gt_traj_cam = np.array([row.cam_pos for row in gt_track.values()]).reshape(
-                -1, 3
-            )
-
-            est_traj_world = np.array(
-                [row.world_pos for row in est_track.values()]
-            ).reshape(-1, 3)
-            est_traj_cam = np.array(
-                [row.cam_pos for row in est_track.values()]
-            ).reshape(-1, 3)
 
             color = COLORS[RNG.choice(len(COLORS))]
             # occlusion levels:
@@ -276,110 +277,135 @@ if __name__ == "__main__":
             alphas = [min(occ, trunc) for occ, trunc in zip(alphas_occ, alphas_trunc)]
 
             colors = np.array(
-                [color.tolist() + [alphas[i]] for i in range(len(gt_traj_world))]
+                [color.tolist() + [alphas[i]] for i in range(len(gt_track))]
             ).reshape(-1, 4)
 
-            # set boundaries of plot to gt boundaries
-            # _set_min_max_ax(ax_3d, gt_traj_cam)
-            ax_3d.scatter(
-                gt_traj_cam[:, 0],
-                gt_traj_cam[:, 2],
-                gt_traj_cam[:, 1],
-                label="GT trajectory in cam. coordinates",
-                color=colors,
-                norm=NoNormalize(),
-                linewidths=0.5,
-                marker=".",
-            )
-            ax_3d.plot(
-                est_traj_cam[:, 0],
-                est_traj_cam[:, 2],
-                est_traj_cam[:, 1],
-                label="Est. trajectory in cam. coordinates",
-                color=color,
-                marker="|",
-            )
-            # _set_min_max_ax(ax_3d_world, gt_traj_world)
-            ax_3d_world.scatter(
-                gt_traj_world[:, 0],
-                gt_traj_world[:, 1],
-                gt_traj_world[:, 2],
-                color=colors,
-                norm=NoNormalize(),
-                linewidths=0.5,
-                marker=".",
-            )
-            ax_3d_world.plot(
-                est_traj_world[:, 0],
-                est_traj_world[:, 1],
-                est_traj_world[:, 2],
-                color=color,
-                marker="|",
-            )
-            # error subplot
-            ax_2d = track_fig.add_subplot(1, 2, 2)
-            err_dist = list(err_per_image.values())
-            err = [x["error"] for x in err_dist if x["error"] != "NA"]
-            dist_from_camera = [x["distance"] for x in err_dist if x["error"] != "NA"]
-            ax_2d.scatter(
-                [e[0] for e in err],
-                dist_from_camera,
-                alpha=0.5,
-                label="L1-error x (left, right)",
-            )
-            ax_2d.scatter(
-                [e[1] for e in err],
-                dist_from_camera,
-                alpha=0.5,
-                label="L1-error y (elevation)",
-            )
-            ax_2d.scatter(
-                [e[2] for e in err],
-                dist_from_camera,
-                alpha=0.5,
-                label="L1-error z (depth)",
-            )
-            ax_2d.scatter(
-                [e[3] for e in err], dist_from_camera, label="L1-error total",
-            )
-            # ax_2d.set_xscale("log")
-            ax_2d.set_xlabel("Error [m]")
-            ax_2d.set_ylabel("Distance [m]")
+            if args.plot in ["both", "individual"]:
+                gt_traj_cam = np.array(
+                    [row.cam_pos for row in gt_track.values()]
+                ).reshape(-1, 3)
+                est_traj_cam = np.array(
+                    [row.cam_pos for row in est_track.values()]
+                ).reshape(-1, 3)
+                # fig to hold error and trajectory of object
+                track_fig = plt.figure(figsize=plt.figaspect(0.5))
 
-            ax_3d.view_init(90, -90)
-            ax_3d.get_shared_x_axes().remove(ax_2d)
-            ax_3d.get_shared_y_axes().remove(ax_2d)
-            if args.save:
-                # ax_3d.axis("off")
-                ax_3d.grid(True)
-            ax_3d.xaxis.pane.set_color((1, 1, 1, 0))
-            ax_3d.yaxis.pane.set_color((1, 1, 1, 0))
-            ax_3d.zaxis.pane.set_color((1, 1, 1, 0))
-            track_fig.tight_layout()
-            if args.save:
-                path = save_dir / f"{track_id_gt}-{args.plot}.pdf"
-                track_fig.suptitle(f"Object w/ GT ID {track_id_gt}", color="w")
-                plt.savefig(path.as_posix(), transparent=False, bbox_inches="tight")
-            else:
-                track_fig.suptitle(f"Object w/ GT ID {track_id_gt}")
+                # trajectory subplot
+                ax_3d = track_fig.add_subplot(1, 2, 1, projection="3d")
+                # set boundaries of plot to gt boundaries
+                _set_min_max_ax(ax_3d, gt_traj_cam)
+                ax_3d.set_xlabel("x [m]", color="w")
+                ax_3d.set_ylabel("y [m]", color="w")
+                ax_3d.set_zlabel("z [m]", color="w")
+                ax_3d.scatter(
+                    gt_traj_cam[:, 0],
+                    gt_traj_cam[:, 2],
+                    gt_traj_cam[:, 1],
+                    label="GT trajectory in cam. coordinates",
+                    color=colors,
+                    norm=NoNormalize(),
+                    linewidths=0.5,
+                    marker=".",
+                )
+                ax_3d.plot(
+                    est_traj_cam[:, 0],
+                    est_traj_cam[:, 2],
+                    est_traj_cam[:, 1],
+                    label="Est. trajectory in cam. coordinates",
+                    color=color,
+                    marker="|",
+                )
+                # error subplot
+                ax_2d = track_fig.add_subplot(1, 2, 2)
+                err_dist = list(err_per_image.values())
+                err = [x["error"] for x in err_dist if x["error"] != "NA"]
+                dist_from_camera = [
+                    x["distance"] for x in err_dist if x["error"] != "NA"
+                ]
+                ax_2d.scatter(
+                    [e[0] for e in err],
+                    dist_from_camera,
+                    alpha=0.5,
+                    label="L1-error x (left, right)",
+                )
+                ax_2d.scatter(
+                    [e[1] for e in err],
+                    dist_from_camera,
+                    alpha=0.5,
+                    label="L1-error y (elevation)",
+                )
+                ax_2d.scatter(
+                    [e[2] for e in err],
+                    dist_from_camera,
+                    alpha=0.5,
+                    label="L1-error z (depth)",
+                )
+                ax_2d.scatter(
+                    [e[3] for e in err], dist_from_camera, label="L1-error total",
+                )
+                # ax_2d.set_xscale("log")
+                ax_2d.set_xlabel("Error [m]")
+                ax_2d.set_ylabel("Distance [m]")
+                ax_3d.view_init(90, -90)
+                ax_3d.get_shared_x_axes().remove(ax_2d)
+                ax_3d.get_shared_y_axes().remove(ax_2d)
+                ax_3d.xaxis.pane.set_color((1, 1, 1, 0))
+                ax_3d.yaxis.pane.set_color((1, 1, 1, 0))
+                ax_3d.zaxis.pane.set_color((1, 1, 1, 0))
+                track_fig.tight_layout()
+                if args.save:
+                    path = save_dir / f"{track_id_gt}-{args.plot}.pdf"
+                    track_fig.suptitle(f"Object w/ GT ID {track_id_gt}", color="w")
+                    plt.savefig(path.as_posix(), transparent=False, bbox_inches="tight")
+                    # ax_3d.axis("off")
+                    ax_3d.grid(True)
+                else:
+                    track_fig.suptitle(f"Object w/ GT ID {track_id_gt}")
 
-    if args.plot:
-        ax_3d_world.view_init(90, -180)
-        ax_3d_world.dist = 8
-        ax_3d_world.set_xlabel("x [m]", color="w")
-        ax_3d_world.set_ylabel("y [m]", color="w")
-        ax_3d_world.set_zlabel("z [m]", color="w")
-        # ax_3d.xaxis.pane.set_color((0, 0, 0, 0))
-        # ax_3d.yaxis.pane.set_color((0, 0, 0, 0))
-        # ax_3d.zaxis.pane.set_color((0, 0, 0, 0))
+            if args.plot in ["both", "world"]:
+                gt_traj_world = np.array(
+                    [row.world_pos for row in gt_track.values()]
+                ).reshape(-1, 3)
+
+                est_traj_world = np.array(
+                    [row.world_pos for row in est_track.values()]
+                ).reshape(-1, 3)
+                # _set_min_max_ax(ax_3d_world, gt_traj_world)
+                ax_world_gt.plot(
+                    gt_traj_world[:, 0],
+                    gt_traj_world[:, 1],
+                    color=color,
+                    # norm=NoNormalize(),
+                    linewidth=1,
+                )
+                ax_world_est.plot(
+                    est_traj_world[:, 0], est_traj_world[:, 1], color=color, linewidth=1
+                )
+
+    if args.plot in ["both", "world"]:
+        fig_world.suptitle(f"Scene {scene}")
+        ax_world_gt.set_title("Ground truth")
+        ax_world_gt.set_xlabel("x [m]")
+        ax_world_gt.set_ylabel("y [m]")
+        ax_world_gt.legend()
+
+        ax_world_est.set_title("Estimated")
+        ax_world_est.set_xlabel("x [m]")
+        ax_world_est.set_ylabel("y [m]")
+        ax_world_est.legend()
+
+        ax_world_gt.spines["top"].set_visible(False)
+        ax_world_gt.spines["right"].set_visible(False)
+        ax_world_est.spines["top"].set_visible(False)
+        ax_world_est.spines["right"].set_visible(False)
+
         fig_world.tight_layout()
-        # fig.axes[0].axis("off")
         if args.save:
             path = save_dir / "full_view.pdf"
-            ax_3d_world.set_yticks([])
+            ax_world_gt.set_yticks([])
             plt.savefig(path.as_posix(), transparent=False, bbox_inches="tight")
-        else:
-            plt.show()
+    if args.plot and not args.save:
+        plt.show()
 
     mean_err_total = []
     if args.save:

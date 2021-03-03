@@ -614,7 +614,7 @@ def run(
                         [
                             current_landmark_median,
                             get_center_of_landmarks(
-                                track.landmarks.values(), reduction="mean"
+                                track.landmarks.values(), reduction="median"
                             ),
                         ],
                         axis=0,

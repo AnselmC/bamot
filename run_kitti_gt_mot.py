@@ -169,7 +169,6 @@ def _write_2d_detections(
     for tag in tags:
         path /= tag
     fname = path / (scene + ".txt")
-    height, width = img_shape
     path.mkdir(parents=True, exist_ok=True)
     height, width = img_shape
     with open(fname, "w") as fp:
@@ -390,7 +389,7 @@ if __name__ == "__main__":
     next_step = flag_class()
     img_shape = get_image_shape(kitti_path, scene)
     image_stream = _get_image_stream(kitti_path, scene, stop_flag, offset=args.offset)
-    stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
+    stereo_cam, T02 = get_cameras_from_kitti(kitti_path, scene)
     gt_poses = get_gt_poses_from_kitti(kitti_path, scene)
     label_data = get_gt_detection_data_from_kitti(
         kitti_path, scene, poses=gt_poses, offset=args.offset

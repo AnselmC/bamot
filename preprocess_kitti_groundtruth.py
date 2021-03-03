@@ -8,10 +8,10 @@ from collections import defaultdict
 from functools import wraps
 from pathlib import Path
 
-import cv2
 import numpy as np
 import tqdm
 
+import cv2
 from bamot.config import CONFIG as config
 from bamot.core.base_types import StereoImage
 from bamot.core.preprocessing import preprocess_frame
@@ -99,9 +99,9 @@ def _process_scene(scene):
         )
         left_mot_mask = masked_stereo_image_slam.left == 0
         right_mot_mask = masked_stereo_image_slam.right == 0
-        left_img_mot = np.zeros(stereo_image.left.shape, dtype=np.uint8)
+        left_img_mot = 255 * np.ones(stereo_image.left.shape, dtype=np.uint8)
         left_img_mot[left_mot_mask] = stereo_image.left[left_mot_mask]
-        right_img_mot = np.zeros(stereo_image.right.shape, dtype=np.uint8)
+        right_img_mot = 255 * np.ones(stereo_image.right.shape, dtype=np.uint8)
         right_img_mot[right_mot_mask] = stereo_image.right[right_mot_mask]
         masked_stereo_image_mot = StereoImage(left_img_mot, right_img_mot)
         result_slam = np.hstack(

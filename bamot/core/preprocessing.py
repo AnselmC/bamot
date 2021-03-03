@@ -8,8 +8,7 @@ import numpy as np
 from bamot.core.base_types import (ObjectDetection, StereoImage,
                                    StereoObjectDetection)
 from bamot.util.cv import (dilate_mask, draw_contours,
-                           get_convex_hull_from_mask, get_convex_hull_mask,
-                           get_feature_matcher)
+                           get_convex_hull_from_mask, get_feature_matcher)
 from scipy.optimize import linear_sum_assignment
 from shapely.geometry import Polygon
 
@@ -21,8 +20,8 @@ def draw_contours_and_text(
     other_img: np.ndarray,
     color: np.ndarray,
 ):
-    draw_contours(obj.mask, img, color)
-    draw_contours(other_obj.mask, other_img, color)
+    draw_contours(obj.mask, img, color, 3)
+    draw_contours(other_obj.mask, other_img, color, 3)
     y, x = map(min, np.where(obj.mask != 0))
     img = cv2.putText(
         img, str(obj.track_id), (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 3,
@@ -251,8 +250,8 @@ def preprocess_frame(
     masked_right_image_slam = raw_right_image.copy()
     masked_left_image_slam[left_mask] = 0
     masked_right_image_slam[right_mask] = 0
-    masked_left_image_mot = np.zeros(img_shape, dtype=np.uint8)
-    masked_right_image_mot = np.zeros(img_shape, dtype=np.uint8)
+    masked_left_image_mot = 255 * np.ones(img_shape, dtype=np.uint8)
+    masked_right_image_mot = 255 * np.ones(img_shape, dtype=np.uint8)
     masked_left_image_mot[left_mask] = raw_left_image[left_mask]
     masked_right_image_mot[right_mask] = raw_right_image[right_mask]
     return (

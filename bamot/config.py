@@ -114,7 +114,7 @@ if __config_file_default.exists():
     with open(__config_file_default.as_posix(), "r") as fp:
         __user_config = yaml.load(fp, Loader=yaml.FullLoader)
 else:
-    __user_config: Dict[str, Any] = {}
+    __user_config = {}
 
 __kitti_path_default = Path(
     __user_config.get(
