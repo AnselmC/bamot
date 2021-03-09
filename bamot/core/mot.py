@@ -6,6 +6,7 @@ import queue
 import time
 import uuid
 from collections import defaultdict
+from itertools import zip_longest
 from threading import Event
 from typing import Dict, Iterable, List, Set, Tuple
 
@@ -633,7 +634,9 @@ def run(
 
     point_cloud_sizes = {}
     track_id_mapping = {}
-    for (img_id, stereo_image), new_detections in zip(images, detections):
+    for (img_id, stereo_image), new_detections in zip_longest(
+        images, detections, fillvalue=[]
+    ):
         all_track_ids = set(all_object_tracks).union(set(active_object_tracks))
         if config.TRACK_POINT_CLOUD_SIZES:
             for track_id, obj in active_object_tracks.items():

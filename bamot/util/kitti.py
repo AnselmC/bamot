@@ -52,18 +52,33 @@ def get_detection_stream(
             left_cols = left_line.split(" ")
             right_cols = right_line.split(" ")
             img_id = int(left_cols[0])
+            track_id = int(left_cols[1])
+            if object_ids and track_id not in object_ids:
+                continue
+            class_id = int(left_cols[2])
+            cls = "car" if class_id == 1 else "pedestrian"
+            if cls not in classes:
+                continue
             if img_id < current_img_id:
                 continue  # account for possible offset
             elif img_id == current_img_id:
                 detections.append(_get_detection_from_line(left_cols, right_cols))
             else:
-                current_img_id = img_id
                 LOGGER.debug(
                     "%d detections in image %d", len(detections), current_img_id
                 )
+                # catch up to newest image id if necessary
+                while img_id > current_img_id + 1:
+                    LOGGER.debug(
+                        "%d detections in image %d", len(detections), current_img_id
+                    )
+                    yield []
+                    current_img_id += 1
+                current_img_id = img_id
                 yield detections
                 detections.clear()
                 detections.append(_get_detection_from_line(left_cols, right_cols))
+
     LOGGER.debug("Finished yielding object detections")
 
 
