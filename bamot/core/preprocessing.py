@@ -255,6 +255,11 @@ def preprocess_frame(
     masked_left_image_mot[left_mask] = raw_left_image[left_mask]
     masked_right_image_mot[right_mask] = raw_right_image[right_mask]
     return (
-        StereoImage(masked_left_image_slam, masked_right_image_slam),
+        StereoImage(
+            masked_left_image_slam,
+            masked_right_image_slam,
+            img_width=stereo_image.img_width,
+            img_height=stereo_image.img_height,
+        ),
         stereo_object_detections,
     )

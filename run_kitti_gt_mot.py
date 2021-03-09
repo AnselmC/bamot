@@ -220,7 +220,10 @@ def _get_image_stream(
     ):
         left_img = cv2.imread(left, cv2.IMREAD_COLOR).astype(np.uint8)
         right_img = cv2.imread(right, cv2.IMREAD_COLOR).astype(np.uint8)
-        yield img_id, StereoImage(left_img, right_img)
+        height, width = left_img.shape[:2]
+        yield img_id, StereoImage(
+            left_img, right_img, img_height=height, img_width=width
+        )
         img_id += 1
     LOGGER.debug("Setting stop flag")
     stop_flag.set()
@@ -357,9 +360,9 @@ if __name__ == "__main__":
     scene = str(args.scene).zfill(4)
     kitti_path = Path(config.KITTI_PATH)
     if args.use_gt:
-        obj_detections_path = Path(config.GT_DETECTIONS_PATH) / scene
+        obj_detections_path = Path(config.GT_DETECTIONS_PATH)
     else:
-        obj_detections_path = Path(config.EST_DETECTIONS_PATH) / scene
+        obj_detections_path = Path(config.EST_DETECTIONS_PATH)
 
     LOGGER.setLevel(LOG_LEVELS[args.verbosity])
 
@@ -396,8 +399,8 @@ if __name__ == "__main__":
     )
     detection_stream = get_detection_stream(
         obj_detections_path,
+        scene=scene,
         offset=args.offset,
-        label_data=label_data if args.use_gt else None,
         object_ids=[int(idx) for idx in args.indeces] if args.indeces else None,
         classes=args.classes,
     )

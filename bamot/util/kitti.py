@@ -1,6 +1,5 @@
 import glob
 import logging
-import pickle
 from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 
@@ -32,33 +31,59 @@ DetectionData = Dict[TrackId, Dict[ImageId, DetectionDataRow]]
 
 def get_detection_stream(
     obj_detections_path: Path,
+    scene: str,
     offset: int,
-    label_data: Optional[DetectionData] = None,
     object_ids: Optional[List[int]] = None,
     classes: List[str] = ["car", "pedestrian"],
 ) -> Iterable[List[StereoObjectDetection]]:
-    detection_files = sorted(glob.glob(obj_detections_path.as_posix() + "/*.pkl"))
-    if not detection_files:
-        raise ValueError(f"No detection files found at {obj_detections_path}")
-    LOGGER.debug("Found %d detection files", len(detection_files))
-    for i, f in enumerate(detection_files[offset:]):
-        with open(f, "rb") as fp:
-            detections = list(
-                filter(lambda x: x.left.cls.lower() in classes, pickle.load(fp))
-            )
-        if object_ids:
-            detections = [d for d in detections if d.left.track_id in object_ids]
-
-        if label_data:  # only available for GT tracks
-            for d in detections:
-                try:
-                    row_data = label_data[d.left.track_id][i + offset]
-                    d.fully_visible = row_data.occ_lvl <= 1 and row_data.trunc_lvl <= 1
-                except KeyError as exc:
-                    # TODO: why is this happening?
-                    pass
-        yield detections
+    left_detections_file = obj_detections_path / "image_02" / (scene + ".txt")
+    right_detections_file = obj_detections_path / "image_03" / (scene + ".txt")
+    if not left_detections_file.exists():
+        raise ValueError(f"No detection files found at {left_detections_file}")
+    if not right_detections_file.exists():
+        raise ValueError(f"No detection files found at {right_detections_file}")
+    current_img_id = offset
+    with open(left_detections_file, "r") as fp_left, open(
+        right_detections_file, "r"
+    ) as fp_right:
+        # lines are in sync
+        detections = []
+        for left_line, right_line in zip(fp_left, fp_right):
+            left_cols = left_line.split(" ")
+            right_cols = right_line.split(" ")
+            img_id = int(left_cols[0])
+            if img_id < current_img_id:
+                continue  # account for possible offset
+            elif img_id == current_img_id:
+                detections.append(_get_detection_from_line(left_cols, right_cols))
+            else:
+                current_img_id = img_id
+                LOGGER.debug(
+                    "%d detections in image %d", len(detections), current_img_id
+                )
+                yield detections
+                detections.clear()
+                detections.append(_get_detection_from_line(left_cols, right_cols))
     LOGGER.debug("Finished yielding object detections")
+
+
+def _get_detection_from_line(left_cols, right_cols):
+    track_id = int(left_cols[1])
+    class_id = int(left_cols[2])
+    w, h = map(int, left_cols[3:5])
+    cls = "car" if class_id == 1 else "pedestrian"
+    left_rle = left_cols[5]
+    if left_rle.endswith("\n"):
+        left_rle = left_rle[:-1]
+    right_rle = right_cols[5]
+    if right_rle.endswith("\n"):
+        right_rle = right_rle[:-1]
+    left_mask = rletools.decode({"size": [w, h], "counts": left_rle})
+    right_mask = rletools.decode({"size": [w, h], "counts": right_rle})
+    return StereoObjectDetection(
+        ObjectDetection(left_mask, cls, track_id=track_id),
+        ObjectDetection(right_mask, cls, track_id=track_id),
+    )
 
 
 def get_image_shape(kitti_path: str, scene: str) -> Tuple[int, int]:
@@ -91,10 +116,15 @@ def get_image_stream(
         for left, right in zip(left_imgs, right_imgs):
             left_img = cv2.imread(left, cv2.IMREAD_COLOR).astype(np.uint8)
             right_img = cv2.imread(right, cv2.IMREAD_COLOR).astype(np.uint8)
+            img_height, img_width = left_img.shape[:2]
             if with_file_names:
-                yield StereoImage(left_img, right_img), (left, right)
+                yield StereoImage(
+                    left_img, right_img, img_width=img_width, img_height=img_height
+                ), (left, right)
             else:
-                yield StereoImage(left_img, right_img)
+                yield StereoImage(
+                    left_img, right_img, img_width=img_width, img_height=img_height
+                )
 
     return Stream(_generator(with_file_names), len(left_imgs))
 
@@ -396,8 +426,8 @@ def get_2d_track_line(
     obj_cls: int,
 ) -> str:
     obj_id = 2 if "ped" in obj_cls.lower() else 1
-    rle = rletools.encode(np.asfortranarray(mask))["counts"].decode("utf-8")
-    return f"{img_id} {track_id} {obj_id} {height} {width} {rle}"
+    rle = rletools.encode(np.asfortranarray(mask, dtype=np.uint8))["counts"]
+    return f"{img_id} {track_id} {obj_id} {height} {width} {rle.decode()}"
 
 
 def get_estimated_obj_detections(

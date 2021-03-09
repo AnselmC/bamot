@@ -309,7 +309,7 @@ def get_orb_feature_matcher():
     return FeatureMatcher(
         "ORB",
         detect_features=detect_features,
-        match_features=partial(match_features, norm=cv2.NORM_HAMMING, threshold=50),
+        match_features=partial(match_features, norm=cv2.NORM_HAMMING, threshold=60),
     )
 
 

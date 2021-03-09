@@ -20,6 +20,8 @@ FeatureTrack = Dict[ObjectId, FeatureId]
 class StereoImage:
     left: np.ndarray
     right: np.ndarray
+    img_width: int
+    img_height: int
 
 
 # @dataclass_json
@@ -34,7 +36,6 @@ class Feature:
 class ObjectDetection:
     mask: np.ndarray
     cls: str
-    fully_visible: bool = True
     track_id: Optional[TrackId] = None
     features: Optional[List[Feature]] = None
 

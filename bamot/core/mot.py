@@ -168,7 +168,7 @@ def _get_max_dist(
     dist_factor = (
         1
         if dist_from_cam is None
-        else max(1, (1 * dist_from_cam) / (1 * 20 * cam_baseline))
+        else max(1, (1 * dist_from_cam) / (2 * 20 * cam_baseline))
     )
     track_logger.debug("Dist factor: %f", dist_factor)
     track_logger.debug("Badly tracked frames: %d", badly_tracked_frames)
@@ -878,7 +878,9 @@ def _improve_association(
                 i,
                 detection.left.track_id,
             )
-            left_features = detection.left.features
+            left_features, right_features = _extract_features(
+                detection, stereo_image, img_id, track_id
+            )
             median = medians.get(
                 i,
                 _get_center_of_stereo_pointcloud(
@@ -1007,6 +1009,10 @@ def _improve_association(
 
             if track_id in tracks_not_in_view:
                 LOGGER.debug("Track not in view, matching makes no sense")
+                track_id_mapping[track_id] = uuid.uuid1().int
+                track_id = track_id_mapping[track_id]
+                matched_detections.add(detection_id)
+                matches.append(TrackMatch(track_id=track_id, detection_id=detection_id))
                 continue
 
             if track_id not in all_track_ids.union(matched_tracks):

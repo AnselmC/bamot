@@ -3,7 +3,6 @@
 import argparse
 import multiprocessing as mp
 import os
-import pickle
 from collections import defaultdict
 from functools import wraps
 from pathlib import Path
@@ -15,7 +14,7 @@ import tqdm
 from bamot.config import CONFIG as config
 from bamot.core.base_types import StereoImage
 from bamot.core.preprocessing import preprocess_frame
-from bamot.util.kitti import (get_cameras_from_kitti,
+from bamot.util.kitti import (get_2d_track_line, get_cameras_from_kitti,
                               get_estimated_obj_detections,
                               get_gt_obj_detections_from_kitti,
                               get_image_stream)
@@ -47,13 +46,22 @@ def _process_scene(scene):
                 save_path = kitti_path / "preprocessed_est"
         else:
             save_path = Path(args.o)
-        save_path_slam = save_path / "slam"
-        save_path_slam_left = save_path_slam / "image_02" / scene
-        save_path_slam_right = save_path_slam / "image_03" / scene
-        save_path_mot = save_path / "mot" / scene
-        save_path_slam_left.mkdir(parents=True, exist_ok=True)
-        save_path_slam_right.mkdir(parents=True, exist_ok=True)
-        save_path_mot.mkdir(parents=True, exist_ok=True)
+        if args.save_slam:
+            save_path_slam = save_path / "slam"
+            save_path_slam_left = save_path_slam / "image_02" / scene
+            save_path_slam_right = save_path_slam / "image_03" / scene
+            save_path_slam_left.mkdir(parents=True, exist_ok=True)
+            save_path_slam_right.mkdir(parents=True, exist_ok=True)
+        save_path_mot_left = save_path / "mot" / "image_02"
+        save_path_mot_right = save_path / "mot" / "image_03"
+        left_mot_out_file = save_path_mot_left / (scene + ".txt")
+        if left_mot_out_file.exists():
+            left_mot_out_file.unlink()  # overwrite file
+        right_mot_out_file = save_path_mot_right / (scene + ".txt")
+        if right_mot_out_file.exists():
+            right_mot_out_file.unlink()  # overwrite file
+        save_path_mot_left.mkdir(parents=True, exist_ok=True)
+        save_path_mot_right.mkdir(parents=True, exist_ok=True)
 
     stereo_cam, T02 = get_cameras_from_kitti(kitti_path, scene)
     stereo_cam.T_left_right[0, 3] = 0.03
@@ -103,7 +111,12 @@ def _process_scene(scene):
         left_img_mot[left_mot_mask] = stereo_image.left[left_mot_mask]
         right_img_mot = 255 * np.ones(stereo_image.right.shape, dtype=np.uint8)
         right_img_mot[right_mot_mask] = stereo_image.right[right_mot_mask]
-        masked_stereo_image_mot = StereoImage(left_img_mot, right_img_mot)
+        masked_stereo_image_mot = StereoImage(
+            left_img_mot,
+            right_img_mot,
+            img_width=stereo_image.img_width,
+            img_height=stereo_image.img_height,
+        )
         result_slam = np.hstack(
             [masked_stereo_image_slam.left, masked_stereo_image_slam.right]
         )
@@ -146,9 +159,34 @@ def _process_scene(scene):
                 slam_right_path = save_path_slam_right / img_name
                 cv2.imwrite(slam_left_path.as_posix(), masked_stereo_image_slam.left)
                 cv2.imwrite(slam_right_path.as_posix(), masked_stereo_image_slam.right)
-            obj_det_path = (save_path_mot / img_id).as_posix() + ".pkl"
-            with open(obj_det_path, "wb") as fp:
-                pickle.dump(stereo_object_detections, fp)
+            for detection in stereo_object_detections:
+                track_id = detection.left.track_id
+                obj_cls = detection.left.cls
+                img_height = stereo_image.img_height
+                img_width = stereo_image.img_width
+
+                left_track_line = get_2d_track_line(
+                    img_id=img_id,
+                    track_id=track_id,
+                    obj_cls=obj_cls,
+                    height=img_height,
+                    width=img_width,
+                    mask=detection.left.mask,
+                )
+                right_track_line = get_2d_track_line(
+                    img_id=img_id,
+                    track_id=track_id,
+                    obj_cls=obj_cls,
+                    height=img_height,
+                    width=img_width,
+                    mask=detection.right.mask,
+                )
+
+                with open(left_mot_out_file, "a") as fp:
+                    fp.write(left_track_line + "\n")
+
+                with open(right_mot_out_file, "a") as fp:
+                    fp.write(right_track_line + "\n")
 
 
 if __name__ == "__main__":
@@ -219,7 +257,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    scenes = args.s if "all" not in args.s else range(0, 20)
+    scenes = args.s if "all" not in args.s else range(0, 28)
     num_processes = os.cpu_count() if (not args.disable_mp) and args.no_view else 1
 
     if num_processes > 1:

@@ -478,18 +478,19 @@ def _update_geometries(
     follow_ego: bool = True,
 ) -> Tuple[Dict[int, TrackGeometries], EgoGeometries]:
     LOGGER.debug("Displaying %d tracks", len(object_tracks))
-    # display all GT tracks present in current img
-    _update_gt_visualization(
-        label_data=label_data,
-        all_gt_track_geometries=all_gt_track_geometries,
-        visualizer=visualizer,
-        all_track_geometries=all_track_geometries,
-        show_gt=show_gt,
-        show_trajs=(show_online_trajs.val or show_offline_trajs.val),
-        gt_poses=gt_poses,
-        track_ids_match=track_ids_match,
-        current_img_id=current_img_id,
-    )
+    if label_data is not None:
+        # display all GT tracks present in current img
+        _update_gt_visualization(
+            label_data=label_data,
+            all_gt_track_geometries=all_gt_track_geometries,
+            visualizer=visualizer,
+            all_track_geometries=all_track_geometries,
+            show_gt=show_gt,
+            show_trajs=(show_online_trajs.val or show_offline_trajs.val),
+            gt_poses=gt_poses,
+            track_ids_match=track_ids_match,
+            current_img_id=current_img_id,
+        )
 
     # display all track estimates
     _update_track_visualization(
