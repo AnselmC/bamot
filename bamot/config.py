@@ -110,19 +110,37 @@ __force_new_detections_default = bool(
     os.environ.get("FORCE_NEW_DETECTIONS", default=False)
 )
 
+__kitti_tracking_path_default = Path(
+    os.environ.get(
+        "KITTI_TRACKING_PATH",
+        (Path(__file__).parent.parent / "data" / "KITTI" / "tracking"),
+    )
+)
+
+__kitti_tracking_subset_default = os.environ.get(
+    "KITTI_TRACKING_SUBSET", default="training"
+)
+
+
+# READ CONFIG FILE
 if __config_file_default.exists():
     with open(__config_file_default.as_posix(), "r") as fp:
         __user_config = yaml.load(fp, Loader=yaml.FullLoader)
 else:
     __user_config = {}
 
-__kitti_path_default = Path(
-    __user_config.get(
-        "kitti_path", (Path(__file__).parent.parent / "data/KITTI/tracking/training")
-    )
-).absolute()
 
-__preprocessed_path_default = __kitti_path_default / "preprocessed"
+__kitti_tracking_path = Path(
+    __user_config.get("kitti_tracking_path", __kitti_tracking_path_default)
+)
+
+__kitti_tracking_subset = __user_config.get(
+    "kitti_tracking_subset", __kitti_tracking_subset_default
+)
+
+__kitti_path = __kitti_tracking_path / __kitti_tracking_subset
+
+__preprocessed_path_default = __kitti_path / "preprocessed"
 
 CONFIG = Config(
     USING_CONFIG_FILE=__config_file_default.exists(),
@@ -130,14 +148,12 @@ CONFIG = Config(
     USING_CONSTANT_MOTION=__user_config.get(
         "constant_motion", __using_const_motion_default
     ),
-    KITTI_PATH=__kitti_path_default.as_posix(),
+    KITTI_PATH=__kitti_path.as_posix(),  # needs to be JSON serializable s.t. config can be dumped
     GT_DETECTIONS_PATH=__user_config.get(
-        "gt_detections_path",
-        (__kitti_path_default / "preprocessed_gt" / "mot").as_posix(),
+        "gt_detections_path", (__kitti_path / "preprocessed_gt" / "mot").as_posix(),
     ),
     EST_DETECTIONS_PATH=__user_config.get(
-        "detections_path",
-        (__kitti_path_default / "preprocessed_est" / "mot").as_posix(),
+        "detections_path", (__kitti_path / "preprocessed_est" / "mot").as_posix(),
     ),
     MAX_DIST=__user_config.get("max_dist", 65),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),

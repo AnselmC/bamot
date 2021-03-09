@@ -8,10 +8,10 @@ from collections import defaultdict
 from functools import wraps
 from pathlib import Path
 
+import cv2
 import numpy as np
 import tqdm
 
-import cv2
 from bamot.config import CONFIG as config
 from bamot.core.base_types import StereoImage
 from bamot.core.preprocessing import preprocess_frame
@@ -55,7 +55,7 @@ def _process_scene(scene):
         save_path_slam_right.mkdir(parents=True, exist_ok=True)
         save_path_mot.mkdir(parents=True, exist_ok=True)
 
-    stereo_cam, T02 = get_cameras_from_kitti(kitti_path)
+    stereo_cam, T02 = get_cameras_from_kitti(kitti_path, scene)
     stereo_cam.T_left_right[0, 3] = 0.03
     image_stream = get_image_stream(kitti_path, scene, with_file_names=True)
     if not args.no_view:
@@ -156,13 +156,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         help="the scene to preprocess, default is 0",
-        choices=list(map(str, range(0, 21))) + ["all"],
+        choices=list(map(str, range(0, 28))) + ["all"],
         nargs="*",
         default=[0],
     )
     parser.add_argument(
         "-o",
-        help="where to save the masked data (default is `./data/KITTI/tracking/training/preprocessed`)",
+        help="where to save the masked data (default is `{KITTI_TRACKING_PATH}/{KITTI_TRACKING_SUBSET}/preprocessed_{est | gt}` depending on whether `--use-gt` is set)",
         type=str,
     )
     parser.add_argument(
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--save-slam",
-        help="flag to store masked images for static SLAM (disabled with `no--save`) ",
+        help="flag to store masked images for static SLAM (disabled with `--no-save`) ",
         action="store_true",
     )
     parser.add_argument(
