@@ -93,13 +93,13 @@ __keep_track_for_n_frames_after_lost_default = int(
 __min_landmarks_default = int(os.environ.get("MIN_LANDMARKS", default=1))
 
 __max_speed_car_default = float(
-    os.environ.get("MAX_SPEED_CAR", default=40)
+    os.environ.get("MAX_SPEED_CAR", default=60)
 )  # about 140 km/h
 __max_speed_ped_default = float(
     os.environ.get("MAX_SPEED_PED", default=8)
 )  # about 14 m/h
 
-__frame_rate_default = int(os.environ.get("FRAME_RATE", default=10))  # 10Hz for KITTI
+__frame_rate_default = int(os.environ.get("FRAME_RATE", default=5))  # 10Hz for KITTI
 
 __trust_2d_default = str(os.environ.get("TRUST_2D", default="yes"))
 
