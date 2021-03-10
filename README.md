@@ -6,6 +6,7 @@ My thesis is also part of the repository (in the `thesis` directory).
 
 ## Abstract
 _Note that citations are adjusted from the abstract of the thesis to include links instead of papers_
+
 This thesis addresses the problem of 3D multi-object tracking for RGB-based systems.
 More specifically, we propose a method that performs sparse feature-based object-level Bundle Adjustment for accurate object track localization.
 Using the 2D object detector and tracker [TrackR-CNN](https://github.com/VisualComputingInstitute/TrackR-CNN), we introduce a procedure for stereo object detections and improve TrackR-CNN's trained association ability.
