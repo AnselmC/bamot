@@ -1,0 +1,79 @@
+\newcommand*{\getUniversity}{Technische Universität München}
+\newcommand*{\getFaculty}{Department of Informatics}
+\newcommand*{\getTitle}{BAMOT: Bundle Adjustment for Multiple-Object Tracking - a Stereo-based Approach}
+\newcommand*{\getTitleGer}{BAMOT: Bundle Adjustment für Multi-Objekt Tracking mit Stereo-Kameras}
+\newcommand*{\getAuthor}{Anselm Coogan}
+\newcommand*{\getDoctype}{Master's Thesis in Robotics, Cognition, Intelligence}
+\newcommand*{\getSupervisor}{Prof. Dr. Laura Leal-Taix\'{e}}
+\newcommand*{\getAdvisor}{Dr. Aljo\v{s}a O\v{s}ep and Nikolaus Demmel}
+\newcommand*{\getSubmissionDate}{15.03.2021}
+\newcommand*{\getSubmissionLocation}{Zurich}
+
+\usepackage[nameinlink, capitalize]{cleveref}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{subcaption}
+\usepackage[sc]{mathpazo}
+\usepackage[ngerman,american]{babel}
+\usepackage[autostyle]{csquotes}
+\usepackage[
+  backend=bibtex,
+  url=false,
+  style=numeric,
+  ]{biblatex}
+\usepackage{graphicx}
+\usepackage{scrhack} % necessary for listings package
+\usepackage{listings}
+\usepackage{lstautogobble}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\usepackage{booktabs}
+\usepackage[final]{microtype}
+\usepackage{caption}
+\usepackage{adjustbox}
+
+\usepackage[nopostdot,toc,acronym,nomain,nonumberlist]{glossaries}
+\setacronymstyle{long-short}
+\loadglsentries[acronym]{myglossaries}
+
+\setkomafont{disposition}{\normalfont\bfseries} % use serif font for headings
+\linespread{1.05} % adjust line spread for mathpazo font
+
+% Add table of contents to PDF bookmarks
+\BeforeTOCHead[toc]{{\cleardoublepage\pdfbookmark[0]{\contentsname}{toc}}}
+
+% Define TUM corporate design colors
+% Taken from http://portal.mytum.de/corporatedesign/index_print/vorlagen/index_farben
+\definecolor{TUMBlue}{HTML}{0065BD}
+\definecolor{TUMSecondaryBlue}{HTML}{005293}
+\definecolor{TUMSecondaryBlue2}{HTML}{003359}
+\definecolor{TUMBlack}{HTML}{000000}
+\definecolor{TUMWhite}{HTML}{FFFFFF}
+\definecolor{TUMDarkGray}{HTML}{333333}
+\definecolor{TUMGray}{HTML}{808080}
+\definecolor{TUMLightGray}{HTML}{CCCCC6}
+\definecolor{TUMAccentGray}{HTML}{DAD7CB}
+\definecolor{TUMAccentOrange}{HTML}{E37222}
+\definecolor{TUMAccentGreen}{HTML}{A2AD00}
+\definecolor{TUMAccentLightBlue}{HTML}{98C6EA}
+\definecolor{TUMAccentBlue}{HTML}{64A0C8}
+
+% Settings for pgfplots
+\pgfplotsset{compat=newest}
+\pgfplotsset{
+  % For available color names, see http://www.latextemplates.com/svgnames-colors
+  cycle list={TUMBlue\\TUMAccentOrange\\TUMAccentGreen\\TUMSecondaryBlue2\\TUMDarkGray\\},
+}
+
+% Settings for lstlistings
+\lstset{%
+  basicstyle=\ttfamily,
+  columns=fullflexible,
+  autogobble,
+  keywordstyle=\bfseries\color{TUMBlue},
+  stringstyle=\color{TUMAccentGreen}
+}
+
+
+\addbibresource{bamot.bib}
