@@ -10,3 +10,6 @@
 [submodule "mots_tools"]
 	path = bamot/thirdparty/mots_tools
 	url = git@github.com:VisualComputingInstitute/mots_tools.git
+[submodule "thesis"]
+	path = thesis
+	url = ./thesis/
