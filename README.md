@@ -38,21 +38,6 @@ Furthermore, we show the contribution of various features of our system on an ov
 <sup><a id="fn.7" href="#fnr.7">7</a></sup> <https://github.com/JonathonLuiten/TrackEval>
 
 
-This thesis addresses the problem of 3D multi-object tracking for RGB-based systems.
-More specifically, we propose a method that performs sparse feature-based object-level Bundle-Adjustment for accurate object track localization.
-Using the 2D object detector and tracker TrackR-CNN \cite{voigtlaenderMOTSMultiObjectTracking2019}, we introduce a procedure for stereo object detections and improve TrackR-CNN's trained association ability.
-We achieve superior association via a multi-stage association pipeline that combines appearance and 3D localization similarity.
-Additionally, we leverage a priori knowledge of object shapes and dynamics for both association and keeping a sparse outlier-free point cloud representation of objects.
-
-We evaluate our proposal on the KITTI \cite{geigerVisionMeetsRobotics2013} tracking dataset via the traditional CLEAR \cite{bernardinEvaluatingMultipleObject2008} and the recently introduced HOTA \cite{luitenHOTAHigherOrder2021} metrics.
-However, as the official KITTI tracking benchmark only includes 2D MOT evaluation, and the extended 3D evaluation from \cite{wengBaseline3DMultiObject2019} only supports CLEAR via 3D IoU, we implement a customized
-tracking ability assessment.
-The evaluation introduces a normalized 3D GIoU \cite{rezatofighiGeneralizedIntersectionUnion2019} detection similarity score to the official HOTA evaluation scripts.\footnote{\url{https://github.com/JonathonLuiten/TrackEval}}
-We compare our performance to the LiDAR-based AB3DMOT \cite{wengBaseline3DMultiObject2019} for which 3D tracking results are readily available and demonstrate promising results, especially w.r.t. association and rigid, moving objects.
-Furthermore, we show the contribution of various features of our system on an overall performance increase of 17\% for cars and 27\% for pedestrians.
-The code for the proposed implementation and performance evaluation is publicly available.\footnote{\url{https://github.com/AnselmC/bamot}}
-
-
 ## Running the code
 ### Building g2opy
 ### Installing python dependencies
