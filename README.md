@@ -4,6 +4,8 @@ This is the code for my Master's Thesis at the [Dynamic Vision and Learning Grou
 and the advisory of [Dr. Aljosa Osep](https://aljosaosep.github.io) and Nikolaus Demmel.
 My thesis is also part of the repository (in the `thesis` directory).
 
+<p align="center"><img src="visualization_example.gif"/></p>
+
 ## Abstract
 _Note that citations are adjusted from the abstract of the thesis to include links instead of papers_
 
