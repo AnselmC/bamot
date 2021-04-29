@@ -140,7 +140,7 @@ __kitti_tracking_subset = __user_config.get(
 
 __kitti_path = __kitti_tracking_path / __kitti_tracking_subset
 
-__preprocessed_path_default = __kitti_path / "preprocessed"
+__preprocessed_path_default = __kitti_path / "stereo_detections"
 
 CONFIG = Config(
     USING_CONFIG_FILE=__config_file_default.exists(),
@@ -150,10 +150,10 @@ CONFIG = Config(
     ),
     KITTI_PATH=__kitti_path.as_posix(),  # needs to be JSON serializable s.t. config can be dumped
     GT_DETECTIONS_PATH=__user_config.get(
-        "gt_detections_path", (__kitti_path / "preprocessed_gt" / "mot").as_posix(),
+        "gt_detections_path", (__kitti_path / "stereo_detections_gt").as_posix(),
     ),
     EST_DETECTIONS_PATH=__user_config.get(
-        "detections_path", (__kitti_path / "preprocessed_est" / "mot").as_posix(),
+        "detections_path", (__kitti_path / "stereo_detections").as_posix(),
     ),
     MAX_DIST=__user_config.get("max_dist", 65),
     FEATURE_MATCHER=__user_config.get("feature_matcher", "orb"),

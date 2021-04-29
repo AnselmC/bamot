@@ -39,21 +39,25 @@ def _process_scene(scene):
     scene = str(scene).zfill(4)
     kitti_path = Path(config.KITTI_PATH)
     if not args.no_save:
-        if not args.o:
-            if args.use_gt:
-                save_path = kitti_path / "preprocessed_gt"
-            else:
-                save_path = kitti_path / "preprocessed_est"
-        else:
+        if args.o:
             save_path = Path(args.o)
+        else:
+            save_path = kitti_path
+        if args.use_gt:
+            save_path_detections = save_path / "stereo_detections_gt"
+        else:
+            save_path_detections = save_path / "stereo_detections"
         if args.save_slam:
-            save_path_slam = save_path / "slam"
+            if args.use_gt:
+                save_path_slam = save_path / "masked_slam_input_gt"
+            else:
+                save_path_slam = save_path / "masked_slam_input"
             save_path_slam_left = save_path_slam / "image_02" / scene
             save_path_slam_right = save_path_slam / "image_03" / scene
             save_path_slam_left.mkdir(parents=True, exist_ok=True)
             save_path_slam_right.mkdir(parents=True, exist_ok=True)
-        save_path_mot_left = save_path / "mot" / "image_02"
-        save_path_mot_right = save_path / "mot" / "image_03"
+        save_path_mot_left = save_path_detections / "image_02"
+        save_path_mot_right = save_path_detections / "image_03"
         left_mot_out_file = save_path_mot_left / (scene + ".txt")
         if left_mot_out_file.exists():
             left_mot_out_file.unlink()  # overwrite file
