@@ -7,6 +7,3 @@
 [submodule "bamot/thirdparty/pointnet2"]
 	path = bamot/thirdparty/pointnet2
 	url = git@github.com:erikwijmans/Pointnet2_PyTorch.git
-[submodule "mots_tools"]
-	path = bamot/thirdparty/mots_tools
-	url = git@github.com:VisualComputingInstitute/mots_tools.git
