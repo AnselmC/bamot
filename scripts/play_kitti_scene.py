@@ -6,10 +6,10 @@ import g2o
 import matplotlib.pyplot as plt
 import numpy as np
 
-from bamot.config import CONFIG as configfrom
-from bamot.config import (bamot.util.kitti, get_cameras_from_kitti,
-                          get_gt_detection_data_from_kitti,
-                          get_gt_poses_from_kitti, get_image_stream, import)
+from bamot.config import CONFIG as config
+from bamot.util.kitti import (get_cameras_from_kitti,
+                              get_gt_detection_data_from_kitti,
+                              get_gt_poses_from_kitti, get_image_stream)
 
 
 def _get_euler_angles(rot):
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     scene = args.scene.zfill(4)
     kitti_path = Path(config.KITTI_PATH)
-    _, T02 = get_cameras_from_kitti(kitti_path)
+    _, T02 = get_cameras_from_kitti(kitti_path, scene)
     gt_poses_world = get_gt_poses_from_kitti(kitti_path, scene)
     label_data = get_gt_detection_data_from_kitti(kitti_path, scene, gt_poses_world)
     ax = plt.axes()
@@ -71,9 +71,6 @@ if __name__ == "__main__":
                     boxes.append(bbox)
                 if img_id <= i:
                     x, y, z = label_row.world_pos
-                    x = x[0]
-                    y = y[0]
-                    z = z[0]
                     all_x.append(x)
                     all_y.append(y)
                     obj_positions.append([x, y, z])
@@ -115,11 +112,14 @@ if __name__ == "__main__":
             patch.remove()
         current_pose = g2o.Isometry3d(gt_poses_world[i])
         rot = current_pose.R
-        arrow = (rot @ np.array([[0, 0, 5]]).T).reshape(3,)
+        arrow = (rot @ np.array([[0, 0, 5]]).T).reshape(
+            3,
+        )
 
         ax.arrow(current_pose.t[0], current_pose.t[1], arrow[0], arrow[1])
         ax.plot(
-            gt_poses_x[: i + 1], gt_poses_y[: i + 1],
+            gt_poses_x[: i + 1],
+            gt_poses_y[: i + 1],
         )
         tracks = object_poses_by_img_id.get(i, [])
         for track in tracks:

@@ -383,6 +383,33 @@ if __name__ == "__main__":
                 )
 
     if args.plot in ["both", "world"]:
+        # for track_id_est in not_matched_est:
+        #    print("plotting")
+        #    est_track = est_detections[track_id_est]
+        #    est_traj_world = np.array(
+        #        [row.world_pos for row in est_track.values()]
+        #    ).reshape(-1, 3)
+        #    ax_world_est.plot(
+        #        est_traj_world[:, 0],
+        #        est_traj_world[:, 1],
+        #        color="red",
+        #        linewidth=4,
+        #        linestyle="dotted",
+        #    )
+        # for track_id_gt in not_matched_gt:
+        #    gt_track = gt_detections[track_id_gt]
+        #    gt_traj_world = np.array(
+        #        [row.world_pos for row in gt_track.values()]
+        #    ).reshape(-1, 3)
+        #    ax_world_gt.plot(
+        #        gt_traj_world[:, 0],
+        #        gt_traj_world[:, 1],
+        #        color="red",
+        #        linestyle="dotted",
+        #        # norm=NoNormalize(),
+        #        linewidth=4,
+        #    )
+
         fig_world.suptitle(f"Scene {scene}")
         ax_world_gt.set_title("Ground truth")
         ax_world_gt.set_xlabel("x [m]")

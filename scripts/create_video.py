@@ -97,14 +97,15 @@ def main(args):
     subprocess.run(
         [
             "ffmpeg",
-            "-i",
-            detections_video_path.as_posix(),
+            # "-i",
+            # detections_video_path.as_posix(),
             "-i",
             recording_path_2d.as_posix(),
             "-i",
             recording_path_3d.as_posix(),
             "-filter_complex",
-            "[2][0]scale2ref=iw:iw*(main_h/main_w)[2nd][ref];[ref][1][2nd]vstack=inputs=3",
+            "[1][0]scale2ref=iw:iw*(main_h/main_w)[2nd][ref];[ref][2nd]vstack=inputs=2",
+            # "[2][0]scale2ref=iw:iw*(main_h/main_w)[2nd][ref];[ref][1][2nd]vstack=inputs=3",
             output_path.as_posix(),
         ],
         capture_output=False,
@@ -118,5 +119,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("recording", type=str)
     parser.add_argument("scene", type=int)
+    parser.add_argument("--stack", action="store_true")
     args = parser.parse_args()
     main(args)

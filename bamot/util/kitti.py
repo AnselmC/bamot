@@ -525,9 +525,6 @@ def _get_estimated_detection_file(kitti_path: Path, scene: str, side: str) -> Pa
     return kitti_path / "detections" / side_dir / (scene + ".txt")
 
 
-def _get_calib_cam_to_cam_file(kitti_path: Path) -> Path:
-    return kitti_path / "calib_cam_to_cam.txt"
-
 
 def _get_calib_file(kitti_path: Path, scene: str) -> Path:
     return kitti_path / "calib" / (scene + ".txt")
