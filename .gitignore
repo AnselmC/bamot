@@ -218,7 +218,8 @@ data
 *.avi
 
 *.sbatch
-/configs/
+/configs/*
+!/configs/config-best.yaml
 
 ### LaTeX ###
 ## Core latex/pdflatex auxiliary files:
