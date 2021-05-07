@@ -30,13 +30,14 @@ class OBBoxRegressor(pl.LightningModule):
         prob_dropout: float = 0.2,
         dim_feature_vector: int = 4,
         log_pcl_every_n_steps: int = 40,
-        on_gpu: bool = False,
+        use_gpus: bool = False,
+        encode_pointcloud: bool = True,
         **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters()
         # pointnet2 not available for CPU, but need to be able to run for sanity check of pipeline
-        if on_gpu:
+        if use_gpus:
             from bamot.thirdparty.pointnet2.pointnet2.models.pointnet2_ssg_sem import \
                 PointNet2SemSegSSG
 
@@ -47,6 +48,8 @@ class OBBoxRegressor(pl.LightningModule):
             dim_backbone = 13 * num_points + dim_feature_vector
             self._device = "cuda"
         else:
+            if encode_pointcloud:
+                raise ValueError("Can only encode pointcloud if using GPU")
             self._backbone = nn.Flatten()
             # x,y,z coordinates
             dim_backbone = 3 * num_points + dim_feature_vector
@@ -151,7 +154,7 @@ class OBBoxRegressor(pl.LightningModule):
                     "point_scene": wb.Object3D(
                         {
                             "type": "lidar/beta",
-                            "points": pcl_cam[0].cpu().detach().numpy(),
+                            "points": pcl_cam[0].T.cpu().detach().numpy(),
                             "boxes": np.array(
                                 [
                                     {
@@ -183,11 +186,17 @@ class OBBoxRegressor(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self._stage = Stages.VAL
-        self._generic_step(batch, batch_idx)
+        return self._generic_step(batch, batch_idx)
+
+    def validation_epoch_end(self, outs):
+        self.log("avg_val_loss", sum(outs) / len(outs))
 
     def test_step(self, batch, batch_idx):
         self._stage = Stages.TEST
-        self._generic_step(batch, batch_idx)
+        return self._generic_step(batch, batch_idx)
+
+    def test_epoch_end(self, outs):
+        self.log("avg_test_loss", sum(outs) / len(outs))
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
