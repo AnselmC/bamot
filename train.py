@@ -45,5 +45,6 @@ if __name__ == "__main__":
     parser.add_argument("-lr", "--learning-rate", type=float, default=1e-7)
     parser.add_argument("--gpus", default=None)
     parser.add_argument("--encode-pointcloud", default=False)
+    parser.add_argument("--precision", choices=[16, 32], default=32)
     args = parser.parse_args()
     main(args)

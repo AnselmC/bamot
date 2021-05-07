@@ -34,7 +34,7 @@ class BAMOTPointCloudDataset(Dataset):
                 replace=len(pointcloud) < self._pointcloud_size,
                 axis=1,
             )
-        return pointcloud
+        return pointcloud.T
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         row = self._dataframe.iloc[idx]
@@ -96,13 +96,14 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
             raise ValueError(f"No `.csv` files found at `{self._dataset_dir}`")
         first_file = True
         for f in all_files:
-            df = pd.read_csv(f)
+            df = pd.read_csv(f, index_col=False)
             if first_file:
                 dataset = df
                 first_file = False
             else:
                 dataset = dataset.append(df)
         dataset.dropna(inplace=True)
+        dataset.reset_index(inplace=True, drop=True)
 
         target_yaw = []
         target_pos = []

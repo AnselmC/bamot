@@ -31,13 +31,17 @@ class OBBoxRegressor(pl.LightningModule):
         dim_feature_vector: int = 4,
         log_pcl_every_n_steps: int = 40,
         use_gpus: bool = False,
-        encode_pointcloud: bool = True,
+        encode_pointcloud: bool = False,
         **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters()
         # pointnet2 not available for CPU, but need to be able to run for sanity check of pipeline
         if use_gpus:
+            self._device = "cuda"
+        else:
+            self._device = "cpu"
+        if use_gpus and encode_pointcloud:
             from bamot.thirdparty.pointnet2.pointnet2.models.pointnet2_ssg_sem import \
                 PointNet2SemSegSSG
 
@@ -46,14 +50,12 @@ class OBBoxRegressor(pl.LightningModule):
             )
             # feature vector has length 13
             dim_backbone = 13 * num_points + dim_feature_vector
-            self._device = "cuda"
         else:
             if encode_pointcloud:
                 raise ValueError("Can only encode pointcloud if using GPU")
             self._backbone = nn.Flatten()
             # x,y,z coordinates
             dim_backbone = 3 * num_points + dim_feature_vector
-            self._device = "cpu"
         self._regressor = nn.Sequential(
             nn.Linear(dim_backbone, 128),
             nn.ReLU(),
@@ -113,7 +115,7 @@ class OBBoxRegressor(pl.LightningModule):
         self.log(
             f"yaw_loss_{self._stage}", yaw_loss, on_epoch=self._stage == Stages.TRAIN
         )
-        total_loss = pos_loss + yaw_loss
+        total_loss = pos_loss #+ yaw_loss
         self.log(
             f"total_loss_{self._stage}",
             total_loss,
@@ -137,13 +139,14 @@ class OBBoxRegressor(pl.LightningModule):
             init_est_corners = get_corners_from_vector(init_est_vec)
             est_vec = get_oobbox_vec(
                 pos=(est_pos + pos)[0].cpu().detach().numpy(),
-                yaw=(est_yaw + yaw)[0].cpu().detach().numpy(),
+                #yaw=(est_yaw + yaw)[0].cpu().detach().numpy(),
+                yaw=est_yaw[0].cpu().detach().numpy(),
                 dims=config.CAR_DIMS,
             )
 
             est_corners = get_corners_from_vector(est_vec)
 
-            pcl_cam = (pcl.T + est_pos.T).T
+            pcl_cam = (pcl + est_pos.reshape(-1, 1, 3))
             # visualize_pointcloud_and_obb(
             #    pcl_cam[0].numpy(),
             #    [gt_corners, init_est_corners, est_corners],
@@ -154,7 +157,7 @@ class OBBoxRegressor(pl.LightningModule):
                     "point_scene": wb.Object3D(
                         {
                             "type": "lidar/beta",
-                            "points": pcl_cam[0].T.cpu().detach().numpy(),
+                            "points": pcl_cam[0].cpu().detach().numpy(),
                             "boxes": np.array(
                                 [
                                     {
