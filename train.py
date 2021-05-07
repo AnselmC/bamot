@@ -18,7 +18,7 @@ def main(args):
         train_batch_size=args.batch_size,
         eval_batch_size=args.batch_size,
     )
-    wandb_logger = WandbLogger(project="bamot", offline=True)
+    wandb_logger = WandbLogger(project="bamot")
     trainer = pl.Trainer(logger=wandb_logger, gpus=args.gpus)
     trainer.fit(model, dm)
     trainer.test(datamodule=dm)
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         "--max-epochs", type=int, default=5, help="Max epochs (default 5)"
     )
     parser.add_argument("-bs", "--batch-size", type=int, default=8)
-    parser.add_argument("-lr", "--learning-rate", type=float, default=1e-5)
+    parser.add_argument("-lr", "--learning-rate", type=float, default=8)
     parser.add_argument("--gpus", default=None)
     args = parser.parse_args()
     main(args)

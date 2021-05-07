@@ -37,6 +37,7 @@ class Config:
     TRUST_2D: str
     SAVE_UPDATED_2D_TRACK: bool
     SAVE_3D_TRACK: bool
+    SAVE_OBB_DATA: bool
     CAR_DIMS: Tuple[float, float, float]  # HxWxL
     PED_DIMS: Tuple[float, float, float]
     FORCE_NEW_DETECTIONS: bool
@@ -75,6 +76,7 @@ __save_updated_2d_track_default = bool(
     os.environ.get("SAVE_UPDATED_2D_TRACK", default=False)
 )
 __save_3d_track_default = bool(os.environ.get("SAVE_3D_TRACK", default=True))
+__save_obb_data_default = bool(os.environ.get("SAVE_OBB_DATA", default=False))
 __final_full_ba_default = bool(os.environ.get("FINAL_FULL_BA", default=False))
 __cluster_radius_default = float(os.environ.get("CLUSTER_RADIUS", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
@@ -186,6 +188,7 @@ CONFIG = Config(
         "save_updated_2d_track", __save_updated_2d_track_default
     ),
     SAVE_3D_TRACK=__user_config.get("save_3d_track", __save_3d_track_default),
+    SAVE_OBB_DATA=__user_config.get("save_obb_data", __save_obb_data_default),
     FINAL_FULL_BA=__user_config.get("final_full_ba", __final_full_ba_default),
     KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST=__user_config.get(
         "keep_track_for_n_frames_after_lost",

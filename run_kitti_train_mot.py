@@ -70,6 +70,72 @@ def _fake_slam(
     LOGGER.debug("Finished adding fake slam data")
 
 
+def _write_obb_data(
+    writer_obb_data: Union[queue.Queue, mp.Queue],
+    scene: str,
+    kitti_path: Path,
+    tags: List[str],
+):
+    path = kitti_path / "obb_data"
+    for tag in tags:
+        path /= tag
+    path.mkdir(parents=True, exist_ok=True)
+    pcl_dir = path / scene
+    pcl_dir.mkdir(exist_ok=True)
+    fname = path / (scene + ".csv")
+    columns = [
+        "scene",
+        "img_id",
+        "track_id",
+        "x",
+        "y",
+        "z",
+        "yaw",
+        "num_poses",
+        "badly_tracked_frames",
+        "num_points",
+        "dist_from_cam",
+    ]
+    # overwrite file if exists
+    with open(fname, "w") as fp:
+        fp.write(",".join(columns) + "\n")
+    while True:
+        with open(fname, "a") as fp:
+            track_data = writer_obb_data.get(block=True)
+            writer_obb_data.task_done()
+            img_id = track_data["img_id"]
+            LOGGER.debug("Got 3d obb data for image %d", img_id)
+            T_world_cam = track_data["T_world_cam"]
+            dims = config.CAR_DIMS
+            for track_id, track in track_data["tracks"].items():
+                dist_from_cam = track.dist_from_cam
+                pos = track.locations.get(img_id)
+                if pos is None:
+                    continue
+                rot_angle = np.array(track.rot_angle.get(img_id))
+                if not np.isfinite(rot_angle):
+                    rot_angle = np.array([0])
+                pos_cam = from_homogeneous(
+                    np.linalg.inv(T_world_cam) @ to_homogeneous(pos)
+                )
+                # kitti locations are given as bottom of bounding box
+                # positive y direction is downward, hence add half of the dimensions
+                pos_cam[1] += dims[0] / 2
+                num_poses = len(track.poses)
+                num_landmarks = len(track.landmarks)
+                badly_tracked_frames = track.badly_tracked_frames
+                line = (
+                    f"{scene}, {img_id}, {track_id}, {', '.join(map(str, pos_cam.flatten().tolist()))}, {rot_angle.flatten().tolist()[0]}, {num_poses}, "
+                    f"{badly_tracked_frames}, {num_landmarks}, {dist_from_cam}"
+                )
+                fp.write(line + "\n")
+                pcl_fname = pcl_dir / f"{img_id}_{track_id}.npy"
+                points = np.array(
+                    [lm.pt_3d for lm in track.landmarks.values()]
+                ).reshape(-1, 3)
+                np.save(pcl_fname, points)
+
+
 def _write_3d_detections(
     writer_data_3d: Union[queue.Queue, mp.Queue],
     scene: str,
@@ -387,6 +453,7 @@ if __name__ == "__main__":
     returned_data = queue_class()
     writer_data_2d = queue_class()
     writer_data_3d = queue_class()
+    writer_obb_data = queue_class()
     slam_data = queue_class()
     stop_flag = flag_class()
     next_step = flag_class()
@@ -429,6 +496,16 @@ if __name__ == "__main__":
         },
         name="3D Detection Writer",
     )
+    write_obb_process = process_class(
+        target=_write_obb_data,
+        kwargs={
+            "writer_obb_data": writer_obb_data,
+            "scene": scene,
+            "kitti_path": kitti_path,
+            "tags": args.tags,
+        },
+        name="OBB Regression Data Writer",
+    )
 
     continue_until_image_id = -1 if args.no_viewer else args.continuous + args.offset
     mot_process = process_class(
@@ -445,6 +522,7 @@ if __name__ == "__main__":
             "returned_data": returned_data,
             "writer_data_2d": writer_data_2d,
             "writer_data_3d": writer_data_3d,
+            "writer_obb_data": writer_obb_data,
             "continuous_until_img_id": continue_until_image_id,
         },
         name="BAMOT",
@@ -455,6 +533,9 @@ if __name__ == "__main__":
     if config.SAVE_3D_TRACK:
         LOGGER.info("Starting 3d detection writer")
         write_3d_process.start()
+    if config.SAVE_OBB_DATA:
+        LOGGER.info("Starting obb regressor data writer")
+        write_obb_process.start()
     LOGGER.debug("Starting fake SLAM")
     slam_process.start()
     LOGGER.debug("Starting MOT")
@@ -598,4 +679,9 @@ if __name__ == "__main__":
         writer_data_3d.task_done()
         time.sleep(0.5)
     writer_data_3d.join()
+    while not writer_obb_data.empty():
+        writer_obb_data.get()
+        writer_obb_data.task_done()
+        time.sleep(0.5)
+    writer_obb_data.join()
     LOGGER.info("FINISHED RUNNING KITTI GT MOT")

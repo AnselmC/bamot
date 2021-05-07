@@ -1,15 +1,24 @@
+from dataclasses import dataclass
 from typing import Tuple
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from bamot.util.cv import get_corners_from_vector
+from bamot.config import CONFIG as config
+from bamot.util.cv import get_corners_from_vector, get_oobbox_vec
 from bamot.util.misc import get_color
-from bamot.util.viewer import visualize_pointcloud_and_obb
+from bamot.util.viewer import Colors, visualize_pointcloud_and_obb
 from torch.nn import functional as F
 
 import wandb as wb
+
+
+@dataclass
+class Stages:
+    TRAIN: str = "train"
+    VAL: str = "val"
+    TEST: str = "test"
 
 
 class OBBoxRegressor(pl.LightningModule):
@@ -20,7 +29,8 @@ class OBBoxRegressor(pl.LightningModule):
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         prob_dropout: float = 0.2,
-        dim_feature_vector: int = 2,
+        dim_feature_vector: int = 4,
+        log_pcl_every_n_steps: int = 40,
         **kwargs,
     ):
         super().__init__()
@@ -45,10 +55,10 @@ class OBBoxRegressor(pl.LightningModule):
             nn.Linear(dim_backbone, 128),
             nn.ReLU(),
             nn.Dropout(prob_dropout),
-            nn.Linear(128, 7),
+            nn.Linear(128, 4),  # predict position and yaw corrections
         )
-        self._est_color = get_color(normalized=True, as_tuple=True)
-        self._gt_color = get_color(normalized=True, as_tuple=True)
+        self._stage = None
+        self._log_pcl_every_n_steps = log_pcl_every_n_steps
 
     def forward(self, pointcloud, feature_vector):
         # pointcloude shape: B x N x 3
@@ -74,83 +84,110 @@ class OBBoxRegressor(pl.LightningModule):
         scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]).to(self._device))
         return F.mse_loss(scaled_angle, target_angle)
 
-    def _get_losses(self, y: torch.Tensor, target: torch.Tensor) -> Tuple[torch.Tensor]:
-        loc = y[:, :3]
-        target_loc = target[:, :3]
-        angle = y[:, 3:4]
-        target_angle = target[:, 3:4]
-        size = y[:, 4:]
-        target_size = target[:, 4:]
-        loc_loss = self._get_location_loss(loc, target_loc)
-        angle_loss = self._get_angle_loss(angle, target_angle)
-        size_loss = self._get_size_loss(size, target_size)
-        return loc_loss, angle_loss, size_loss
+    def _generic_step(self, batch, batch_idx):
+        pcl = batch["pointcloud"]
+        fv = batch["feature_vector"]
 
-    def training_step(self, batch, batch_idx):
-        pointcloud = batch["pointcloud"]
-        feature_vector = batch["feature_vector"]
-        target = batch["target"]
-        # size: B x N x 7
-        y = self(pointcloud, feature_vector)
-        loc_loss, angle_loss, size_loss = self._get_losses(y, target)
-        self.log("loc_loss_train", loc_loss, on_epoch=True)
-        self.log("angle_loss_train", angle_loss, on_epoch=True)
-        self.log("size_loss_train", size_loss, on_epoch=True)
-        total_loss = loc_loss + angle_loss + size_loss
-        self.log("loss_train", total_loss, on_epoch=True)
-        return total_loss
+        est_yaw = batch["est_yaw"]
+        est_pos = batch["est_pos"]
 
-    def validation_step(self, batch, batch_idx):
-        pointcloud = batch["pointcloud"]
-        feature_vector = batch["feature_vector"]
-        target = batch["target"]
-        y = self(pointcloud, feature_vector)
-        loc_loss, angle_loss, size_loss = self._get_losses(y, target)
-        self.log("loc_loss_valid", loc_loss)
-        self.log("angle_loss_valid", angle_loss)
-        self.log("size_loss_valid", size_loss)
-        total_loss = loc_loss + angle_loss + size_loss
-        self.log("loss_valid", total_loss)
-        # log first pointcloud + GT box + Est Box from batch
-        gt_corners = get_corners_from_vector(target[0].cpu().numpy())
-        est_corners = get_corners_from_vector(y[0].cpu().numpy())
-        # visualize_pointcloud_and_obb(pointcloud[0].numpy(), [gt_corners, est_corners])
-        wb.log(
-            {
-                "point_scene": wb.Object3D(
-                    {
-                        "type": "lidar/beta",
-                        "points": pointcloud[0].cpu().numpy(),
-                        "boxes": np.array(
-                            [
-                                {
-                                    "corners": gt_corners.T.tolist(),
-                                    "label": "GT OBBox",
-                                    "color": self._gt_color,
-                                },
-                                {
-                                    "corners": est_corners.T.tolist(),
-                                    "label": "EST OBBox",
-                                    "color": self._est_color,
-                                },
-                            ]
-                        ),
-                    }
-                )
-            },
+        target_yaw = batch["target_yaw"]
+        target_pos = batch["target_pos"]
+
+        # regress against correction
+        target_yaw_residual = target_yaw - est_yaw
+        target_pos_residual = target_pos - est_pos
+        # size: B x N x 4 (3 for pos, 1 for yaw)
+        preds = self(pcl, fv)
+        pos = preds[:, :3]
+        yaw = preds[:, 3:4]
+        # compute losses
+        pos_loss = self._get_location_loss(pos, target_pos_residual)
+        yaw_loss = self._get_angle_loss(yaw, target_yaw_residual)
+        self.log(
+            f"pos_loss_{self._stage}", pos_loss, on_epoch=self._stage == Stages.TRAIN
+        )
+        self.log(
+            f"yaw_loss_{self._stage}", yaw_loss, on_epoch=self._stage == Stages.TRAIN
+        )
+        total_loss = pos_loss + yaw_loss
+        self.log(
+            f"total_loss_{self._stage}",
+            total_loss,
+            on_epoch=self._stage == Stages.TRAIN,
         )
 
+        if (batch_idx % self._log_pcl_every_n_steps) == 0:
+            # log first pointcloud + GT box + Est Box from batch
+            # expected vector: x, y, z, theta, height, width, length = vec.reshape(7, 1)
+            target_vec = get_oobbox_vec(
+                pos=target_pos[0].cpu().detach().numpy(),
+                yaw=target_yaw[0].cpu().detach().numpy(),
+                dims=config.CAR_DIMS,
+            )
+            gt_corners = get_corners_from_vector(target_vec)
+            init_est_vec = get_oobbox_vec(
+                pos=est_pos[0].cpu().detach().numpy(),
+                yaw=est_yaw[0].cpu().detach().numpy(),
+                dims=config.CAR_DIMS,
+            )
+            init_est_corners = get_corners_from_vector(init_est_vec)
+            est_vec = get_oobbox_vec(
+                pos=(est_pos + pos)[0].cpu().detach().numpy(),
+                yaw=(est_yaw + yaw)[0].cpu().detach().numpy(),
+                dims=config.CAR_DIMS,
+            )
+
+            est_corners = get_corners_from_vector(est_vec)
+
+            pcl_cam = (pcl.T + est_pos.T).T
+            # visualize_pointcloud_and_obb(
+            #    pcl_cam[0].numpy(),
+            #    [gt_corners, init_est_corners, est_corners],
+            #    colors=[Colors.WHITE, Colors.RED, Colors.GREEN],
+            # )
+            wb.log(
+                {
+                    "point_scene": wb.Object3D(
+                        {
+                            "type": "lidar/beta",
+                            "points": pcl_cam[0].cpu().detach().numpy(),
+                            "boxes": np.array(
+                                [
+                                    {
+                                        "corners": gt_corners.T.tolist(),
+                                        "label": "GT OBBox",
+                                        "color": Colors.WHITE,
+                                    },
+                                    {
+                                        "corners": est_corners.T.tolist(),
+                                        "label": "Est. OBBox",
+                                        "color": Colors.GREEN,
+                                    },
+                                    {
+                                        "corners": init_est_corners.T.tolist(),
+                                        "label": "Initial est. OBBox",
+                                        "color": Colors.RED,
+                                    },
+                                ]
+                            ),
+                        }
+                    )
+                },
+            )
+        return total_loss
+
+    def training_step(self, batch, batch_idx):
+        self._stage = Stages.TRAIN
+        return self._generic_step(batch, batch_idx)
+
+    def validation_step(self, batch, batch_idx):
+        self._stage = Stages.VAL
+        self._generic_step(batch, batch_idx)
+
     def test_step(self, batch, batch_idx):
-        pointcloud = batch["pointcloud"]
-        feature_vector = batch["feature_vector"]
-        target = batch["target"]
-        y = self(pointcloud, feature_vector)
-        loc_loss, angle_loss, size_loss = self._get_losses(y, target)
-        self.log("loc_loss_test", loc_loss)
-        self.log("angle_loss_test", angle_loss)
-        self.log("size_loss_test", size_loss)
-        total_loss = loc_loss + angle_loss + size_loss
-        self.log("loss_test", total_loss)
+        self._stage = Stages.TEST
+        self._generic_step(batch, batch_idx)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)

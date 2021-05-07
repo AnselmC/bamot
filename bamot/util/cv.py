@@ -34,6 +34,10 @@ class TriangulationError(Exception):
     pass
 
 
+def get_oobbox_vec(pos: np.ndarray, yaw: np.ndarray, dims: np.ndarray) -> np.ndarray:
+    return np.concatenate([pos, yaw, dims])
+
+
 def get_corners_from_vector(vec: np.ndarray) -> np.ndarray:
     x, y, z, theta, height, width, length = vec.reshape(7, 1)
     translation = np.array([x, y, z]).reshape(3, 1)

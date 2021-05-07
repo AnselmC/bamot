@@ -425,6 +425,7 @@ def run(
     shared_data: queue.Queue,
     writer_data_2d: queue.Queue,
     writer_data_3d: queue.Queue,
+    writer_obb_data: queue.Queue,
     returned_data: queue.Queue,
     stop_flag: Event,
     next_step: Event,
@@ -742,10 +743,23 @@ def run(
             writer_data_3d.put(
                 {"T_world_cam": current_pose, "tracks": track_copy, "img_id": img_id,}
             )
+        if config.SAVE_OBB_DATA:
+            track_copy = copy.deepcopy(
+                {
+                    track_id: track
+                    for track_id, track in active_object_tracks.items()
+                    if track.masks[0] is not None and track.landmarks
+                }
+            )
+            writer_obb_data.put(
+                {"tracks": track_copy, "img_id": img_id, "T_world_cam": current_pose}
+            )
+
     stop_flag.set()
     shared_data.put({})
     writer_data_2d.put({})
     writer_data_3d.put({})
+    writer_obb_data.put({})
     all_object_tracks.update(active_object_tracks)
     if config.FINAL_FULL_BA:
         for track_id, track in all_object_tracks.items():

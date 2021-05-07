@@ -30,6 +30,8 @@ VIEWER_COLORS: ViewerColors = None
 class Colors:
     BLACK: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     WHITE: Tuple[float, float, float] = (1.0, 1.0, 1.0)
+    GREEN: Tuple[float, float, float] = (0.0, 1.0, 0.0)
+    RED: Tuple[float, float, float] = (1.0, 0.0, 0.0)
 
 
 @dataclass
@@ -717,7 +719,9 @@ def _get_points_and_lines_from_corners(corners: np.ndarray):
 
 
 def visualize_pointcloud_and_obb(
-    pointcloud: np.ndarray, corners: Union[List[np.ndarray], np.ndarray]
+    pointcloud: np.ndarray,
+    corners: Union[List[np.ndarray], np.ndarray],
+    colors: List[Colors],
 ):
     vis = o3d.visualization.Visualizer()
     vis.create_window("MOT", top=0, left=1440)
@@ -727,12 +731,12 @@ def visualize_pointcloud_and_obb(
     pcl.points = o3d.utility.Vector3dVector(pointcloud.T)
     vis.add_geometry(pcl)
     if isinstance(corners, list):
-        for c in corners:
+        for i, c in enumerate(corners):
             obb = o3d.geometry.LineSet()
             pts, lines = _get_points_and_lines_from_corners(c)
             obb.lines = lines
             obb.points = pts
-            obb.paint_uniform_color(Colors.WHITE)
+            obb.paint_uniform_color(colors[i])
             vis.add_geometry(obb)
     else:
         obb = o3d.geometry.LineSet()
