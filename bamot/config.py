@@ -70,24 +70,26 @@ __const_motion_weights_default = [
     ),
 ]
 __track_point_cloud_sizes_default = bool(
-    os.environ.get("TRACK_POINT_CLOUD_SIZES", default=False)
+    int(os.environ.get("TRACK_POINT_CLOUD_SIZES", default=0))
 )
 __save_updated_2d_track_default = bool(
-    os.environ.get("SAVE_UPDATED_2D_TRACK", default=False)
+    int(os.environ.get("SAVE_UPDATED_2D_TRACK", default=0))
 )
-__save_3d_track_default = bool(os.environ.get("SAVE_3D_TRACK", default=True))
-__save_obb_data_default = bool(os.environ.get("SAVE_OBB_DATA", default=False))
-__final_full_ba_default = bool(os.environ.get("FINAL_FULL_BA", default=False))
+__save_3d_track_default = bool(int(os.environ.get("SAVE_3D_TRACK", default=1)))
+__save_obb_data_default = bool(int(os.environ.get("SAVE_OBB_DATA", default=0)))
+__final_full_ba_default = bool(int(os.environ.get("FINAL_FULL_BA", default=0)))
 __cluster_radius_default = float(os.environ.get("CLUSTER_RADIUS", default=8))
 __mad_scale_factor_default = float(os.environ.get("MAD_SCALE_FACTOR", default=5.0))
-__using_mad_default = bool(os.environ.get("USING_MAD", default=False))
-__using_const_motion_default = bool(os.environ.get("USING_CONST_MOTION", default=True))
+__using_mad_default = bool(int(os.environ.get("USING_MAD", default=0)))
+__using_const_motion_default = bool(
+    int(os.environ.get("USING_CONST_MOTION", default=1))
+)
 __kitti_scene_default = os.environ.get("SCENE", default="UNKNOWN")
 __sliding_window_ba_default = int(os.environ.get("SLIDING_WINDOW_BA", default=10))
 __sliding_window_dir_default = int(os.environ.get("SLIDING_WINDOW_DIR_VEC", default=10))
 __ba_every_n_steps_default = int(os.environ.get("BA_EVERY_N_STEPS", default=1))
 __ba_normalize_trans_error = bool(
-    os.environ.get("BA_NORMALIZE_TRANS_ERROR", default=False)
+    int(os.environ.get("BA_NORMALIZE_TRANS_ERROR", default=0))
 )
 __keep_track_for_n_frames_after_lost_default = int(
     os.environ.get("KEEP_TRACK_FOR_N_FRAMES_AFTER_LOST", default=1)
@@ -109,7 +111,7 @@ __car_dims_default = (1.6, 1.8, 4.3)  # HxWxL
 __ped_dims_default = (1.9, 0.7, 0.9)
 
 __force_new_detections_default = bool(
-    os.environ.get("FORCE_NEW_DETECTIONS", default=False)
+    int(os.environ.get("FORCE_NEW_DETECTIONS", default=0))
 )
 
 __kitti_tracking_path_default = Path(
