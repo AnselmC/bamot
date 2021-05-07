@@ -5,13 +5,12 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import wandb as wb
 from bamot.config import CONFIG as config
 from bamot.util.cv import get_corners_from_vector, get_oobbox_vec
 from bamot.util.misc import get_color
 from bamot.util.viewer import Colors, visualize_pointcloud_and_obb
 from torch.nn import functional as F
-
-import wandb as wb
 
 
 @dataclass
@@ -31,12 +30,13 @@ class OBBoxRegressor(pl.LightningModule):
         prob_dropout: float = 0.2,
         dim_feature_vector: int = 4,
         log_pcl_every_n_steps: int = 40,
+        on_gpu: bool = False,
         **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters()
         # pointnet2 not available for CPU, but need to be able to run for sanity check of pipeline
-        if torch.cuda.is_available():
+        if on_gpu:
             from bamot.thirdparty.pointnet2.pointnet2.models.pointnet2_ssg_sem import \
                 PointNet2SemSegSSG
 

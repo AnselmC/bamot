@@ -12,6 +12,7 @@ def main(args):
         eval_batch_size=args.batch_size,
         max_epochs=args.max_epochs,
         learning_rate=args.learning_rate,
+        on_gpu=args.gpus is not None,
     )
     dm = BAMOTPointCloudDataModule(
         dataset_dir=args.input_files_dir,
