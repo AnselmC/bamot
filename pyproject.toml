@@ -7,7 +7,7 @@ authors = ["Anselm Coogan <anselm.coogan@icloud.com>"]
 [tool.poetry.dependencies]
 python = "^3.7"
 numpy = "1.18.5"
-opencv-python = "^4.2.0"
+opencv-python = "4.5.1.48"
 Pillow = "^7.1.2"
 shapely = "^1.7.0"
 dataclasses-json = "^0.5.1"
