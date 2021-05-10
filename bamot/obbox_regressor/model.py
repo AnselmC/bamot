@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Tuple
 
 import numpy as np
 import pytorch_lightning as pl
@@ -8,7 +7,6 @@ import torch.nn as nn
 import wandb as wb
 from bamot.config import CONFIG as config
 from bamot.util.cv import get_corners_from_vector, get_oobbox_vec
-from bamot.util.misc import get_color
 from bamot.util.viewer import Colors, visualize_pointcloud_and_obb
 from torch.nn import functional as F
 
@@ -32,6 +30,7 @@ class OBBoxRegressor(pl.LightningModule):
         log_pcl_every_n_steps: int = 40,
         use_gpus: bool = False,
         encode_pointcloud: bool = False,
+        init_train_target: str = "all",
         **kwargs,
     ):
         super().__init__()
@@ -60,10 +59,21 @@ class OBBoxRegressor(pl.LightningModule):
             nn.Linear(dim_backbone, 128),
             nn.ReLU(),
             nn.Dropout(prob_dropout),
-            nn.Linear(128, 4),  # predict position and yaw corrections
+            nn.Linear(128, 7),  # predict position, yaw, and dim corrections
         )
         self._stage = None
         self._log_pcl_every_n_steps = log_pcl_every_n_steps
+        self.train_target = init_train_target
+
+    @property
+    def train_target(self):
+        return self._train_target
+
+    @train_target.setter
+    def train_target(self, target: str):
+        if target not in ["dim", "pos", "yaw", "all"]:
+            raise ValueError(f"Invalid train target: {target}")
+        self._train_target = target
 
     def forward(self, pointcloud, feature_vector):
         # pointcloude shape: B x N x 3
@@ -86,8 +96,7 @@ class OBBoxRegressor(pl.LightningModule):
     def _get_angle_loss(
         self, angle: torch.Tensor, target_angle: torch.Tensor
     ) -> torch.Tensor:
-        scaled_angle = torch.remainder(angle, torch.Tensor([np.pi]).to(self._device))
-        return F.mse_loss(scaled_angle, target_angle)
+        return F.mse_loss(angle, target_angle)
 
     def _generic_step(self, batch, batch_idx):
         pcl = batch["pointcloud"]
@@ -95,27 +104,47 @@ class OBBoxRegressor(pl.LightningModule):
 
         est_yaw = batch["est_yaw"]
         est_pos = batch["est_pos"]
+        init_dim = batch["init_dim"]
 
         target_yaw = batch["target_yaw"]
         target_pos = batch["target_pos"]
+        target_dim = batch["target_dim"]
 
         # regress against correction
         target_yaw_residual = target_yaw - est_yaw
         target_pos_residual = target_pos - est_pos
-        # size: B x N x 4 (3 for pos, 1 for yaw)
+        target_dim_residual = target_dim - init_dim
+        # size: B x N x 7 (3 for pos, 1 for yaw, 3 for dim)
         preds = self(pcl, fv)
         pos = preds[:, :3]
         yaw = preds[:, 3:4]
+        dim = preds[:, 4:]
         # compute losses
         pos_loss = self._get_location_loss(pos, target_pos_residual)
         yaw_loss = self._get_angle_loss(yaw, target_yaw_residual)
+        dim_loss = self._get_size_loss(dim, target_dim_residual)
         self.log(
             f"pos_loss_{self._stage}", pos_loss, on_epoch=self._stage == Stages.TRAIN
         )
         self.log(
             f"yaw_loss_{self._stage}", yaw_loss, on_epoch=self._stage == Stages.TRAIN
         )
-        total_loss = pos_loss #+ yaw_loss
+        self.log(
+            f"dim_loss_{self._stage}", dim_loss, on_epoch=self._stage == Stages.TRAIN
+        )
+        if self._stage in [Stages.TRAIN, Stages.VAL]:
+            if self.train_target == "dim":
+                total_loss = dim_loss
+            elif self.train_target == "pos":
+                total_loss = pos_loss
+            elif self.train_target == "yaw":
+                total_loss = yaw_loss
+            elif self.train_target == "all":
+                total_loss = pos_loss + yaw_loss + dim_loss
+            else:
+                raise ValueError(f"Unknown train target: {self.train_target}")
+        else:
+            total_loss = pos_loss + yaw_loss + dim_loss
         self.log(
             f"total_loss_{self._stage}",
             total_loss,
@@ -128,20 +157,19 @@ class OBBoxRegressor(pl.LightningModule):
             target_vec = get_oobbox_vec(
                 pos=target_pos[0].cpu().detach().numpy(),
                 yaw=target_yaw[0].cpu().detach().numpy(),
-                dims=config.CAR_DIMS,
+                dims=target_dim[0].cpu().detach().numpy(),
             )
             gt_corners = get_corners_from_vector(target_vec)
             init_est_vec = get_oobbox_vec(
                 pos=est_pos[0].cpu().detach().numpy(),
                 yaw=est_yaw[0].cpu().detach().numpy(),
-                dims=config.CAR_DIMS,
+                dims=init_dim[0].cpu().detach().numpy(),
             )
             init_est_corners = get_corners_from_vector(init_est_vec)
             est_vec = get_oobbox_vec(
                 pos=(est_pos + pos)[0].cpu().detach().numpy(),
-                #yaw=(est_yaw + yaw)[0].cpu().detach().numpy(),
-                yaw=est_yaw[0].cpu().detach().numpy(),
-                dims=config.CAR_DIMS,
+                yaw=(est_yaw + yaw)[0].cpu().detach().numpy(),
+                dims=(init_dim + dim)[0].cpu().detach().numpy(),
             )
 
             est_corners = get_corners_from_vector(est_vec)

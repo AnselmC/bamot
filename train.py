@@ -16,11 +16,13 @@ def main(args):
         learning_rate=args.learning_rate,
         use_gpus=args.gpus is not None,
         encode_pointcloud=args.encode_pointcloud,
+        num_points=args.num_points,
     )
     dm = BAMOTPointCloudDataModule(
         dataset_dir=args.input_files_dir,
         train_batch_size=args.batch_size,
         eval_batch_size=args.batch_size,
+        pointcloud_size=args.num_points,
     )
     wandb.finish()
     wandb_logger = WandbLogger(project="obbox-regressor", entity="tum-3dmot")
@@ -45,6 +47,6 @@ if __name__ == "__main__":
     parser.add_argument("-lr", "--learning-rate", type=float, default=1e-7)
     parser.add_argument("--gpus", default=None)
     parser.add_argument("--encode-pointcloud", default=False)
-    parser.add_argument("--precision", choices=[16, 32], default=32)
+    parser.add_argument("--num-points", type=int, default=1024)
     args = parser.parse_args()
     main(args)

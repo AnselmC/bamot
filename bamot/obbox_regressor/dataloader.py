@@ -48,8 +48,6 @@ class BAMOTPointCloudDataset(Dataset):
                 ]
             )
         )
-        target_yaw = torch.Tensor([row.target_yaw])
-        target_pos = torch.Tensor(row.target_pos)
         # read pointcloud and convert to tensor
         ptc_fname = (
             self._base_path
@@ -61,10 +59,12 @@ class BAMOTPointCloudDataset(Dataset):
         return dict(
             pointcloud=pointcloud,
             feature_vector=feature_vector,
-            target_yaw=target_yaw,
-            target_pos=target_pos,
+            target_yaw=torch.Tensor([row.target_yaw]),
+            target_pos=torch.Tensor(row.target_pos),
+            target_dim=torch.Tensor(row.target_dim),
             est_yaw=torch.Tensor([row.yaw]),
             est_pos=torch.Tensor([row.x, row.y, row.z]),
+            init_dim=torch.Tensor(config.CAR_DIMS),
         )
 
 
@@ -107,6 +107,7 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
 
         target_yaw = []
         target_pos = []
+        target_dim = []
         all_gt_data = {}
         idx_to_remove = []
         for idx, row in enumerate(dataset.itertuples()):
@@ -138,9 +139,11 @@ class BAMOTPointCloudDataModule(pl.LightningDataModule):
                 continue  # no corresponding GT detection
             target_yaw.append(gt_data.rot_angle)
             target_pos.append(gt_data.cam_pos)
+            target_dim.append(gt_data.dim_3d)
         dataset.drop(idx_to_remove, inplace=True)
         dataset["target_yaw"] = target_yaw
         dataset["target_pos"] = target_pos
+        dataset["target_dim"] = target_dim
         size = len(dataset)
         val_size = int(
             size * (self._train_val_test_ratio[1] / sum(self._train_val_test_ratio))
