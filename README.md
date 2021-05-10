@@ -88,6 +88,11 @@ bamot/data/KITTI
         │   ├── ...
         │   └── 0019.txt
         ├── detections --> contains 2D detections from detector/tracker (e.g. TrackR-CNN)
+        │   ├── image_02
+        │   │   ├── 0000.txt
+        │   │   ├── ...
+        │   │   └── 0019.txt
+        │   ├── image_03
         ├── stereo_detections --> contains pseudo stereo detections with updated ids (see next step)
         │   ├── image_02
         │   │   ├── 0000.txt
