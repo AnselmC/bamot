@@ -132,6 +132,21 @@ class OBBoxRegressor(pl.LightningModule):
         self.log(
             f"dim_loss_{self._stage}", dim_loss, on_epoch=self._stage == Stages.TRAIN
         )
+        self.log(
+            f"orig_pos_loss_{self._stage}",
+            self._get_location_loss(est_pos, target_pos),
+            on_epoch=self._stage == Stages.TRAIN,
+        )
+        self.log(
+            f"orig_yaw_loss_{self._stage}",
+            self._get_angle_loss(est_yaw, target_yaw),
+            on_epoch=self._stage == Stages.TRAIN,
+        )
+        self.log(
+            f"orig_dim_loss_{self._stage}",
+            self._get_size_loss(init_dim, target_dim),
+            on_epoch=self._stage == Stages.TRAIN,
+        )
         if self._stage in [Stages.TRAIN, Stages.VAL]:
             if self.train_target == "dim":
                 total_loss = dim_loss
